@@ -1,5 +1,5 @@
 use weldcore::seed::{DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME};
-use weldcore::{Store, Weld, WeldFilter, Welder};
+use weldcore::{Drawing, Store, Weld, WeldFilter, Welder};
 
 fn store() -> Store {
     Store::open_memory().expect("open memory db")
@@ -227,6 +227,75 @@ fn report_semantics_match_workbook() {
     let m = s.report_monthly(2026).unwrap();
     let bw_inches = 3.0 * std::f64::consts::PI; // one butt weld, size 3
     assert!((m.total_inches[0] - bw_inches).abs() < 1e-6);
+}
+
+#[test]
+fn drawing_bubble_annotation_flow() {
+    let s = store();
+    let d = Drawing {
+        work_order: Some("WO1".into()),
+        drawing_no: Some("ISO-1".into()),
+        unit: Some("61".into()),
+        line_spec: Some("KAAA1".into()),
+        spec_5: true,
+        default_material: Some("CS".into()),
+        default_schedule: Some("STD/40s".into()),
+        ..Default::default()
+    };
+    let did = s.create_drawing(&d, "admin").unwrap();
+
+    // Numbering starts at 1 and increments as bubbles are dropped.
+    assert_eq!(s.next_weld_number(did).unwrap(), 1);
+    let w1 = s
+        .add_bubble_weld(did, Some("K1".into()), "1", 1, 0.5, 0.4, 0.5, 0.5, "admin")
+        .unwrap();
+    assert_eq!(w1.weld_number.as_deref(), Some("1"));
+    assert_eq!(w1.unit.as_deref(), Some("61")); // header inherited
+    assert!(w1.spec_5); // NDE requirement inherited
+    assert_eq!(w1.stamp_number.as_deref(), Some("K1"));
+    assert_eq!(w1.status, "Required");
+    assert_eq!(s.next_weld_number(did).unwrap(), 2);
+    s.add_bubble_weld(did, Some("K1".into()), "2", 1, 0.6, 0.4, 0.6, 0.5, "admin")
+        .unwrap();
+    assert_eq!(s.list_drawing_welds(did).unwrap().len(), 2);
+    assert_eq!(s.get_drawing(did).unwrap().weld_count, 2);
+
+    // Batch attribute fill: size drives thickness + weld inches.
+    let ids: Vec<i64> = s.list_drawing_welds(did).unwrap().iter().map(|w| w.id).collect();
+    s.apply_weld_attributes(
+        &ids,
+        Some(3.0),
+        Some("BW".into()),
+        Some("Single-V".into()),
+        Some("GTAW".into()),
+        Some("STD/40s".into()),
+        None,
+        "admin",
+    )
+    .unwrap();
+    let w = s.get_weld(w1.id).unwrap();
+    assert_eq!(w.thickness, Some(0.216));
+    assert_eq!(w.groove_type.as_deref(), Some("Single-V"));
+    assert_eq!(w.process.as_deref(), Some("GTAW"));
+    assert!((w.weld_inches.unwrap() - 3.0 * std::f64::consts::PI).abs() < 1e-9);
+
+    // Moving a bubble only touches coordinates.
+    s.set_weld_bubble(w1.id, 1, 0.7, 0.3, 0.7, 0.35).unwrap();
+    let moved = s.get_weld(w1.id).unwrap();
+    assert_eq!(moved.bubble_x, Some(0.7));
+    assert_eq!(moved.groove_type.as_deref(), Some("Single-V")); // unchanged
+
+    // PDF store + fetch round-trip.
+    s.set_drawing_pdf(did, "iso.pdf", b"%PDF-1.4 hello", 1).unwrap();
+    let (name, b64) = s.get_drawing_pdf(did).unwrap().unwrap();
+    assert_eq!(name, "iso.pdf");
+    assert!(!b64.is_empty());
+    assert!(s.get_drawing(did).unwrap().has_pdf);
+
+    // Deleting the drawing detaches welds but keeps them.
+    s.delete_drawing(did).unwrap();
+    assert_eq!(s.count_welds(&WeldFilter::default()).unwrap(), 2);
+    assert!(s.get_weld(w1.id).unwrap().drawing_id.is_none());
 }
 
 #[test]

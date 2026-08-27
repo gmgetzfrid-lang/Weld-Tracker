@@ -135,8 +135,73 @@ pub struct Weld {
     pub file_location: Option<String>,
     #[serde(default)]
     pub status: String,
+    // --- drawing / weld-bubble annotation ---
+    #[serde(default)]
+    pub drawing_id: Option<i64>,
+    #[serde(default)]
+    pub groove_type: Option<String>,
+    #[serde(default)]
+    pub process: Option<String>,
+    #[serde(default)]
+    pub bubble_page: Option<i64>,
+    #[serde(default)]
+    pub bubble_x: Option<f64>,
+    #[serde(default)]
+    pub bubble_y: Option<f64>,
+    #[serde(default)]
+    pub joint_x: Option<f64>,
+    #[serde(default)]
+    pub joint_y: Option<f64>,
     #[serde(default)]
     pub created_by: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+/// An isometric drawing that welds are placed on.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Drawing {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub work_order: Option<String>,
+    #[serde(default)]
+    pub drawing_no: Option<String>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub line_spec: Option<String>,
+    #[serde(default)]
+    pub revision: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub spec_5: bool,
+    #[serde(default)]
+    pub spec_10: bool,
+    #[serde(default)]
+    pub spec_20: bool,
+    #[serde(default)]
+    pub spec_25: bool,
+    #[serde(default)]
+    pub spec_50: bool,
+    #[serde(default)]
+    pub spec_100: bool,
+    #[serde(default)]
+    pub default_material: Option<String>,
+    #[serde(default)]
+    pub default_schedule: Option<String>,
+    #[serde(default)]
+    pub pdf_name: Option<String>,
+    /// True when a PDF is stored (the bytes themselves are fetched separately).
+    #[serde(default)]
+    pub has_pdf: bool,
+    #[serde(default)]
+    pub page_count: i64,
+    #[serde(default)]
+    pub weld_count: i64,
     #[serde(default)]
     pub created_at: String,
     #[serde(default)]

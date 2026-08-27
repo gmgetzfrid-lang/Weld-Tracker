@@ -10,7 +10,9 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     ut_thickness, pt_mt_prep, pt_mt_root, pt_mt_final, visual_insp, rt_date,
     rt_accepted, rt_rejected, inches_of_defect, h2_bake_out, ferrite, pwht_date,
     brinnel_complete, pmi_date, hydro_pressure, hydro_comp_date, wps_number,
-    description, file_location, status, created_by, created_at, updated_at";
+    description, file_location, status,
+    drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
+    created_by, created_at, updated_at";
 
 fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
     Ok(Weld {
@@ -57,6 +59,14 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         description: r.get("description")?,
         file_location: r.get("file_location")?,
         status: r.get("status")?,
+        drawing_id: r.get("drawing_id")?,
+        groove_type: r.get("groove_type")?,
+        process: r.get("process")?,
+        bubble_page: r.get("bubble_page")?,
+        bubble_x: r.get("bubble_x")?,
+        bubble_y: r.get("bubble_y")?,
+        joint_x: r.get("joint_x")?,
+        joint_y: r.get("joint_y")?,
         created_by: r.get("created_by")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
@@ -155,10 +165,12 @@ impl Store {
                 ut_thickness, pt_mt_prep, pt_mt_root, pt_mt_final, visual_insp, rt_date,
                 rt_accepted, rt_rejected, inches_of_defect, h2_bake_out, ferrite, pwht_date,
                 brinnel_complete, pmi_date, hydro_pressure, hydro_comp_date, wps_number,
-                description, file_location, status, created_by)
+                description, file_location, status,
+                drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
+                created_by)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
                      ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38,
-                     ?39,?40,?41,?42,?43)",
+                     ?39,?40,?41,?42,?43,?44,?45,?46,?47,?48,?49,?50,?51)",
             params![
                 w.unit, w.drawing_no, w.work_order, w.line_spec,
                 w.spec_5 as i64, w.spec_10 as i64, w.spec_20 as i64, w.spec_25 as i64,
@@ -168,7 +180,9 @@ impl Store {
                 w.ut_thickness, w.pt_mt_prep, w.pt_mt_root, w.pt_mt_final, w.visual_insp, w.rt_date,
                 w.rt_accepted, w.rt_rejected, w.inches_of_defect, w.h2_bake_out, w.ferrite, w.pwht_date,
                 w.brinnel_complete, w.pmi_date, w.hydro_pressure, w.hydro_comp_date, w.wps_number,
-                w.description, w.file_location, w.status, actor
+                w.description, w.file_location, w.status,
+                w.drawing_id, w.groove_type, w.process, w.bubble_page, w.bubble_x, w.bubble_y, w.joint_x, w.joint_y,
+                actor
             ],
         )?;
         let id = conn.last_insert_rowid();
@@ -191,8 +205,11 @@ impl Store {
                 rt_accepted=?29, rt_rejected=?30, inches_of_defect=?31, h2_bake_out=?32,
                 ferrite=?33, pwht_date=?34, brinnel_complete=?35, pmi_date=?36,
                 hydro_pressure=?37, hydro_comp_date=?38, wps_number=?39, description=?40,
-                file_location=?41, status=?42, updated_at=datetime('now')
-             WHERE id=?43",
+                file_location=?41, status=?42,
+                drawing_id=?43, groove_type=?44, process=?45, bubble_page=?46, bubble_x=?47,
+                bubble_y=?48, joint_x=?49, joint_y=?50,
+                updated_at=datetime('now')
+             WHERE id=?51",
             params![
                 w.unit, w.drawing_no, w.work_order, w.line_spec,
                 w.spec_5 as i64, w.spec_10 as i64, w.spec_20 as i64, w.spec_25 as i64,
@@ -204,7 +221,10 @@ impl Store {
                 w.rt_accepted, w.rt_rejected, w.inches_of_defect, w.h2_bake_out,
                 w.ferrite, w.pwht_date, w.brinnel_complete, w.pmi_date,
                 w.hydro_pressure, w.hydro_comp_date, w.wps_number, w.description,
-                w.file_location, w.status, w.id
+                w.file_location, w.status,
+                w.drawing_id, w.groove_type, w.process, w.bubble_page, w.bubble_x,
+                w.bubble_y, w.joint_x, w.joint_y,
+                w.id
             ],
         )?;
         if n == 0 {

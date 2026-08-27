@@ -4554,6 +4554,7 @@ name = "weldcore"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "base64 0.22.1",
  "chrono",
  "getrandom 0.2.17",
  "password-hash",

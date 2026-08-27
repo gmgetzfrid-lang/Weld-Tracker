@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::State;
 use weldcore::reports::*;
-use weldcore::{CriteriaRow, Lookup, PipeRow, Store, User, Weld, WeldFilter, Welder};
+use weldcore::{
+    CriteriaRow, Drawing, Lookup, PipeRow, Store, User, Weld, WeldFilter, Welder,
+};
 
 pub struct AppState {
     pub store: Store,
@@ -240,6 +242,131 @@ pub fn create_repair(
 pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<String>> {
     state.require_login()?;
     e(state.store.distinct_weld_values(&field))
+}
+
+// --------------------------- drawings & bubbles ----------------------------
+
+#[tauri::command]
+pub fn list_drawings(state: State<AppState>) -> R<Vec<Drawing>> {
+    state.require_login()?;
+    e(state.store.list_drawings())
+}
+
+#[tauri::command]
+pub fn get_drawing(state: State<AppState>, id: i64) -> R<Drawing> {
+    state.require_login()?;
+    e(state.store.get_drawing(id))
+}
+
+#[tauri::command]
+pub fn create_drawing(state: State<AppState>, drawing: Drawing) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store.create_drawing(&drawing, &actor.username))
+}
+
+#[tauri::command]
+pub fn update_drawing(state: State<AppState>, drawing: Drawing) -> R<()> {
+    state.require_editor()?;
+    e(state.store.update_drawing(&drawing))
+}
+
+#[tauri::command]
+pub fn delete_drawing(state: State<AppState>, id: i64) -> R<()> {
+    state.require_editor()?;
+    e(state.store.delete_drawing(id))
+}
+
+#[tauri::command]
+pub fn set_drawing_pdf(
+    state: State<AppState>,
+    id: i64,
+    name: String,
+    data_base64: String,
+    page_count: i64,
+) -> R<()> {
+    state.require_editor()?;
+    e(state
+        .store
+        .set_drawing_pdf_b64(id, &name, &data_base64, page_count))
+}
+
+#[tauri::command]
+pub fn get_drawing_pdf(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
+    state.require_login()?;
+    e(state.store.get_drawing_pdf(id))
+}
+
+#[tauri::command]
+pub fn list_drawing_welds(state: State<AppState>, drawing_id: i64) -> R<Vec<Weld>> {
+    state.require_login()?;
+    e(state.store.list_drawing_welds(drawing_id))
+}
+
+#[tauri::command]
+pub fn next_weld_number(state: State<AppState>, drawing_id: i64) -> R<i64> {
+    state.require_login()?;
+    e(state.store.next_weld_number(drawing_id))
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub fn add_bubble_weld(
+    state: State<AppState>,
+    drawing_id: i64,
+    stamp: Option<String>,
+    weld_number: String,
+    page: i64,
+    bubble_x: f64,
+    bubble_y: f64,
+    joint_x: f64,
+    joint_y: f64,
+) -> R<Weld> {
+    let actor = state.require_editor()?;
+    e(state.store.add_bubble_weld(
+        drawing_id,
+        stamp,
+        &weld_number,
+        page,
+        bubble_x,
+        bubble_y,
+        joint_x,
+        joint_y,
+        &actor.username,
+    ))
+}
+
+#[tauri::command]
+pub fn set_weld_bubble(
+    state: State<AppState>,
+    weld_id: i64,
+    page: i64,
+    bubble_x: f64,
+    bubble_y: f64,
+    joint_x: f64,
+    joint_y: f64,
+) -> R<()> {
+    state.require_editor()?;
+    e(state
+        .store
+        .set_weld_bubble(weld_id, page, bubble_x, bubble_y, joint_x, joint_y))
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub fn apply_weld_attributes(
+    state: State<AppState>,
+    ids: Vec<i64>,
+    size: Option<f64>,
+    joint_type: Option<String>,
+    groove_type: Option<String>,
+    process: Option<String>,
+    schedule: Option<String>,
+    material: Option<String>,
+) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state.store.apply_weld_attributes(
+        &ids, size, joint_type, groove_type, process, schedule, material, &actor.username,
+    ))
 }
 
 // --------------------------- reference data --------------------------------

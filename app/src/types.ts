@@ -71,7 +71,39 @@ export interface Weld {
   description?: string | null;
   file_location?: string | null;
   status: string;
+  drawing_id?: number | null;
+  groove_type?: string | null;
+  process?: string | null;
+  bubble_page?: number | null;
+  bubble_x?: number | null;
+  bubble_y?: number | null;
+  joint_x?: number | null;
+  joint_y?: number | null;
   created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Drawing {
+  id: number;
+  work_order?: string | null;
+  drawing_no?: string | null;
+  unit?: string | null;
+  line_spec?: string | null;
+  revision?: string | null;
+  title?: string | null;
+  spec_5: boolean;
+  spec_10: boolean;
+  spec_20: boolean;
+  spec_25: boolean;
+  spec_50: boolean;
+  spec_100: boolean;
+  default_material?: string | null;
+  default_schedule?: string | null;
+  pdf_name?: string | null;
+  has_pdf: boolean;
+  page_count: number;
+  weld_count: number;
   created_at?: string;
   updated_at?: string;
 }

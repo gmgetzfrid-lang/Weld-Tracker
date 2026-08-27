@@ -49,6 +49,13 @@ fn seed_lookups(store: &Store) -> Result<()> {
         ),
         ("shop_field", &["SHOP", "FW"]),
         ("process", &["SMAW", "GMAW", "GTAW", "FCAW", "SAW"]),
+        (
+            "groove_type",
+            &[
+                "Single-V", "Single-Bevel", "Double-V", "Square", "U-Groove", "J-Groove",
+                "Fillet", "Socket",
+            ],
+        ),
         ("old_to_new", &["Y", "N"]),
     ];
     let conn = store.conn.lock().unwrap();

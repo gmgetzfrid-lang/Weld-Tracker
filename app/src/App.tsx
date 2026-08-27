@@ -6,6 +6,7 @@ import type { Settings } from "./types";
 import { Login } from "./pages/Login";
 import { ChangePassword } from "./pages/ChangePassword";
 import { Dashboard } from "./pages/Dashboard";
+import { Drawings } from "./pages/Drawings";
 import { WeldLog } from "./pages/WeldLog";
 import { Roster } from "./pages/Roster";
 import { WelderStats } from "./pages/WelderStats";
@@ -23,6 +24,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 type PageKey =
   | "dashboard"
+  | "drawings"
   | "weldlog"
   | "roster"
   | "welderstats"
@@ -48,6 +50,7 @@ interface NavDef {
 
 const NAV: NavDef[] = [
   { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview" },
+  { key: "drawings", label: "Drawings", icon: "📐", group: "Records" },
   { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records" },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records" },
   { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports" },
@@ -169,6 +172,8 @@ function PageView({
   switch (page) {
     case "dashboard":
       return <Dashboard onNavigate={onNavigate} />;
+    case "drawings":
+      return <Drawings />;
     case "weldlog":
       return <WeldLog />;
     case "roster":

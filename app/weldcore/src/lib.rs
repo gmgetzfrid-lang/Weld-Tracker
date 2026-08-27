@@ -6,6 +6,7 @@
 //! be unit-tested on its own.
 
 pub mod auth;
+pub mod drawings;
 pub mod models;
 pub mod pipe;
 pub mod reports;
@@ -88,8 +89,10 @@ impl Store {
             )
             .unwrap_or(0);
 
-        const MIGRATIONS: &[(i64, &str)] =
-            &[(1, include_str!("migrations/0001_init.sql"))];
+        const MIGRATIONS: &[(i64, &str)] = &[
+            (1, include_str!("migrations/0001_init.sql")),
+            (2, include_str!("migrations/0002_drawings.sql")),
+        ];
 
         for (version, sql) in MIGRATIONS {
             if *version > applied {

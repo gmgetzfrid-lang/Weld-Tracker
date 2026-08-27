@@ -3,6 +3,7 @@ import type {
   ClientReportRow,
   CriteriaRow,
   DailyReport,
+  Drawing,
   JobReport,
   Lookups,
   MonthlyReport,
@@ -69,6 +70,70 @@ export const api = {
     invoke<number[]>("create_repair", { weldId, includeTracers }),
   distinctWeldValues: (field: string) =>
     invoke<string[]>("distinct_weld_values", { field }),
+
+  // drawings & weld-bubble annotation
+  listDrawings: () => invoke<Drawing[]>("list_drawings"),
+  getDrawing: (id: number) => invoke<Drawing>("get_drawing", { id }),
+  createDrawing: (drawing: Drawing) =>
+    invoke<number>("create_drawing", { drawing }),
+  updateDrawing: (drawing: Drawing) =>
+    invoke<void>("update_drawing", { drawing }),
+  deleteDrawing: (id: number) => invoke<void>("delete_drawing", { id }),
+  setDrawingPdf: (id: number, name: string, dataBase64: string, pageCount: number) =>
+    invoke<void>("set_drawing_pdf", { id, name, dataBase64, pageCount }),
+  getDrawingPdf: (id: number) =>
+    invoke<[string, string] | null>("get_drawing_pdf", { id }),
+  listDrawingWelds: (drawingId: number) =>
+    invoke<Weld[]>("list_drawing_welds", { drawingId }),
+  nextWeldNumber: (drawingId: number) =>
+    invoke<number>("next_weld_number", { drawingId }),
+  addBubbleWeld: (
+    drawingId: number,
+    stamp: string | null,
+    weldNumber: string,
+    page: number,
+    bubbleX: number,
+    bubbleY: number,
+    jointX: number,
+    jointY: number
+  ) =>
+    invoke<Weld>("add_bubble_weld", {
+      drawingId,
+      stamp,
+      weldNumber,
+      page,
+      bubbleX,
+      bubbleY,
+      jointX,
+      jointY,
+    }),
+  setWeldBubble: (
+    weldId: number,
+    page: number,
+    bubbleX: number,
+    bubbleY: number,
+    jointX: number,
+    jointY: number
+  ) =>
+    invoke<void>("set_weld_bubble", {
+      weldId,
+      page,
+      bubbleX,
+      bubbleY,
+      jointX,
+      jointY,
+    }),
+  applyWeldAttributes: (
+    ids: number[],
+    attrs: {
+      size?: number | null;
+      joint_type?: string | null;
+      groove_type?: string | null;
+      process?: string | null;
+      schedule?: string | null;
+      material?: string | null;
+    }
+  ) => invoke<void>("apply_weld_attributes", { ids, ...attrs }),
 
   // reference data
   listPipe: () => invoke<PipeRow[]>("list_pipe"),
