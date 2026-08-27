@@ -244,8 +244,17 @@ impl Store {
         actor: &str,
     ) -> Result<Weld> {
         let d = self.get_drawing(drawing_id)?;
+        // Surface the drawing's coverage requirement as the weld's NDE %.
+        let nde_percent = if d.spec_5 { Some("5%") }
+            else if d.spec_10 { Some("10%") }
+            else if d.spec_20 { Some("20%") }
+            else if d.spec_25 { Some("25%") }
+            else if d.spec_50 { Some("50%") }
+            else if d.spec_100 { Some("100%") }
+            else { None };
         let w = Weld {
             drawing_id: Some(drawing_id),
+            nde_percent: nde_percent.map(|s| s.to_string()),
             unit: d.unit.clone(),
             drawing_no: d.drawing_no.clone(),
             work_order: d.work_order.clone(),

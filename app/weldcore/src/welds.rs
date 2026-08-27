@@ -11,8 +11,54 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     rt_accepted, rt_rejected, inches_of_defect, h2_bake_out, ferrite, pwht_date,
     brinnel_complete, pmi_date, hydro_pressure, hydro_comp_date, wps_number,
     description, file_location, status,
+    nde_percent, nde_types, nde_result, nde_date, pwht_temp, brinnel_value, hydro_time_held,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
+
+/// Writable columns, in the order `weld_write_values` produces them.
+const WRITE_COLS: &[&str] = &[
+    "unit", "drawing_no", "work_order", "line_spec",
+    "spec_5", "spec_10", "spec_20", "spec_25", "spec_50", "spec_100",
+    "material", "schedule", "size", "thickness", "weld_inches", "joint_type", "old_to_new",
+    "weld_number", "count_omission", "stamp_number", "date_welded", "shop_or_field",
+    "ut_thickness", "pt_mt_prep", "pt_mt_root", "pt_mt_final", "visual_insp", "rt_date",
+    "rt_accepted", "rt_rejected", "inches_of_defect", "h2_bake_out", "ferrite", "pwht_date",
+    "brinnel_complete", "pmi_date", "hydro_pressure", "hydro_comp_date", "wps_number",
+    "description", "file_location", "status",
+    "nde_percent", "nde_types", "nde_result", "nde_date", "pwht_temp", "brinnel_value", "hydro_time_held",
+    "drawing_id", "groove_type", "process", "bubble_page", "bubble_x", "bubble_y", "joint_x", "joint_y",
+];
+
+fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
+    vec![
+        Box::new(w.unit.clone()), Box::new(w.drawing_no.clone()),
+        Box::new(w.work_order.clone()), Box::new(w.line_spec.clone()),
+        Box::new(w.spec_5 as i64), Box::new(w.spec_10 as i64), Box::new(w.spec_20 as i64),
+        Box::new(w.spec_25 as i64), Box::new(w.spec_50 as i64), Box::new(w.spec_100 as i64),
+        Box::new(w.material.clone()), Box::new(w.schedule.clone()), Box::new(w.size),
+        Box::new(w.thickness), Box::new(w.weld_inches), Box::new(w.joint_type.clone()),
+        Box::new(w.old_to_new.clone()), Box::new(w.weld_number.clone()),
+        Box::new(w.count_omission as i64), Box::new(w.stamp_number.clone()),
+        Box::new(w.date_welded.clone()), Box::new(w.shop_or_field.clone()),
+        Box::new(w.ut_thickness.clone()), Box::new(w.pt_mt_prep.clone()),
+        Box::new(w.pt_mt_root.clone()), Box::new(w.pt_mt_final.clone()),
+        Box::new(w.visual_insp.clone()), Box::new(w.rt_date.clone()),
+        Box::new(w.rt_accepted.clone()), Box::new(w.rt_rejected.clone()),
+        Box::new(w.inches_of_defect), Box::new(w.h2_bake_out.clone()),
+        Box::new(w.ferrite.clone()), Box::new(w.pwht_date.clone()),
+        Box::new(w.brinnel_complete.clone()), Box::new(w.pmi_date.clone()),
+        Box::new(w.hydro_pressure.clone()), Box::new(w.hydro_comp_date.clone()),
+        Box::new(w.wps_number.clone()), Box::new(w.description.clone()),
+        Box::new(w.file_location.clone()), Box::new(w.status.clone()),
+        Box::new(w.nde_percent.clone()), Box::new(w.nde_types.clone()),
+        Box::new(w.nde_result.clone()), Box::new(w.nde_date.clone()),
+        Box::new(w.pwht_temp.clone()), Box::new(w.brinnel_value.clone()),
+        Box::new(w.hydro_time_held.clone()),
+        Box::new(w.drawing_id), Box::new(w.groove_type.clone()), Box::new(w.process.clone()),
+        Box::new(w.bubble_page), Box::new(w.bubble_x), Box::new(w.bubble_y),
+        Box::new(w.joint_x), Box::new(w.joint_y),
+    ]
+}
 
 fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
     Ok(Weld {
@@ -59,6 +105,13 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         description: r.get("description")?,
         file_location: r.get("file_location")?,
         status: r.get("status")?,
+        nde_percent: r.get("nde_percent")?,
+        nde_types: r.get("nde_types")?,
+        nde_result: r.get("nde_result")?,
+        nde_date: r.get("nde_date")?,
+        pwht_temp: r.get("pwht_temp")?,
+        brinnel_value: r.get("brinnel_value")?,
+        hydro_time_held: r.get("hydro_time_held")?,
         drawing_id: r.get("drawing_id")?,
         groove_type: r.get("groove_type")?,
         process: r.get("process")?,
@@ -83,6 +136,31 @@ impl Store {
                 if let Some(t) = self.lookup_thickness(size, sched)? {
                     w.thickness = Some(t);
                 }
+            }
+        }
+        // NDE % drives the coverage-spec flags the level reports group on.
+        if let Some(p) = w.nde_percent.as_deref() {
+            let d: String = p.chars().filter(|c| c.is_ascii_digit()).collect();
+            w.spec_5 = d == "5";
+            w.spec_10 = d == "10";
+            w.spec_20 = d == "20";
+            w.spec_25 = d == "25";
+            w.spec_50 = d == "50";
+            w.spec_100 = d == "100";
+        }
+        // The consolidated NDE result feeds the legacy RT / PT-MT fields that the
+        // reports still count on.
+        if let Some(res) = w.nde_result.as_deref().filter(|s| !s.is_empty()) {
+            let types = w.nde_types.clone().unwrap_or_default().to_uppercase();
+            let accepted = res.eq_ignore_ascii_case("Accepted");
+            let rejected = res.eq_ignore_ascii_case("Rejected");
+            if types.contains("RT") {
+                w.rt_date = w.nde_date.clone();
+                w.rt_accepted = accepted.then(|| "Y".to_string());
+                w.rt_rejected = rejected.then(|| "Y".to_string());
+            }
+            if types.contains("PT") || types.contains("MT") {
+                w.pt_mt_final = Some("Y".to_string());
             }
         }
         Ok(())
@@ -156,35 +234,15 @@ impl Store {
     pub fn create_weld(&self, w: &Weld, actor: &str) -> Result<i64> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
+        let cols = WRITE_COLS.join(", ");
+        let placeholders = WRITE_COLS.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let sql = format!(
+            "INSERT INTO welds ({cols}, created_by) VALUES ({placeholders}, ?)"
+        );
+        let mut vals = weld_write_values(&w);
+        vals.push(Box::new(actor.to_string()));
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO welds (unit, drawing_no, work_order, line_spec,
-                spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
-                material, schedule, size, thickness, weld_inches, joint_type, old_to_new,
-                weld_number, count_omission, stamp_number, date_welded, shop_or_field,
-                ut_thickness, pt_mt_prep, pt_mt_root, pt_mt_final, visual_insp, rt_date,
-                rt_accepted, rt_rejected, inches_of_defect, h2_bake_out, ferrite, pwht_date,
-                brinnel_complete, pmi_date, hydro_pressure, hydro_comp_date, wps_number,
-                description, file_location, status,
-                drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
-                created_by)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
-                     ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38,
-                     ?39,?40,?41,?42,?43,?44,?45,?46,?47,?48,?49,?50,?51)",
-            params![
-                w.unit, w.drawing_no, w.work_order, w.line_spec,
-                w.spec_5 as i64, w.spec_10 as i64, w.spec_20 as i64, w.spec_25 as i64,
-                w.spec_50 as i64, w.spec_100 as i64,
-                w.material, w.schedule, w.size, w.thickness, w.weld_inches, w.joint_type, w.old_to_new,
-                w.weld_number, w.count_omission as i64, w.stamp_number, w.date_welded, w.shop_or_field,
-                w.ut_thickness, w.pt_mt_prep, w.pt_mt_root, w.pt_mt_final, w.visual_insp, w.rt_date,
-                w.rt_accepted, w.rt_rejected, w.inches_of_defect, w.h2_bake_out, w.ferrite, w.pwht_date,
-                w.brinnel_complete, w.pmi_date, w.hydro_pressure, w.hydro_comp_date, w.wps_number,
-                w.description, w.file_location, w.status,
-                w.drawing_id, w.groove_type, w.process, w.bubble_page, w.bubble_x, w.bubble_y, w.joint_x, w.joint_y,
-                actor
-            ],
-        )?;
+        conn.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
         let id = conn.last_insert_rowid();
         drop(conn);
         self.audit(actor, "create", "weld", &id.to_string(), w.weld_number.as_deref().unwrap_or(""));
@@ -194,39 +252,12 @@ impl Store {
     pub fn update_weld(&self, w: &Weld, actor: &str) -> Result<()> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
+        let set = WRITE_COLS.iter().map(|c| format!("{c}=?")).collect::<Vec<_>>().join(", ");
+        let sql = format!("UPDATE welds SET {set}, updated_at=datetime('now') WHERE id=?");
+        let mut vals = weld_write_values(&w);
+        vals.push(Box::new(w.id));
         let conn = self.conn.lock().unwrap();
-        let n = conn.execute(
-            "UPDATE welds SET unit=?1, drawing_no=?2, work_order=?3, line_spec=?4,
-                spec_5=?5, spec_10=?6, spec_20=?7, spec_25=?8, spec_50=?9, spec_100=?10,
-                material=?11, schedule=?12, size=?13, thickness=?14, weld_inches=?15,
-                joint_type=?16, old_to_new=?17, weld_number=?18, count_omission=?19,
-                stamp_number=?20, date_welded=?21, shop_or_field=?22, ut_thickness=?23,
-                pt_mt_prep=?24, pt_mt_root=?25, pt_mt_final=?26, visual_insp=?27, rt_date=?28,
-                rt_accepted=?29, rt_rejected=?30, inches_of_defect=?31, h2_bake_out=?32,
-                ferrite=?33, pwht_date=?34, brinnel_complete=?35, pmi_date=?36,
-                hydro_pressure=?37, hydro_comp_date=?38, wps_number=?39, description=?40,
-                file_location=?41, status=?42,
-                drawing_id=?43, groove_type=?44, process=?45, bubble_page=?46, bubble_x=?47,
-                bubble_y=?48, joint_x=?49, joint_y=?50,
-                updated_at=datetime('now')
-             WHERE id=?51",
-            params![
-                w.unit, w.drawing_no, w.work_order, w.line_spec,
-                w.spec_5 as i64, w.spec_10 as i64, w.spec_20 as i64, w.spec_25 as i64,
-                w.spec_50 as i64, w.spec_100 as i64,
-                w.material, w.schedule, w.size, w.thickness, w.weld_inches,
-                w.joint_type, w.old_to_new, w.weld_number, w.count_omission as i64,
-                w.stamp_number, w.date_welded, w.shop_or_field, w.ut_thickness,
-                w.pt_mt_prep, w.pt_mt_root, w.pt_mt_final, w.visual_insp, w.rt_date,
-                w.rt_accepted, w.rt_rejected, w.inches_of_defect, w.h2_bake_out,
-                w.ferrite, w.pwht_date, w.brinnel_complete, w.pmi_date,
-                w.hydro_pressure, w.hydro_comp_date, w.wps_number, w.description,
-                w.file_location, w.status,
-                w.drawing_id, w.groove_type, w.process, w.bubble_page, w.bubble_x,
-                w.bubble_y, w.joint_x, w.joint_y,
-                w.id
-            ],
-        )?;
+        let n = conn.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
         if n == 0 {
             return Err(Error::NotFound);
         }

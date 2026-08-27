@@ -71,6 +71,13 @@ export interface Weld {
   description?: string | null;
   file_location?: string | null;
   status: string;
+  nde_percent?: string | null;
+  nde_types?: string | null;
+  nde_result?: string | null;
+  nde_date?: string | null;
+  pwht_temp?: string | null;
+  brinnel_value?: string | null;
+  hydro_time_held?: string | null;
   drawing_id?: number | null;
   groove_type?: string | null;
   process?: string | null;

@@ -66,10 +66,6 @@ export function Login({ settings }: { settings: Settings }) {
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <p className="faint" style={{ textAlign: "center", marginTop: 18, fontSize: 12 }}>
-          First run? Sign in as <strong>admin</strong> / <strong>password</strong>.
-          You'll be asked to set a new password.
-        </p>
       </div>
     </div>
   );

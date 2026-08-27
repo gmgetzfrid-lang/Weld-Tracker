@@ -48,6 +48,12 @@ fn seed_lookups(store: &Store) -> Result<()> {
             &["Required", "Requested", "Pending", "PWHT", "Clear"],
         ),
         ("shop_field", &["SHOP", "FW"]),
+        ("nde_percent", &["5%", "10%", "20%", "100%"]),
+        (
+            "nde_type",
+            &["PT", "PT Root & Final", "MT", "MT Root & Final", "UT", "RT"],
+        ),
+        ("nde_result", &["Accepted", "Rejected"]),
         ("process", &["SMAW", "GMAW", "GTAW", "FCAW", "SAW"]),
         (
             "groove_type",

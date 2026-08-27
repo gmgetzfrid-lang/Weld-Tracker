@@ -92,6 +92,7 @@ impl Store {
         const MIGRATIONS: &[(i64, &str)] = &[
             (1, include_str!("migrations/0001_init.sql")),
             (2, include_str!("migrations/0002_drawings.sql")),
+            (3, include_str!("migrations/0003_nde.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {
@@ -119,7 +120,8 @@ impl Store {
     }
 }
 
-/// Compute weld inches from a nominal pipe size (matches `=Size*PI()`).
+/// Diameter inches for a weld: the nominal pipe size itself (a 6" pipe weld is
+/// 6 diameter-inches). This is the productivity metric welders track.
 pub fn weld_inches(size: f64) -> f64 {
-    size * std::f64::consts::PI
+    size
 }

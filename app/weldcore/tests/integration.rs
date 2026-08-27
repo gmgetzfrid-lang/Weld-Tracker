@@ -109,8 +109,8 @@ fn weld_crud_and_derived_fields() {
     let s = store();
     let id = s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "admin").unwrap();
     let w = s.get_weld(id).unwrap();
-    // weld inches = size * PI
-    assert!((w.weld_inches.unwrap() - 3.0 * std::f64::consts::PI).abs() < 1e-9);
+    // weld inches = diameter inches = the nominal size (3" -> 3 DI)
+    assert!((w.weld_inches.unwrap() - 3.0).abs() < 1e-9);
     // thickness looked up from pipe table
     assert_eq!(w.thickness, Some(0.216));
     // list + count with filter
@@ -225,7 +225,7 @@ fn report_semantics_match_workbook() {
 
     // Monthly weld-inches row tracks butt welds only.
     let m = s.report_monthly(2026).unwrap();
-    let bw_inches = 3.0 * std::f64::consts::PI; // one butt weld, size 3
+    let bw_inches = 3.0; // one butt weld, size 3 -> 3 diameter-inches
     assert!((m.total_inches[0] - bw_inches).abs() < 1e-6);
 }
 
@@ -277,7 +277,7 @@ fn drawing_bubble_annotation_flow() {
     assert_eq!(w.thickness, Some(0.216));
     assert_eq!(w.groove_type.as_deref(), Some("Single-V"));
     assert_eq!(w.process.as_deref(), Some("GTAW"));
-    assert!((w.weld_inches.unwrap() - 3.0 * std::f64::consts::PI).abs() < 1e-9);
+    assert!((w.weld_inches.unwrap() - 3.0).abs() < 1e-9);
 
     // Moving a bubble only touches coordinates.
     s.set_weld_bubble(w1.id, 1, 0.7, 0.3, 0.7, 0.35).unwrap();
@@ -296,6 +296,32 @@ fn drawing_bubble_annotation_flow() {
     s.delete_drawing(did).unwrap();
     assert_eq!(s.count_welds(&WeldFilter::default()).unwrap(), 2);
     assert!(s.get_weld(w1.id).unwrap().drawing_id.is_none());
+}
+
+#[test]
+fn nde_fields_map_to_report_fields() {
+    let s = store();
+    let mut w = weld("100", "BW", "K1", "2026-01-10");
+    w.spec_5 = false;
+    w.nde_percent = Some("10%".into());
+    w.nde_types = Some("RT".into());
+    w.nde_result = Some("Accepted".into());
+    w.nde_date = Some("2026-01-12".into());
+    let id = s.create_weld(&w, "admin").unwrap();
+    let got = s.get_weld(id).unwrap();
+    // NDE% drove the coverage spec flag
+    assert!(got.spec_10 && !got.spec_5);
+    // RT result mapped to the legacy fields the reports count
+    assert_eq!(got.rt_date.as_deref(), Some("2026-01-12"));
+    assert_eq!(got.rt_accepted.as_deref(), Some("Y"));
+    assert!(got.rt_rejected.is_none());
+
+    // A PT/MT result marks pt_mt_final
+    let mut p = weld("100", "SW", "K1", "2026-01-11");
+    p.nde_types = Some("PT Root & Final".into());
+    p.nde_result = Some("Accepted".into());
+    let pid = s.create_weld(&p, "admin").unwrap();
+    assert_eq!(s.get_weld(pid).unwrap().pt_mt_final.as_deref(), Some("Y"));
 }
 
 #[test]

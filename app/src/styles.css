@@ -360,6 +360,53 @@ tr:hover .wo-link { color: var(--navy); }
 .segmented .seg.on.bad { background: var(--danger); color: #fff; }
 .segmented .seg.on.mid { background: var(--st-pending); color: #fff; }
 
+/* Multi-select chips */
+.multi { display: flex; gap: 4px; flex-wrap: wrap; }
+.multi-view { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--border-strong); background: #fff; color: var(--text-muted); padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.chip.sm { padding: 2px 8px; font-size: 11px; }
+.chip:hover { border-color: var(--blue); }
+.chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.stack { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+
+/* Weld table */
+.weldtable { }
+.wt-bar { display: flex; align-items: center; gap: 12px; padding: 10px 4px; }
+.wt-title { font-weight: 700; color: var(--navy); font-size: 14px; }
+.wt-bar .spacer { flex: 1; }
+.wt-editing { background: #fff7e6; border: 1px solid #f0d98a; color: #7a5c00; font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 8px; margin-bottom: 8px; }
+.wt-scroll { max-height: 68vh; }
+table.wt th.sortable { cursor: pointer; user-select: none; }
+table.wt th.sortable:hover { color: var(--navy); }
+table.wt td { vertical-align: top; }
+.chev { border: 0; background: transparent; cursor: pointer; color: var(--text-muted); font-size: 12px; padding: 2px 4px; border-radius: 5px; }
+.chev:hover { background: #eef3ff; color: var(--navy); }
+tr.wt-open > td { background: #f5f8ff; }
+tr.wt-detail > td { background: #f5f8ff; padding: 0; }
+.detail-panel { padding: 14px 18px; border-left: 3px solid var(--blue); }
+.dp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 22px; }
+.dp-field { display: flex; flex-direction: column; gap: 2px; }
+.dp-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); font-weight: 600; }
+.dp-val { font-size: 13px; }
+.dp-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+/* Work order record header */
+.wo-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.wo-header-title h2 { margin: 0; font-size: 22px; color: var(--navy); }
+.wo-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--teal); font-weight: 700; }
+.wo-header .spacer { flex: 1; }
+.section-head { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 12px; }
+.section-head h3 { margin: 0; }
+.section-head .muted { font-size: 12px; }
+.empty-hint { color: var(--text-muted); padding: 14px 16px; background: var(--surface-2); border: 1px dashed var(--border-strong); border-radius: 10px; margin-bottom: 24px; }
+.link { color: var(--blue); cursor: pointer; font-weight: 600; }
+.drawing-card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: var(--surface); box-shadow: var(--shadow-sm); cursor: pointer; transition: all .12s; }
+.drawing-card:hover { border-color: var(--blue); box-shadow: var(--shadow); transform: translateY(-2px); }
+.drawing-card-top { display: flex; align-items: center; gap: 8px; }
+.drawing-card-top strong { color: var(--navy); flex: 1; }
+.drawing-ico { font-size: 20px; }
+.drawing-card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+
 /* Fill-down affordance */
 .filldown { border: 0; background: transparent; cursor: pointer; color: var(--blue); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
 .filldown:hover { background: #eef3ff; }

@@ -230,6 +230,42 @@ export function Combobox({
   );
 }
 
+/** Multi-select toggle chips backed by a comma-joined string. */
+export function InlineMulti({
+  value,
+  options,
+  onCommit,
+  readOnly,
+}: {
+  value: string | null | undefined;
+  options: string[];
+  onCommit: (v: string | null) => void;
+  readOnly?: boolean;
+}) {
+  const sel = (value ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (readOnly) {
+    if (sel.length === 0) return <span className="inline-empty">—</span>;
+    return (
+      <span className="multi-view">
+        {sel.map((s) => <span key={s} className="chip on sm">{s}</span>)}
+      </span>
+    );
+  }
+  const toggle = (o: string) => {
+    const next = sel.includes(o) ? sel.filter((x) => x !== o) : [...sel, o];
+    onCommit(next.length ? next.join(", ") : null);
+  };
+  return (
+    <div className="multi">
+      {options.map((o) => (
+        <button key={o} type="button" className={`chip sm ${sel.includes(o) ? "on" : ""}`} onClick={() => toggle(o)}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Segmented chip control — click a chip to set the value (no dropdown). */
 export function Segmented({
   value,

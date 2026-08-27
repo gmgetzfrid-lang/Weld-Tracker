@@ -135,6 +135,21 @@ pub struct Weld {
     pub file_location: Option<String>,
     #[serde(default)]
     pub status: String,
+    // --- consolidated NDE / heat-treat / pressure test ---
+    #[serde(default)]
+    pub nde_percent: Option<String>,
+    #[serde(default)]
+    pub nde_types: Option<String>,
+    #[serde(default)]
+    pub nde_result: Option<String>,
+    #[serde(default)]
+    pub nde_date: Option<String>,
+    #[serde(default)]
+    pub pwht_temp: Option<String>,
+    #[serde(default)]
+    pub brinnel_value: Option<String>,
+    #[serde(default)]
+    pub hydro_time_held: Option<String>,
     // --- drawing / weld-bubble annotation ---
     #[serde(default)]
     pub drawing_id: Option<i64>,
