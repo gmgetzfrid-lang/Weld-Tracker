@@ -1,0 +1,23 @@
+# Rust
+/app/target
+target/
+
+# Node
+node_modules/
+/app/dist
+/app/dist-out
+
+# Tauri generated
+/app/src-tauri/gen
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Local databases
+*.db
+*.db-wal
+*.db-shm

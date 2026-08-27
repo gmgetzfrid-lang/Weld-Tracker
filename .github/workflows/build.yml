@@ -1,0 +1,72 @@
+name: Build Windows App
+
+# Builds the Kern Energy Weld Tracker as a per-user Windows installer (no admin
+# rights required to install) plus the raw portable executable. Runs on every
+# push to the app, and publishes a downloadable Release when you push a tag
+# like `v0.1.0`.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - ".github/workflows/build.yml"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build Tauri app (NSIS per-user installer)
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-out
+          cp target/release/bundle/nsis/*-setup.exe dist-out/ || true
+          cp target/release/weld-tracker.exe dist-out/WeldTracker-portable.exe || true
+          ls -la dist-out
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weld-tracker-windows
+          path: app/dist-out/*
+          if-no-files-found: error
+
+      - name: Publish Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/dist-out/*
+          generate_release_notes: true

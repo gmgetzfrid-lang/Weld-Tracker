@@ -1,0 +1,213 @@
+use weldcore::seed::{DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME};
+use weldcore::{Store, Weld, WeldFilter, Welder};
+
+fn store() -> Store {
+    Store::open_memory().expect("open memory db")
+}
+
+fn mk_welder(stamp: &str, name: &str) -> Welder {
+    Welder {
+        id: 0,
+        stamp: stamp.into(),
+        name: name.into(),
+        shift: None,
+        crew: None,
+        active: true,
+        process: None,
+        wpqs: None,
+        wpq_status: None,
+        training: None,
+        notes: None,
+        created_at: String::new(),
+        updated_at: String::new(),
+    }
+}
+
+fn weld(wo: &str, joint: &str, stamp: &str, date: &str) -> Weld {
+    Weld {
+        work_order: Some(wo.into()),
+        joint_type: Some(joint.into()),
+        stamp_number: Some(stamp.into()),
+        date_welded: Some(date.into()),
+        weld_number: Some(format!("W-{wo}-{joint}-{stamp}")),
+        size: Some(3.0),
+        schedule: Some("STD/40s".into()),
+        spec_5: true,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn default_admin_seeded_and_login() {
+    let s = store();
+    assert!(!s.needs_bootstrap().unwrap());
+    let u = s.login(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD).unwrap();
+    assert_eq!(u.role, "admin");
+    assert!(u.must_change_password, "default admin must change password");
+    assert!(s.login("admin", "wrong").is_err());
+}
+
+#[test]
+fn first_login_password_change_flow() {
+    let s = store();
+    // wrong current password rejected
+    assert!(s
+        .change_password("admin", "nope", "newsecret")
+        .is_err());
+    s.change_password("admin", DEFAULT_ADMIN_PASSWORD, "newsecret")
+        .unwrap();
+    let u = s.login("admin", "newsecret").unwrap();
+    assert!(!u.must_change_password);
+    // too-short password rejected
+    assert!(s.change_password("admin", "newsecret", "123").is_err());
+}
+
+#[test]
+fn user_management_and_permissions() {
+    let s = store();
+    // viewer cannot create users
+    assert!(s
+        .create_user("viewer", "bob", "Bob", "editor", "secret1", true)
+        .is_err());
+    let bob = s
+        .create_user("admin", "bob", "Bob", "editor", "secret1", true)
+        .unwrap();
+    assert_eq!(bob.role, "editor");
+    // duplicate username rejected
+    assert!(s
+        .create_user("admin", "bob", "Bob2", "viewer", "secret1", true)
+        .is_err());
+    // bob must change password on first login
+    let logged = s.login("bob", "secret1").unwrap();
+    assert!(logged.must_change_password);
+    // cannot disable the last admin
+    let admin = s.login("admin", DEFAULT_ADMIN_PASSWORD).unwrap();
+    assert!(s.set_user_active("admin", admin.id, false).is_err());
+    // admin reset forces change
+    s.admin_reset_password("admin", bob.id, "reset123").unwrap();
+    assert!(s.login("bob", "reset123").unwrap().must_change_password);
+}
+
+#[test]
+fn pipe_thickness_lookup() {
+    let s = store();
+    // 3" STD/40s wall = 0.216 (from Pipe Table)
+    assert_eq!(s.lookup_thickness(3.0, "STD/40s").unwrap(), Some(0.216));
+    // 6" 80/XH wall = 0.432
+    assert_eq!(s.lookup_thickness(6.0, "XH").unwrap(), Some(0.432));
+    assert_eq!(s.lookup_thickness(999.0, "40").unwrap(), None);
+    assert!(!s.list_pipe().unwrap().is_empty());
+}
+
+#[test]
+fn weld_crud_and_derived_fields() {
+    let s = store();
+    let id = s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "admin").unwrap();
+    let w = s.get_weld(id).unwrap();
+    // weld inches = size * PI
+    assert!((w.weld_inches.unwrap() - 3.0 * std::f64::consts::PI).abs() < 1e-9);
+    // thickness looked up from pipe table
+    assert_eq!(w.thickness, Some(0.216));
+    // list + count with filter
+    let f = WeldFilter {
+        joint_type: Some("BW".into()),
+        ..Default::default()
+    };
+    assert_eq!(s.count_welds(&f).unwrap(), 1);
+    s.delete_weld(id, "admin").unwrap();
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 0);
+}
+
+#[test]
+fn welder_crud_and_delete_guard() {
+    let s = store();
+    let id = s.create_welder(&mk_welder("K1", "Alex Fernandez")).unwrap();
+    // duplicate stamp rejected
+    assert!(s.create_welder(&mk_welder("K1", "Other")).is_err());
+    // add a weld referencing the stamp, deletion now blocked
+    s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "admin").unwrap();
+    assert!(s.delete_welder(id).is_err());
+    assert_eq!(s.list_welders(true, "name").unwrap().len(), 1);
+}
+
+#[test]
+fn reports_summary_job_welder_monthly_client() {
+    let s = store();
+    // Two BW welds by K1, one RT'd + rejected; one SW by K4.
+    let mut a = weld("100", "BW", "K1", "2026-01-10");
+    a.rt_date = Some("2026-01-12".into());
+    a.rt_accepted = Some("Y".into());
+    s.create_weld(&a, "admin").unwrap();
+
+    let mut b = weld("100", "BW", "K1", "2026-01-20");
+    b.rt_date = Some("2026-01-22".into());
+    b.rt_rejected = Some("Y".into());
+    s.create_weld(&b, "admin").unwrap();
+
+    let c = weld("200", "SW", "K4", "2026-02-05");
+    s.create_weld(&c, "admin").unwrap();
+
+    // count-omitted weld should be ignored
+    let mut omit = weld("100", "BW", "K1", "2026-01-25");
+    omit.count_omission = true;
+    s.create_weld(&omit, "admin").unwrap();
+
+    let sum = s.report_summary().unwrap();
+    assert_eq!(sum.total.welds, 3, "omitted weld excluded");
+    let bw = sum.by_joint.iter().find(|j| j.joint_type == "BW").unwrap();
+    assert_eq!(bw.welds, 2);
+    assert_eq!(bw.rt, 2);
+    assert_eq!(bw.rejected, 1);
+    assert!((bw.rt_pct - 1.0).abs() < 1e-9);
+    assert!((bw.reject_rate - 0.5).abs() < 1e-9); // 1 reject / 2 rt
+
+    let job = s.report_job("100").unwrap();
+    assert_eq!(job.butt.welds, 2);
+    assert_eq!(job.total_welds, 2);
+
+    let wr = s.report_welder("K1").unwrap();
+    assert_eq!(wr.total.welds, 2);
+
+    let ws = s.report_welder_stats("5").unwrap();
+    assert!(ws.rows.iter().any(|r| r.stamp == "K1"));
+
+    let monthly = s.report_monthly(2026).unwrap();
+    let bw_m = monthly.joints.iter().find(|j| j.joint_type == "BW").unwrap();
+    assert_eq!(bw_m.welds[0], 2); // January
+
+    let client = s.report_client(1, 2026).unwrap();
+    let k1 = client.iter().find(|r| r.stamp == "K1").unwrap();
+    assert_eq!(k1.weld_count, 2);
+    assert_eq!(k1.rejects, 1);
+    assert!((k1.reject_rate - 0.5).abs() < 1e-9); // 1 reject / 2 welds (client convention)
+
+    let daily = s.report_daily("2026-01-10").unwrap();
+    assert_eq!(daily.total.welds, 1);
+}
+
+#[test]
+fn rejected_weld_repair_workflow() {
+    let s = store();
+    let mut w = weld("100", "BW", "K1", "2026-01-10");
+    w.weld_number = Some("W122".into());
+    w.rt_rejected = Some("Y".into());
+    let id = s.create_weld(&w, "admin").unwrap();
+
+    let created = s.create_repair(id, true, "admin").unwrap();
+    assert_eq!(created.len(), 3); // repair + 2 tracers
+
+    let repair = s.get_weld(created[0]).unwrap();
+    assert_eq!(repair.weld_number.as_deref(), Some("W122R1"));
+    assert!(repair.stamp_number.is_none(), "welder cleared on repair");
+    assert!(repair.rt_rejected.is_none(), "NDE cleared on repair");
+    assert_eq!(repair.status, "Required");
+
+    let tracer1 = s.get_weld(created[1]).unwrap();
+    assert_eq!(tracer1.weld_number.as_deref(), Some("W122T1"));
+    assert_eq!(tracer1.stamp_number.as_deref(), Some("K1")); // original welder captured
+
+    // a second repair increments to R2
+    let again = s.create_repair(id, false, "admin").unwrap();
+    let repair2 = s.get_weld(again[0]).unwrap();
+    assert_eq!(repair2.weld_number.as_deref(), Some("W122R2"));
+}
