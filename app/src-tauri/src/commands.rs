@@ -22,8 +22,20 @@ impl AppState {
     fn current(&self) -> Option<User> {
         self.session.lock().unwrap().clone()
     }
-    fn require_login(&self) -> Result<User, String> {
+    /// The signed-in user, regardless of pending password change. Only
+    /// change_password / logout / current_user should use this.
+    fn session_user(&self) -> Result<User, String> {
         self.current().ok_or_else(|| "not signed in".to_string())
+    }
+    /// The signed-in user, but only once they have cleared the forced
+    /// password change. Every data/report/admin command goes through here so
+    /// a default-credential session cannot act until the password is changed.
+    fn require_login(&self) -> Result<User, String> {
+        let u = self.session_user()?;
+        if u.must_change_password {
+            return Err("you must change your password before continuing".into());
+        }
+        Ok(u)
     }
     fn require_editor(&self) -> Result<User, String> {
         let u = self.require_login()?;
@@ -74,7 +86,7 @@ pub fn change_password(
     current_password: String,
     new_password: String,
 ) -> R<()> {
-    let user = state.require_login()?;
+    let user = state.session_user()?;
     e(state
         .store
         .change_password(&user.username, &current_password, &new_password))?;
