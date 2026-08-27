@@ -45,26 +45,27 @@ interface NavDef {
   label: string;
   icon: string;
   group: string;
+  desc: string;
   admin?: boolean;
 }
 
 const NAV: NavDef[] = [
-  { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview" },
-  { key: "drawings", label: "Drawings", icon: "📐", group: "Records" },
-  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records" },
-  { key: "roster", label: "Welder Roster", icon: "☺", group: "Records" },
-  { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports" },
-  { key: "welderreport", label: "Welder Report", icon: "◔", group: "Reports" },
-  { key: "monthly", label: "Monthly Report", icon: "▦", group: "Reports" },
-  { key: "daily", label: "Daily Weld Count", icon: "☀", group: "Reports" },
-  { key: "job", label: "Job Report", icon: "⚙", group: "Reports" },
-  { key: "client", label: "Client / TSA Report", icon: "✦", group: "Reports" },
-  { key: "qm", label: "QM Summary", icon: "✓", group: "Reports" },
-  { key: "pipe", label: "Pipe Table", icon: "◎", group: "Reference" },
-  { key: "legend", label: "Criteria Legend", icon: "✎", group: "Reference" },
-  { key: "instructions", label: "Instructions", icon: "ℹ", group: "Reference" },
-  { key: "users", label: "Users", icon: "⚷", group: "Administration", admin: true },
-  { key: "settings", label: "Settings", icon: "⚑", group: "Administration", admin: true },
+  { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "Your at-a-glance totals — weld count, RT coverage and reject rate." },
+  { key: "drawings", label: "Drawings", icon: "📐", group: "Records", desc: "Add an isometric, drop weld bubbles on it, and the weld log fills itself. Start here." },
+  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "Every weld on record. Search, filter, edit, or log a repair." },
+  { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
+  { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports", desc: "Per-welder counts and reject rates by NDE examination level." },
+  { key: "welderreport", label: "Welder Report", icon: "◔", group: "Reports", desc: "A single welder's full breakdown by joint type." },
+  { key: "monthly", label: "Monthly Report", icon: "▦", group: "Reports", desc: "Weld counts, RT and rejects across the twelve months of a year." },
+  { key: "daily", label: "Daily Weld Count", icon: "☀", group: "Reports", desc: "How many welds were made and RT'd on a given day." },
+  { key: "job", label: "Job Report", icon: "⚙", group: "Reports", desc: "Totals and examination completion for one work order." },
+  { key: "client", label: "Client / TSA Report", icon: "✦", group: "Reports", desc: "The monthly per-welder summary for the client." },
+  { key: "qm", label: "QM Summary", icon: "✓", group: "Reports", desc: "Quality-manager roll-up of acceptance and rejection by welder." },
+  { key: "pipe", label: "Pipe Table", icon: "◎", group: "Reference", desc: "Wall thickness by nominal size and schedule — drives auto-fill." },
+  { key: "legend", label: "Criteria Legend", icon: "✎", group: "Reference", desc: "What each line-spec criteria category means." },
+  { key: "instructions", label: "Instructions", icon: "ℹ", group: "Reference", desc: "How the app works: repair procedure, statuses and key terms." },
+  { key: "users", label: "Users", icon: "⚷", group: "Administration", admin: true, desc: "Create login profiles and set who can view or edit." },
+  { key: "settings", label: "Settings", icon: "⚑", group: "Administration", admin: true, desc: "Branding, dropdown lists and your own password." },
 ];
 
 export function App() {
@@ -93,7 +94,8 @@ export function App() {
   }
 
   const groups = Array.from(new Set(NAV.map((n) => n.group)));
-  const title = NAV.find((n) => n.key === page)?.label ?? "";
+  const current = NAV.find((n) => n.key === page);
+  const title = current?.label ?? "";
   const initials = (user.display_name || user.username)
     .split(/\s+/)
     .map((s) => s[0])
@@ -121,6 +123,7 @@ export function App() {
                     key={n.key}
                     className={`nav-item ${page === n.key ? "active" : ""}`}
                     onClick={() => setPage(n.key)}
+                    title={n.desc}
                   >
                     <span className="nav-ico">{n.icon}</span>
                     {n.label}
@@ -137,7 +140,10 @@ export function App() {
 
       <main className="main">
         <header className="topbar">
-          <h2>{title}</h2>
+          <div>
+            <h2>{title}</h2>
+            {current?.desc && <div className="topbar-sub">{current.desc}</div>}
+          </div>
           <div className="spacer" />
           <div className="user-chip">
             <div className="user-avatar">{initials}</div>
