@@ -12,22 +12,53 @@ needs no server, no Excel and no internet connection.
 
 ---
 
-## Download & install (no admin rights)
+## Download
 
 You do not need Node, Rust, or admin rights to *use* the app — those are only for
-building it. The Windows installer is produced automatically by GitHub Actions:
+building it. GitHub Actions builds the Windows binaries automatically: download the
+**`weld-tracker-windows`** artifact from a green *Build Windows App* run (or the
+published **Release** if you pushed a `v*` tag). It contains:
 
-1. Push a tag such as `v0.1.0` (or open the **Actions** tab and run the
-   *Build Windows App* workflow manually).
-2. Download the artifact **`weld-tracker-windows`** from the workflow run, or grab
-   the published **Release** if you pushed a tag.
-3. Run `Weld Tracker_x.y.z_x64-setup.exe`. It installs **per-user** into
-   `%LOCALAPPDATA%` — Windows will not ask for an administrator password.
-   A portable `WeldTracker-portable.exe` is also included if you prefer not to
-   install at all.
+- `Weld Tracker_x.y.z_x64-setup.exe` — the installer
+- `WeldTracker-portable.exe` — the no-install executable
+- `weld-tracker.portable` — a marker that enables shared mode
+- `READ-ME-FIRST.txt` — deployment steps
 
-The database is created automatically in your user profile
-(`%APPDATA%\com.kernenergy.weldtracker\weldtracker.db`).
+## Deployment — shared team database vs. single PC
+
+**Shared (a team on a network drive) — the usual choice.** Everyone logs in with
+their own profile and reads/writes the same data:
+
+1. Copy **`WeldTracker-portable.exe`** and **`weld-tracker.portable`** together into
+   a folder on your network drive, e.g. `\\server\apps\WeldTracker\`.
+2. Each person runs `WeldTracker-portable.exe` from that folder — no install, no
+   admin rights.
+3. The shared SQLite database is created once in a `data\` subfolder **next to the
+   exe on the share**, so all users see the same work orders, welds and reports.
+
+Prefer to point at an explicit file? Put a `weld-tracker.json` next to the exe:
+
+```json
+{ "database_path": "\\\\server\\apps\\WeldTracker\\data\\weldtracker.db" }
+```
+
+(or set the `WELDTRACKER_DB` environment variable to that path.)
+
+**Single PC.** Run `...-setup.exe` (installs per-user into `%LOCALAPPDATA%`, no
+admin). Its database stays on that machine at
+`%APPDATA%\com.kernenergy.weldtracker\weldtracker.db`.
+
+**Where the data lives** is resolved in this order: `WELDTRACKER_DB` env var →
+`weld-tracker.json` next to the exe → `data\weldtracker.db` next to the exe (when
+the `weld-tracker.portable` marker is present) → per-user app data. When the
+database is shared, the app uses network-safe locking (rollback journal +
+busy-timeout) so concurrent users don't collide. **Settings → About** shows the
+exact database file each user is on.
+
+> Concurrency note: a shared SQLite file on an SMB share is well suited to a small
+> team logging welds. If you grow to many people writing at the exact same instant
+> and want bulletproof concurrency, the natural next step is a small database
+> server (e.g. Postgres) — ask and it can be added.
 
 ## First sign-in
 

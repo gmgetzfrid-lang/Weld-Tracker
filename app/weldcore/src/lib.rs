@@ -49,9 +49,22 @@ pub struct Store {
 impl Store {
     /// Open (creating if needed) a database at `path`, run migrations and seed
     /// the reference data + default admin account.
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Store> {
+    ///
+    /// `network_safe` selects locking suited to a shared file on a network drive
+    /// (multiple users, multiple machines): a rollback journal (WAL cannot work
+    /// across an SMB share), full synchronous writes to survive disconnects, and
+    /// a generous busy-timeout so concurrent writers retry instead of failing.
+    /// For a purely local single-user database, WAL is faster.
+    pub fn open<P: AsRef<Path>>(path: P, network_safe: bool) -> Result<Store> {
         let conn = Connection::open(path)?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
+        if network_safe {
+            conn.pragma_update(None, "journal_mode", "TRUNCATE")?;
+            conn.pragma_update(None, "synchronous", "FULL")?;
+        } else {
+            conn.pragma_update(None, "journal_mode", "WAL")?;
+            conn.pragma_update(None, "synchronous", "NORMAL")?;
+        }
+        conn.busy_timeout(std::time::Duration::from_secs(15))?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         let store = Store {
             conn: Mutex::new(conn),

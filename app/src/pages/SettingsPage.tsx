@@ -25,6 +25,8 @@ export function SettingsPage() {
   const [showChangePw, setShowChangePw] = useState(false);
   const [kind, setKind] = useState("joint_type");
   const [newVal, setNewVal] = useState("");
+  const [db, setDb] = useState<{ path: string; shared: boolean } | null>(null);
+  useEffect(() => { api.dbInfo().then(setDb).catch(() => {}); }, []);
 
   const loadLookups = () => api.lookupsGrouped().then(setLookups).catch(() => {});
   useEffect(() => {
@@ -134,9 +136,26 @@ export function SettingsPage() {
         <h3>About</h3>
         <dl className="kv">
           <dt>Application</dt><dd>Kern Energy Weld Tracker v0.1</dd>
-          <dt>Data storage</dt><dd style={{ fontWeight: 400 }}>Local SQLite database in your user profile (no server, no admin rights).</dd>
+          <dt>Database mode</dt>
+          <dd>
+            {db == null ? "…" : db.shared
+              ? <span className="badge badge-green">Shared — everyone on this database sees the same data</span>
+              : <span className="badge badge-gray">This PC only (local)</span>}
+          </dd>
+          <dt>Database file</dt>
+          <dd style={{ fontWeight: 400, wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+            {db?.path ?? "…"}
+          </dd>
           <dt>Converted from</dt><dd style={{ fontWeight: 400 }}>Weld_Log_Statistics workbook</dd>
         </dl>
+        {db && !db.shared && (
+          <p className="hint" style={{ marginTop: 10 }}>
+            To share this data across your team, put the portable app on a network
+            drive with a <code>weld-tracker.portable</code> marker file, or set a{" "}
+            <code>weld-tracker.json</code> pointing <code>database_path</code> to a
+            shared location. See the README.
+          </p>
+        )}
       </div>
 
       {showChangePw && <ChangePassword onClose={() => setShowChangePw(false)} />}

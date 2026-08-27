@@ -13,13 +13,17 @@ use weldcore::{
 pub struct AppState {
     pub store: Store,
     pub session: Mutex<Option<User>>,
+    pub db_path: String,
+    pub db_shared: bool,
 }
 
 impl AppState {
-    pub fn new(store: Store) -> Self {
+    pub fn new(store: Store, db_path: String, db_shared: bool) -> Self {
         AppState {
             store,
             session: Mutex::new(None),
+            db_path,
+            db_shared,
         }
     }
     fn current(&self) -> Option<User> {
@@ -81,6 +85,21 @@ pub fn logout(state: State<AppState>) -> R<()> {
 #[tauri::command]
 pub fn current_user(state: State<AppState>) -> R<Option<User>> {
     Ok(state.current())
+}
+
+#[derive(serde::Serialize)]
+pub struct DbInfo {
+    pub path: String,
+    pub shared: bool,
+}
+
+/// Where the database lives and whether it is a shared (network) database.
+#[tauri::command]
+pub fn db_info(state: State<AppState>) -> R<DbInfo> {
+    Ok(DbInfo {
+        path: state.db_path.clone(),
+        shared: state.db_shared,
+    })
 }
 
 #[tauri::command]

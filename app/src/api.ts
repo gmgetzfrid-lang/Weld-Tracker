@@ -26,6 +26,7 @@ export const api = {
     invoke<User>("login", { username, password }),
   logout: () => invoke<void>("logout"),
   currentUser: () => invoke<User | null>("current_user"),
+  dbInfo: () => invoke<{ path: string; shared: boolean }>("db_info"),
   changePassword: (currentPassword: string, newPassword: string) =>
     invoke<void>("change_password", { currentPassword, newPassword }),
 

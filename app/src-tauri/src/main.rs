@@ -5,31 +5,78 @@ mod commands;
 
 use commands::*;
 use std::fs;
+use std::path::PathBuf;
 use tauri::Manager;
 use weldcore::Store;
+
+/// Decide where the database lives. Priority:
+///   1. `WELDTRACKER_DB` environment variable (shared).
+///   2. `weld-tracker.json` next to the executable with `"database_path"` (shared).
+///   3. `data/weldtracker.db` next to the executable, if a `weld-tracker.portable`
+///      marker file sits beside the exe and that folder is writable (shared —
+///      this is the "drop it on a network drive" mode).
+///   4. Otherwise the per-user app-data directory (local, single user).
+/// Returns (path, shared).
+fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
+    if let Ok(p) = std::env::var("WELDTRACKER_DB") {
+        if !p.trim().is_empty() {
+            return (PathBuf::from(p), true);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let cfg = dir.join("weld-tracker.json");
+            if let Ok(txt) = fs::read_to_string(&cfg) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                    if let Some(dp) = v.get("database_path").and_then(|x| x.as_str()) {
+                        if !dp.trim().is_empty() {
+                            return (PathBuf::from(dp), true);
+                        }
+                    }
+                }
+            }
+            if dir.join("weld-tracker.portable").exists() {
+                let data = dir.join("data");
+                if fs::create_dir_all(&data).is_ok() {
+                    let probe = data.join(".write-test");
+                    if fs::write(&probe, b"1").is_ok() {
+                        let _ = fs::remove_file(&probe);
+                        return (data.join("weldtracker.db"), true);
+                    }
+                }
+            }
+        }
+    }
+    let dir = app
+        .path()
+        .app_data_dir()
+        .expect("could not resolve app data dir");
+    fs::create_dir_all(&dir).ok();
+    (dir.join("weldtracker.db"), false)
+}
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Database lives in the per-user app data directory
-            // (%APPDATA%\com.kernenergy.weldtracker on Windows) so the app
-            // installs and runs without administrator rights.
-            let dir = app
-                .path()
-                .app_data_dir()
-                .expect("could not resolve app data dir");
-            fs::create_dir_all(&dir).ok();
-            let db_path = dir.join("weldtracker.db");
-            let store = Store::open(&db_path).expect("failed to open database");
-            app.manage(AppState::new(store));
+            let (db_path, shared) = resolve_db_path(app);
+            if let Some(parent) = db_path.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            let store = Store::open(&db_path, shared).expect("failed to open database");
+            app.manage(AppState::new(
+                store,
+                db_path.to_string_lossy().to_string(),
+                shared,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             login,
             logout,
             current_user,
+            db_info,
             change_password,
             list_users,
             create_user,
