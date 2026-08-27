@@ -184,7 +184,7 @@ function HeaderStep({
   const [lineSpecs, setLineSpecs] = useState<string[]>([]);
   useEffect(() => { api.distinctWeldValues("line_spec").then(setLineSpecs).catch(() => {}); }, []);
 
-  const NDE = ["5%", "10%", "20%", "25%", "50%", "100%"];
+  const NDE = ["5%", "10%", "20%", "100%"];
   const specKey = (p: string) => `spec_${p.replace("%", "")}` as keyof Drawing;
   const currentNde = NDE.find((p) => drawing[specKey(p)]);
   const setNde = (p: string) => {
