@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, rejectThreshold } from "../api";
 import type { WelderStatRow } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
 
 export function QmReport() {
   const [rows, setRows] = useState<WelderStatRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warn, setWarn] = useState(0.05);
 
   useEffect(() => {
+    rejectThreshold().then(setWarn);
     api.reportQm().then(setRows).catch((e) => setError(errMsg(e)));
   }, []);
 
@@ -59,7 +61,7 @@ export function QmReport() {
                   <td className="num">{num(r.total.pt_mt)}</td>
                   <td className="num">{num(r.total.rejected)}</td>
                   <td className="num">{pct(r.total.rt_pct)}</td>
-                  <td className="num" style={{ color: r.total.reject_rate > 0.05 ? "var(--danger)" : undefined }}>
+                  <td className="num" style={{ color: r.total.reject_rate > warn ? "var(--danger)" : undefined }}>
                     {pct(r.total.reject_rate)}
                   </td>
                 </tr>

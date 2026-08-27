@@ -101,6 +101,17 @@ export const api = {
   reportQm: () => invoke<WelderStatRow[]>("report_qm"),
 };
 
+/** Reject-rate warning threshold (as a 0..1 fraction) from settings. */
+export function rejectThreshold(): Promise<number> {
+  return api
+    .getSettings()
+    .then((s) => {
+      const p = parseFloat(s.reject_rate_warn_pct || "5");
+      return isFinite(p) ? p / 100 : 0.05;
+    })
+    .catch(() => 0.05);
+}
+
 export function errMsg(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;

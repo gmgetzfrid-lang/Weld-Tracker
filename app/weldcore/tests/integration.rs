@@ -67,24 +67,29 @@ fn user_management_and_permissions() {
     let s = store();
     // viewer cannot create users
     assert!(s
-        .create_user("viewer", "bob", "Bob", "editor", "secret1", true)
+        .create_user("eve", "viewer", "bob", "Bob", "editor", "secret1", true)
         .is_err());
     let bob = s
-        .create_user("admin", "bob", "Bob", "editor", "secret1", true)
+        .create_user("admin", "admin", "bob", "Bob", "editor", "secret1", true)
         .unwrap();
     assert_eq!(bob.role, "editor");
     // duplicate username rejected
     assert!(s
-        .create_user("admin", "bob", "Bob2", "viewer", "secret1", true)
+        .create_user("admin", "admin", "bob", "Bob2", "viewer", "secret1", true)
         .is_err());
     // bob must change password on first login
     let logged = s.login("bob", "secret1").unwrap();
     assert!(logged.must_change_password);
     // cannot disable the last admin
     let admin = s.login("admin", DEFAULT_ADMIN_PASSWORD).unwrap();
-    assert!(s.set_user_active("admin", admin.id, false).is_err());
+    assert!(s.set_user_active("admin", "admin", admin.id, false).is_err());
+    // role + active changes are audited and work
+    s.set_user_role("admin", "admin", bob.id, "viewer").unwrap();
+    s.set_user_active("admin", "admin", bob.id, false).unwrap();
+    assert!(s.login("bob", "secret1").is_err()); // disabled
+    s.set_user_active("admin", "admin", bob.id, true).unwrap();
     // admin reset forces change
-    s.admin_reset_password("admin", bob.id, "reset123").unwrap();
+    s.admin_reset_password("admin", "admin", bob.id, "reset123").unwrap();
     assert!(s.login("bob", "reset123").unwrap().must_change_password);
 }
 
@@ -183,6 +188,45 @@ fn reports_summary_job_welder_monthly_client() {
 
     let daily = s.report_daily("2026-01-10").unwrap();
     assert_eq!(daily.total.welds, 1);
+}
+
+#[test]
+fn report_semantics_match_workbook() {
+    let s = store();
+    // Butt weld welded Jan 10, RT shot Jan 12 accepted.
+    let mut bw = weld("100", "BW", "K1", "2026-01-10");
+    bw.rt_date = Some("2026-01-12".into());
+    bw.rt_accepted = Some("Y".into());
+    s.create_weld(&bw, "admin").unwrap();
+    // Socket weld welded Jan 10, PT/MT final done (no RT).
+    let mut sw = weld("100", "SW", "K1", "2026-01-10");
+    sw.pt_mt_final = Some("Y".into());
+    s.create_weld(&sw, "admin").unwrap();
+
+    // Job report: examined = butt RT (1) + other PT/MT (1) = 2.
+    let job = s.report_job("100").unwrap();
+    assert_eq!(job.total_welds, 2);
+    assert_eq!(job.total_examined, 2);
+    assert_eq!(job.other.pt_mt, 1);
+
+    // Client report counts butt welds only; inches sum all joints.
+    let client = s.report_client(1, 2026).unwrap();
+    let k1 = client.iter().find(|r| r.stamp == "K1").unwrap();
+    assert_eq!(k1.weld_count, 1); // BW only
+    assert!(k1.inches > 0.0);
+
+    // Daily counts welds by welded-date but RTs by RT-date.
+    let d12 = s.report_daily("2026-01-12").unwrap();
+    assert_eq!(d12.total.welds, 0);
+    assert_eq!(d12.total.rt, 1);
+    let d10 = s.report_daily("2026-01-10").unwrap();
+    assert_eq!(d10.total.welds, 2);
+    assert_eq!(d10.total.rt, 0);
+
+    // Monthly weld-inches row tracks butt welds only.
+    let m = s.report_monthly(2026).unwrap();
+    let bw_inches = 3.0 * std::f64::consts::PI; // one butt weld, size 3
+    assert!((m.total_inches[0] - bw_inches).abs() < 1e-6);
 }
 
 #[test]

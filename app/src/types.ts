@@ -173,8 +173,8 @@ export interface JobReport {
   butt: JointStat;
   other: JointStat;
   total_welds: number;
-  total_rt: number;
-  total_rt_pct: number;
+  total_examined: number;
+  total_examined_pct: number;
 }
 
 export interface ClientReportRow {

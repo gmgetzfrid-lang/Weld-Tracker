@@ -18,7 +18,13 @@ export function JobReport() {
 
   useEffect(() => {
     if (!wo) return;
-    api.reportJob(wo).then(setRep).catch((e) => setError(errMsg(e)));
+    api
+      .reportJob(wo)
+      .then((r) => {
+        setRep(r);
+        setError(null);
+      })
+      .catch((e) => setError(errMsg(e)));
   }, [wo]);
 
   return (
@@ -43,7 +49,11 @@ export function JobReport() {
           <div className="grid cols-4" style={{ marginBottom: 18 }}>
             <StatCard label="Work Order" value={rep.work_order || "—"} />
             <StatCard label="Total Welds" value={num(rep.total_welds)} />
-            <StatCard label="RT'd" value={num(rep.total_rt)} sub={pct(rep.total_rt_pct)} />
+            <StatCard
+              label="Examined"
+              value={num(rep.total_examined)}
+              sub={`${pct(rep.total_examined_pct)} · butt RT + others PT/MT`}
+            />
             <StatCard label="Butt Welds" value={num(rep.butt.welds)} />
           </div>
           <div className="card">
@@ -54,29 +64,35 @@ export function JobReport() {
                   <tr>
                     <th>Category</th>
                     <th className="num">Welds</th>
-                    <th className="num">RT'd</th>
-                    <th className="num">Accepted</th>
+                    <th className="num">Examined</th>
+                    <th className="num">Method</th>
                     <th className="num">Rejected</th>
-                    <th className="num">RT %</th>
-                    <th className="num">Reject Rate</th>
+                    <th className="num">% Examined</th>
                     <th className="num">Weld Inches</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[["Butt Welds", rep.butt], ["Socket / O-Let / Fillet / Other", rep.other]].map(
-                    ([label, s]: any) => (
-                      <tr key={label}>
-                        <td style={{ fontWeight: 600 }}>{label}</td>
-                        <td className="num">{num(s.welds)}</td>
-                        <td className="num">{num(s.rt)}</td>
-                        <td className="num">{num(s.accepted)}</td>
-                        <td className="num">{num(s.rejected)}</td>
-                        <td className="num">{pct(s.rt_pct)}</td>
-                        <td className="num">{pct(s.reject_rate)}</td>
-                        <td className="num">{num(s.inches, 1)}</td>
-                      </tr>
-                    )
-                  )}
+                  {/* Butt welds are examined by RT; others by PT/MT Final. */}
+                  <tr>
+                    <td style={{ fontWeight: 600 }}>Butt Welds</td>
+                    <td className="num">{num(rep.butt.welds)}</td>
+                    <td className="num">{num(rep.butt.rt)}</td>
+                    <td className="num">RT</td>
+                    <td className="num">{num(rep.butt.rejected)}</td>
+                    <td className="num">{pct(rep.butt.rt_pct)}</td>
+                    <td className="num">{num(rep.butt.inches, 1)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ fontWeight: 600 }}>Socket / O-Let / Fillet / Other</td>
+                    <td className="num">{num(rep.other.welds)}</td>
+                    <td className="num">{num(rep.other.pt_mt)}</td>
+                    <td className="num">PT/MT</td>
+                    <td className="num">{num(rep.other.rejected)}</td>
+                    <td className="num">
+                      {pct(rep.other.welds ? rep.other.pt_mt / rep.other.welds : 0)}
+                    </td>
+                    <td className="num">{num(rep.other.inches, 1)}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>

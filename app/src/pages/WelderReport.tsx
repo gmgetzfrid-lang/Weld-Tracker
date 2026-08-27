@@ -18,7 +18,14 @@ export function WelderReport() {
 
   useEffect(() => {
     if (!stamp) return;
-    api.reportWelder(stamp).then(setRep).catch((e) => setError(errMsg(e)));
+    setRep(null);
+    api
+      .reportWelder(stamp)
+      .then((r) => {
+        setRep(r);
+        setError(null);
+      })
+      .catch((e) => setError(errMsg(e)));
   }, [stamp]);
 
   return (

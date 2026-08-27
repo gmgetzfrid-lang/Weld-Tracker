@@ -116,6 +116,7 @@ pub fn create_user(
 ) -> R<User> {
     let actor = state.require_admin()?;
     e(state.store.create_user(
+        &actor.username,
         &actor.role,
         &username,
         &display_name,
@@ -128,13 +129,17 @@ pub fn create_user(
 #[tauri::command]
 pub fn set_user_active(state: State<AppState>, id: i64, active: bool) -> R<()> {
     let actor = state.require_admin()?;
-    e(state.store.set_user_active(&actor.role, id, active))
+    e(state
+        .store
+        .set_user_active(&actor.username, &actor.role, id, active))
 }
 
 #[tauri::command]
 pub fn set_user_role(state: State<AppState>, id: i64, role: String) -> R<()> {
     let actor = state.require_admin()?;
-    e(state.store.set_user_role(&actor.role, id, &role))
+    e(state
+        .store
+        .set_user_role(&actor.username, &actor.role, id, &role))
 }
 
 #[tauri::command]
@@ -142,7 +147,7 @@ pub fn admin_reset_password(state: State<AppState>, id: i64, new_password: Strin
     let actor = state.require_admin()?;
     e(state
         .store
-        .admin_reset_password(&actor.role, id, &new_password))
+        .admin_reset_password(&actor.username, &actor.role, id, &new_password))
 }
 
 // --------------------------- welders ---------------------------------------

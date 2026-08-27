@@ -73,6 +73,12 @@ export function App() {
     api.getSettings().then(setSettings).catch(() => {});
   }, [user]);
 
+  // Reset to the dashboard whenever the signed-in user changes, so a non-admin
+  // can never land on an admin-only page left over from a previous session.
+  useEffect(() => {
+    setPage("dashboard");
+  }, [user?.id]);
+
   if (!ready) {
     return <div className="auth-wrap" />;
   }

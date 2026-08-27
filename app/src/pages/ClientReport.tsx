@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, rejectThreshold } from "../api";
 import type { ClientReportRow } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
 
@@ -11,10 +11,21 @@ export function ClientReport() {
   const [year, setYear] = useState(now.getFullYear());
   const [rows, setRows] = useState<ClientReportRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warn, setWarn] = useState(0.05);
+
+  useEffect(() => {
+    rejectThreshold().then(setWarn);
+  }, []);
 
   useEffect(() => {
     setRows(null);
-    api.reportClient(month, year).then(setRows).catch((e) => setError(errMsg(e)));
+    api
+      .reportClient(month, year)
+      .then((r) => {
+        setRows(r);
+        setError(null);
+      })
+      .catch((e) => setError(errMsg(e)));
   }, [month, year]);
 
   const exportCsv = () => {
@@ -80,7 +91,7 @@ export function ClientReport() {
                   <td className="num">{num(r.rt_count)}</td>
                   <td className="num">{pct(r.rt_pct)}</td>
                   <td className="num">{num(r.rejects)}</td>
-                  <td className="num" style={{ color: r.reject_rate > 0.05 ? "var(--danger)" : undefined }}>
+                  <td className="num" style={{ color: r.reject_rate > warn ? "var(--danger)" : undefined }}>
                     {pct(r.reject_rate)}
                   </td>
                   <td>{r.last_rt_date ?? "—"}</td>

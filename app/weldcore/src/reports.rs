@@ -148,8 +148,10 @@ pub struct JobReport {
     pub butt: JointStat,
     pub other: JointStat, // SW + Fillet + O-Let + Other combined
     pub total_welds: i64,
-    pub total_rt: i64,
-    pub total_rt_pct: f64,
+    /// Examined = butt welds RT'd + other welds PT/MT'd (matches the workbook
+    /// Job Report, which tracks socket/fillet/olet completion by PT/MT Final).
+    pub total_examined: i64,
+    pub total_examined_pct: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -230,12 +232,13 @@ impl Store {
         butt = butt.finish();
         other = other.finish();
         let total_welds = butt.welds + other.welds;
-        let total_rt = butt.rt + other.rt;
+        // Butt welds are examined by RT; socket/fillet/olet by PT/MT Final.
+        let total_examined = butt.rt + other.pt_mt;
         Ok(JobReport {
             work_order: work_order.to_string(),
             total_welds,
-            total_rt,
-            total_rt_pct: ratio(total_rt, total_welds),
+            total_examined,
+            total_examined_pct: ratio(total_examined, total_welds),
             butt,
             other,
         })
@@ -243,20 +246,45 @@ impl Store {
 
     // ---- Daily weld count (Daily Weld Count) -------------------------------
     pub fn report_daily(&self, date: &str) -> Result<DailyReport> {
-        let by_joint =
-            self.agg_by_joint("AND date_welded = ?1", &[Value::from(date.to_string())])?;
+        // Weld counts are by date welded; RT accepted/rejected are by RT date,
+        // matching the workbook's Daily Weld Count sheet.
+        let by_joint = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT joint_type,
+                        SUM(CASE WHEN date_welded = ?1 THEN 1 ELSE 0 END) AS welds,
+                        SUM(CASE WHEN rt_date = ?1 THEN 1 ELSE 0 END) AS rt,
+                        SUM(CASE WHEN rt_date = ?1 AND rt_accepted = 'Y' THEN 1 ELSE 0 END) AS accepted,
+                        SUM(CASE WHEN rt_date = ?1 AND rt_rejected = 'Y' THEN 1 ELSE 0 END) AS rejected,
+                        SUM(CASE WHEN date_welded = ?1 AND pt_mt_final IS NOT NULL AND pt_mt_final <> '' THEN 1 ELSE 0 END) AS pt_mt,
+                        SUM(CASE WHEN date_welded = ?1 AND brinnel_complete IS NOT NULL AND brinnel_complete <> '' THEN 1 ELSE 0 END) AS brinnel,
+                        COALESCE(SUM(CASE WHEN date_welded = ?1 THEN weld_inches ELSE 0 END), 0) AS inches
+                 FROM welds
+                 WHERE count_omission = 0 AND (date_welded = ?1 OR rt_date = ?1)
+                 GROUP BY joint_type
+                 HAVING welds > 0 OR rt > 0
+                 ORDER BY joint_type",
+            )?;
+            let rows = stmt.query_map([date], |r| read_aggs(r, Some(0), 1))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+                .into_iter()
+                .map(JointStat::finish)
+                .collect::<Vec<_>>()
+        };
         let total = Self::total_of(&by_joint);
         let recent = {
             let conn = self.conn.lock().unwrap();
             let mut stmt = conn.prepare(
-                "SELECT date_welded,
-                        COUNT(*),
-                        SUM(CASE WHEN rt_date IS NOT NULL AND rt_date <> '' THEN 1 ELSE 0 END),
-                        SUM(CASE WHEN rt_rejected = 'Y' THEN 1 ELSE 0 END),
-                        COALESCE(SUM(weld_inches), 0)
-                 FROM welds
-                 WHERE count_omission = 0 AND date_welded IS NOT NULL AND date_welded <> ''
-                 GROUP BY date_welded ORDER BY date_welded DESC LIMIT 14",
+                "SELECT d,
+                        (SELECT COUNT(*) FROM welds w WHERE w.count_omission = 0 AND w.date_welded = d),
+                        (SELECT COUNT(*) FROM welds w WHERE w.count_omission = 0 AND w.rt_date = d),
+                        (SELECT COUNT(*) FROM welds w WHERE w.count_omission = 0 AND w.rt_date = d AND w.rt_rejected = 'Y'),
+                        (SELECT COALESCE(SUM(weld_inches), 0) FROM welds w WHERE w.count_omission = 0 AND w.date_welded = d)
+                 FROM (
+                    SELECT date_welded AS d FROM welds WHERE date_welded IS NOT NULL AND date_welded <> ''
+                    UNION SELECT rt_date FROM welds WHERE rt_date IS NOT NULL AND rt_date <> ''
+                 )
+                 ORDER BY d DESC LIMIT 14",
             )?;
             let rows = stmt.query_map([], |r| {
                 Ok(DailyRow {
@@ -325,7 +353,10 @@ impl Store {
             total_welds[idx] += welds;
             total_rt[idx] += rt;
             total_rejected[idx] += rejected;
-            total_inches[idx] += inches;
+            // The workbook's monthly "weld inches" row tracks butt-weld inches.
+            if jt.eq_ignore_ascii_case("BW") {
+                total_inches[idx] += inches;
+            }
         }
         Ok(MonthlyReport {
             year,
@@ -361,7 +392,7 @@ impl Store {
                 .iter()
                 .find(|w| w.stamp.eq_ignore_ascii_case(stamp))
                 .map(|w| (w.name.clone(), w.active))
-                .unwrap_or_else(|| (String::new(), true))
+                .unwrap_or_else(|| (String::new(), false))
         };
 
         let conn = self.conn.lock().unwrap();
@@ -417,7 +448,7 @@ impl Store {
                 [stamp],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0)),
             )
-            .unwrap_or((String::new(), true))
+            .unwrap_or((String::new(), false))
         };
         Ok(WelderStatRow {
             stamp: stamp.to_string(),
@@ -429,21 +460,24 @@ impl Store {
     }
 
     // ---- Client / TSA monthly summary (Chevron Report) ---------------------
-    /// `month` 1..12 and `year`. Reject rate uses rejects / weld_count.
+    /// `month` 1..12 and `year`. Matches the Chevron/TSA sheet: weld count,
+    /// RTs and rejects are for BUTT WELDS only, while weld inches sum all joint
+    /// types. Reject rate = rejects / butt-weld count. Stamps are matched
+    /// case-insensitively.
     pub fn report_client(&self, month: u32, year: i32) -> Result<Vec<ClientReportRow>> {
         let ym = format!("{year:04}-{month:02}");
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT stamp_number,
-                    COUNT(*),
-                    COALESCE(SUM(weld_inches),0),
-                    SUM(CASE WHEN rt_date IS NOT NULL AND rt_date <> '' THEN 1 ELSE 0 END),
-                    SUM(CASE WHEN rt_rejected = 'Y' THEN 1 ELSE 0 END),
-                    MAX(rt_date)
+                    SUM(CASE WHEN joint_type = 'BW' COLLATE NOCASE THEN 1 ELSE 0 END) AS weld_count,
+                    COALESCE(SUM(weld_inches),0) AS inches,
+                    SUM(CASE WHEN joint_type = 'BW' COLLATE NOCASE AND rt_date IS NOT NULL AND rt_date <> '' THEN 1 ELSE 0 END) AS rt_count,
+                    SUM(CASE WHEN joint_type = 'BW' COLLATE NOCASE AND rt_rejected = 'Y' THEN 1 ELSE 0 END) AS rejects,
+                    MAX(rt_date) AS last_rt
              FROM welds
              WHERE count_omission = 0 AND stamp_number IS NOT NULL AND stamp_number <> ''
                AND strftime('%Y-%m', date_welded) = ?1
-             GROUP BY stamp_number",
+             GROUP BY stamp_number COLLATE NOCASE",
         )?;
         let mut map: std::collections::HashMap<String, ClientReportRow> =
             std::collections::HashMap::new();
@@ -456,7 +490,7 @@ impl Store {
             let rejects: i64 = r.get(4)?;
             let last_rt: Option<String> = r.get(5)?;
             map.insert(
-                stamp.clone(),
+                stamp.to_lowercase(),
                 ClientReportRow {
                     stamp,
                     name: String::new(),
@@ -477,7 +511,7 @@ impl Store {
         drop(conn);
 
         for w in self.list_welders(true, "name")? {
-            if let Some(row) = map.get_mut(&w.stamp) {
+            if let Some(row) = map.get_mut(&w.stamp.to_lowercase()) {
                 row.name = w.name.clone();
                 row.shift = w.shift.clone();
                 row.process = w.process.clone();

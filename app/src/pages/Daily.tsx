@@ -4,7 +4,10 @@ import type { DailyReport } from "../types";
 import { ErrorBox, Spinner, StatCard, num, pct } from "../components/ui";
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  // Local calendar date (not UTC) so it doesn't skip a day near midnight.
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 export function Daily() {

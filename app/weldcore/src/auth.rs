@@ -114,6 +114,7 @@ impl Store {
     /// Admin: create a new login profile. Returns the created user.
     pub fn create_user(
         &self,
+        actor: &str,
         acting_role: &str,
         username: &str,
         display_name: &str,
@@ -147,7 +148,7 @@ impl Store {
         })?;
         let id = conn.last_insert_rowid();
         drop(conn);
-        self.audit("admin", "create", "user", &id.to_string(), username);
+        self.audit(actor, "create", "user", &id.to_string(), username);
         self.get_user(id)
     }
 
@@ -175,21 +176,30 @@ impl Store {
     }
 
     /// Admin: enable/disable a profile. The last active admin cannot be disabled.
-    pub fn set_user_active(&self, acting_role: &str, id: i64, active: bool) -> Result<()> {
+    pub fn set_user_active(&self, actor: &str, acting_role: &str, id: i64, active: bool) -> Result<()> {
         require_admin(acting_role)?;
         if !active {
             self.guard_last_admin(id)?;
         }
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE users SET active = ?1 WHERE id = ?2",
-            params![active as i64, id],
-        )?;
+        {
+            let conn = self.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE users SET active = ?1 WHERE id = ?2",
+                params![active as i64, id],
+            )?;
+        }
+        self.audit(
+            actor,
+            "user_active",
+            "user",
+            &id.to_string(),
+            if active { "enabled" } else { "disabled" },
+        );
         Ok(())
     }
 
     /// Admin: change a profile's role.
-    pub fn set_user_role(&self, acting_role: &str, id: i64, role: &str) -> Result<()> {
+    pub fn set_user_role(&self, actor: &str, acting_role: &str, id: i64, role: &str) -> Result<()> {
         require_admin(acting_role)?;
         if !VALID_ROLES.contains(&role) {
             return Err(Error::Invalid(format!("invalid role '{role}'")));
@@ -197,17 +207,18 @@ impl Store {
         if role != "admin" {
             self.guard_last_admin(id)?;
         }
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE users SET role = ?1 WHERE id = ?2",
-            params![role, id],
-        )?;
+        {
+            let conn = self.conn.lock().unwrap();
+            conn.execute("UPDATE users SET role = ?1 WHERE id = ?2", params![role, id])?;
+        }
+        self.audit(actor, "user_role", "user", &id.to_string(), role);
         Ok(())
     }
 
     /// Admin: reset another user's password. Forces a change at next login.
     pub fn admin_reset_password(
         &self,
+        actor: &str,
         acting_role: &str,
         id: i64,
         new_password: &str,
@@ -224,7 +235,7 @@ impl Store {
             return Err(Error::NotFound);
         }
         drop(conn);
-        self.audit("admin", "password_reset", "user", &id.to_string(), "");
+        self.audit(actor, "password_reset", "user", &id.to_string(), "");
         Ok(())
     }
 

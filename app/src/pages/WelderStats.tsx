@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, rejectThreshold } from "../api";
 import type { WelderStatsReport } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
 
@@ -17,10 +17,21 @@ export function WelderStats() {
   const [level, setLevel] = useState("all");
   const [rep, setRep] = useState<WelderStatsReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warn, setWarn] = useState(0.05);
+
+  useEffect(() => {
+    rejectThreshold().then(setWarn);
+  }, []);
 
   useEffect(() => {
     setRep(null);
-    api.reportWelderStats(level).then(setRep).catch((e) => setError(errMsg(e)));
+    api
+      .reportWelderStats(level)
+      .then((r) => {
+        setRep(r);
+        setError(null);
+      })
+      .catch((e) => setError(errMsg(e)));
   }, [level]);
 
   const exportCsv = () => {
@@ -88,7 +99,7 @@ export function WelderStats() {
                   <td className="num">{num(r.total.accepted)}</td>
                   <td className="num">{num(r.total.rejected)}</td>
                   <td className="num">{pct(r.total.rt_pct)}</td>
-                  <td className="num" style={{ color: r.total.reject_rate > 0.05 ? "var(--danger)" : undefined }}>
+                  <td className="num" style={{ color: r.total.reject_rate > warn ? "var(--danger)" : undefined }}>
                     {pct(r.total.reject_rate)}
                   </td>
                   <td className="num">{num(r.total.pt_mt)}</td>

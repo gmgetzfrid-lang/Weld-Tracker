@@ -114,7 +114,10 @@ export function WeldEditor({
               ? e.target.value === ""
                 ? null
                 : Number(e.target.value)
-              : e.target.value) as any
+              : // store cleared text fields as null, matching the select paths
+                e.target.value === ""
+                ? null
+                : e.target.value) as any
           )
         }
       />
