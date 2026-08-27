@@ -293,3 +293,17 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .guide-body { font-size: 12.5px; color: var(--text-muted); flex: 1; line-height: 1.5; }
 .guide-step .btn { align-self: flex-start; margin-top: 4px; }
 .quick-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ---------------- Weld Log hub action banner ---------------- */
+.hub-actions {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
+  padding: 16px 20px; border-radius: 12px; color: #fff;
+  background: linear-gradient(120deg, var(--navy) 0%, #143a9e 60%, var(--teal) 140%);
+  box-shadow: var(--shadow);
+}
+.hub-actions .hub-actions-title { font-weight: 700; font-size: 15px; }
+.hub-actions .hub-actions-sub { font-size: 12.5px; color: #cdd9f5; margin-top: 2px; max-width: 520px; }
+.hub-actions > div:first-child { flex: 1; }
+.hub-actions .btn { flex-shrink: 0; }
+.wo-link { color: var(--blue); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+tr:hover .wo-link { color: var(--navy); }

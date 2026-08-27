@@ -31,17 +31,17 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
     },
     {
       done: drawingCount > 0,
-      title: "Create a drawing & drop weld bubbles",
-      body: "Attach the isometric PDF, then click each weld joint to drop a bubble. Every bubble becomes a weld in the log — no typing rows.",
-      cta: "New Drawing",
-      go: "drawings",
+      title: "Log welds from an isometric",
+      body: "In the Weld Log, click “New Weld Entry”: enter the work order, attach the iso PDF, and click each weld joint to drop a bubble. Every bubble becomes a weld — no typing rows.",
+      cta: "Open Weld Log",
+      go: "weldlog",
     },
     {
       done: t.welds > 0,
       title: "Fill NDE results & watch the reports",
-      body: "As welds get X-rayed, record the results in the Weld Log. The dashboard and every report update automatically.",
-      cta: "Open Weld Log",
-      go: "weldlog",
+      body: "As welds get X-rayed, open the weld and record the results. The dashboard and every report update automatically.",
+      cta: "Open Work Orders",
+      go: "workorders",
     },
   ];
 
@@ -76,8 +76,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
       {!fresh && (
         <div className="quick-row">
           <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Quick actions:</span>
-          <button className="btn btn-accent btn-sm" onClick={() => onNavigate("drawings")}>📐 Drawings &amp; weld map</button>
-          <button className="btn btn-sm" onClick={() => onNavigate("weldlog")}>▤ Weld Log</button>
+          <button className="btn btn-accent btn-sm" onClick={() => onNavigate("weldlog")}>+ New Weld Entry</button>
+          <button className="btn btn-sm" onClick={() => onNavigate("workorders")}>🗂️ Work Orders</button>
           <button className="btn btn-sm" onClick={() => onNavigate("roster")}>☺ Welder Roster</button>
         </div>
       )}

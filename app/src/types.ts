@@ -223,5 +223,13 @@ export interface ClientReportRow {
   last_rt_date?: string | null;
 }
 
+export interface WorkOrderSummary {
+  work_order: string;
+  unit?: string | null;
+  drawing_count: number;
+  weld_count: number;
+  last_activity?: string | null;
+}
+
 export type Lookups = Record<string, string[]>;
 export type Settings = Record<string, string>;

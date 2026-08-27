@@ -5,7 +5,7 @@
 //! Dropping a bubble on the drawing creates a weld — the map and the log are
 //! built by the same action.
 
-use crate::{weld_inches, Drawing, Error, Result, Store, Weld};
+use crate::{weld_inches, Drawing, Error, Result, Store, Weld, WorkOrderSummary};
 use base64::Engine;
 use rusqlite::{params, Row};
 
@@ -43,6 +43,43 @@ const DRAWING_SELECT: &str = "SELECT id, work_order, drawing_no, unit, line_spec
     FROM drawings";
 
 impl Store {
+    /// Work orders rolled up from drawings and welds — the records directory.
+    pub fn list_work_orders(&self) -> Result<Vec<WorkOrderSummary>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT wo,
+                    (SELECT unit FROM welds w WHERE w.work_order = wo AND w.unit IS NOT NULL LIMIT 1),
+                    (SELECT COUNT(*) FROM drawings d WHERE d.work_order = wo),
+                    (SELECT COUNT(*) FROM welds w WHERE w.work_order = wo),
+                    (SELECT MAX(updated_at) FROM welds w WHERE w.work_order = wo)
+             FROM (
+                SELECT work_order AS wo FROM welds WHERE work_order IS NOT NULL AND work_order <> ''
+                UNION
+                SELECT work_order FROM drawings WHERE work_order IS NOT NULL AND work_order <> ''
+             )
+             ORDER BY wo",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(WorkOrderSummary {
+                work_order: r.get(0)?,
+                unit: r.get(1)?,
+                drawing_count: r.get(2)?,
+                weld_count: r.get(3)?,
+                last_activity: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Drawings belonging to a work order.
+    pub fn list_drawings_for_wo(&self, work_order: &str) -> Result<Vec<Drawing>> {
+        Ok(self
+            .list_drawings()?
+            .into_iter()
+            .filter(|d| d.work_order.as_deref().map(|w| w.eq_ignore_ascii_case(work_order)).unwrap_or(false))
+            .collect())
+    }
+
     pub fn list_drawings(&self) -> Result<Vec<Drawing>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&format!("{DRAWING_SELECT} ORDER BY id DESC"))?;

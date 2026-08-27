@@ -6,7 +6,7 @@ import type { Settings } from "./types";
 import { Login } from "./pages/Login";
 import { ChangePassword } from "./pages/ChangePassword";
 import { Dashboard } from "./pages/Dashboard";
-import { Drawings } from "./pages/Drawings";
+import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
 import { Roster } from "./pages/Roster";
 import { WelderStats } from "./pages/WelderStats";
@@ -24,8 +24,8 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 type PageKey =
   | "dashboard"
-  | "drawings"
   | "weldlog"
+  | "workorders"
   | "roster"
   | "welderstats"
   | "welderreport"
@@ -51,8 +51,8 @@ interface NavDef {
 
 const NAV: NavDef[] = [
   { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "Your at-a-glance totals — weld count, RT coverage and reject rate." },
-  { key: "drawings", label: "Drawings", icon: "📐", group: "Records", desc: "Add an isometric, drop weld bubbles on it, and the weld log fills itself. Start here." },
-  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "Every weld on record. Search, filter, edit, or log a repair." },
+  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The hub: log new welds from an isometric, search, and open a work order's records. Start here." },
+  { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory." },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
   { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports", desc: "Per-welder counts and reject rates by NDE examination level." },
   { key: "welderreport", label: "Welder Report", icon: "◔", group: "Reports", desc: "A single welder's full breakdown by joint type." },
@@ -178,8 +178,8 @@ function PageView({
   switch (page) {
     case "dashboard":
       return <Dashboard onNavigate={onNavigate} />;
-    case "drawings":
-      return <Drawings />;
+    case "workorders":
+      return <WorkOrders />;
     case "weldlog":
       return <WeldLog />;
     case "roster":

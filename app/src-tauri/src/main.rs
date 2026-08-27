@@ -50,6 +50,8 @@ fn main() {
             create_repair,
             distinct_weld_values,
             list_drawings,
+            list_work_orders,
+            list_drawings_for_wo,
             get_drawing,
             create_drawing,
             update_drawing,

@@ -7,6 +7,7 @@ use tauri::State;
 use weldcore::reports::*;
 use weldcore::{
     CriteriaRow, Drawing, Lookup, PipeRow, Store, User, Weld, WeldFilter, Welder,
+    WorkOrderSummary,
 };
 
 pub struct AppState {
@@ -250,6 +251,18 @@ pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<Stri
 pub fn list_drawings(state: State<AppState>) -> R<Vec<Drawing>> {
     state.require_login()?;
     e(state.store.list_drawings())
+}
+
+#[tauri::command]
+pub fn list_work_orders(state: State<AppState>) -> R<Vec<WorkOrderSummary>> {
+    state.require_login()?;
+    e(state.store.list_work_orders())
+}
+
+#[tauri::command]
+pub fn list_drawings_for_wo(state: State<AppState>, work_order: String) -> R<Vec<Drawing>> {
+    state.require_login()?;
+    e(state.store.list_drawings_for_wo(&work_order))
 }
 
 #[tauri::command]

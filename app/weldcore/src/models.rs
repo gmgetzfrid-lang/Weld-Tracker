@@ -217,6 +217,16 @@ pub struct PipeRow {
     pub wall: f64,
 }
 
+/// A work order roll-up for the records directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkOrderSummary {
+    pub work_order: String,
+    pub unit: Option<String>,
+    pub drawing_count: i64,
+    pub weld_count: i64,
+    pub last_activity: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lookup {
     pub kind: String,

@@ -16,6 +16,7 @@ import type {
   Welder,
   WelderStatRow,
   WelderStatsReport,
+  WorkOrderSummary,
 } from "./types";
 
 // Thin, typed wrapper over the Tauri command layer.
@@ -70,6 +71,11 @@ export const api = {
     invoke<number[]>("create_repair", { weldId, includeTracers }),
   distinctWeldValues: (field: string) =>
     invoke<string[]>("distinct_weld_values", { field }),
+
+  // work orders (records directory)
+  listWorkOrders: () => invoke<WorkOrderSummary[]>("list_work_orders"),
+  listDrawingsForWo: (workOrder: string) =>
+    invoke<Drawing[]>("list_drawings_for_wo", { workOrder }),
 
   // drawings & weld-bubble annotation
   listDrawings: () => invoke<Drawing[]>("list_drawings"),

@@ -6,7 +6,7 @@ import { Coach, Stepper } from "../components/Stepper";
 import { WeldAnnotator } from "./annotator/WeldAnnotator";
 import { fileToBase64, loadPdf, base64ToBytes } from "../pdf";
 
-const STEPS = ["Drawing", "Annotate", "Attributes", "Review"];
+const STEPS = ["Work Order & Iso", "Place Welds", "Details", "Review"];
 
 const EMPTY: Drawing = {
   id: 0,
@@ -23,18 +23,23 @@ const EMPTY: Drawing = {
 
 export function DrawingWizard({
   drawingId,
+  initialWorkOrder,
   welders,
   lookups,
   onClose,
 }: {
   drawingId: number | null;
+  initialWorkOrder?: string;
   welders: Welder[];
   lookups: Lookups;
   onClose: () => void;
 }) {
   const toast = useToast();
   const [step, setStep] = useState(0);
-  const [drawing, setDrawing] = useState<Drawing>({ ...EMPTY });
+  const [drawing, setDrawing] = useState<Drawing>({
+    ...EMPTY,
+    work_order: initialWorkOrder ?? null,
+  });
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,10 +99,11 @@ export function DrawingWizard({
   return (
     <div>
       <div className="toolbar" style={{ marginBottom: 8 }}>
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>← All drawings</button>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>← Back</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>
-          {drawing.drawing_no ? `Drawing ${drawing.drawing_no}` : "New drawing"}
+          {drawing.work_order ? `WO ${drawing.work_order}` : "New entry"}
+          {drawing.drawing_no ? ` · Iso ${drawing.drawing_no}` : ""}
           {drawing.weld_count ? ` · ${drawing.weld_count} welds` : ""}
         </span>
       </div>
@@ -184,10 +190,10 @@ function HeaderStep({
   ];
   return (
     <>
-      <Coach title="Enter the drawing header once">
-        These fields cascade to <b>every weld</b> you place on this isometric, so
-        you only type them a single time. The NDE % you pick becomes each weld's
-        required coverage.
+      <Coach title="Start with the work order, then the isometric">
+        Everything ties back to the <b>work order number</b>. Enter it (and the iso
+        details) once here — it cascades to <b>every weld</b> you place, so you never
+        retype it. The NDE % you pick becomes each weld's required coverage.
       </Coach>
       <ErrorBox message={error} />
       <div className="form-grid cols-3">
