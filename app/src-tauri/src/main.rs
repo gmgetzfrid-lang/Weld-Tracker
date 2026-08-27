@@ -127,7 +127,8 @@ fn main() {
             report_welder_stats,
             report_welder,
             report_client,
-            report_qm
+            report_qm,
+            report_nde_compliance
         ])
         .run(tauri::generate_context!())
         .expect("error while running Weld Tracker");

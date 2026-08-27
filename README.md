@@ -87,6 +87,7 @@ login.
 | WELDER ROSTER / Welder List / Stamp List | **Welder Roster** — stamps, WPQs, status, training; sort by name or stamp; active/inactive |
 | Summary / Weld Count PVT | **Dashboard** — totals, RT coverage, reject rate, weld inches, breakdown by joint type |
 | WELDER % (5/10/20/25/50/100% pivots) | **Welder Statistics** — per-welder counts by NDE examination level |
+| *(new)* | **NDE Statistics** — per-welder NDE **compliance** vs. spec (5/10/20/100 % coverage and API 570 in lieu of hydro), a below-spec watchlist, welder performance and reject-rate charts |
 | WELDER REPORT | **Welder Report** — single-welder detail by joint type |
 | Monthly Report | **Monthly Report** — 12-month weld counts, RT and reject trends |
 | Daily Weld Count | **Daily Weld Count** — per-day counts + recent-days table |
@@ -98,7 +99,8 @@ login.
 | Instruction | **Instructions** — repair procedure + status guide |
 
 ### Preserved logic
-- **Weld inches** = nominal size × π, computed automatically.
+- **Weld inches** = diameter inches (the nominal pipe size / NPS), computed
+  automatically — a 6″ pipe is 6 weld inches.
 - **Wall thickness** looked up from the Pipe Table by size + schedule.
 - **Joint types** BW / SW / O-Let / Fillet / Other.
 - **NDE levels** 5 / 10 / 20 / 25 / 50 / 100 % RT coverage, filterable in stats.

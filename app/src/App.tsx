@@ -9,6 +9,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
 import { Roster } from "./pages/Roster";
+import { Statistics } from "./pages/Statistics";
 import { WelderStats } from "./pages/WelderStats";
 import { WelderReport } from "./pages/WelderReport";
 import { Monthly } from "./pages/Monthly";
@@ -27,6 +28,7 @@ type PageKey =
   | "weldlog"
   | "workorders"
   | "roster"
+  | "statistics"
   | "welderstats"
   | "welderreport"
   | "monthly"
@@ -54,6 +56,7 @@ const NAV: NavDef[] = [
   { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The hub: log new welds from an isometric, search, and open a work order's records. Start here." },
   { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory." },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
+  { key: "statistics", label: "NDE Statistics", icon: "📊", group: "Reports", desc: "Per-welder NDE compliance (5/10/20/100% + API 570), performance and reject-rate analysis. Catch anyone falling below spec." },
   { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports", desc: "Per-welder counts and reject rates by NDE examination level." },
   { key: "welderreport", label: "Welder Report", icon: "◔", group: "Reports", desc: "A single welder's full breakdown by joint type." },
   { key: "monthly", label: "Monthly Report", icon: "▦", group: "Reports", desc: "Weld counts, RT and rejects across the twelve months of a year." },
@@ -184,6 +187,8 @@ function PageView({
       return <WeldLog />;
     case "roster":
       return <Roster />;
+    case "statistics":
+      return <Statistics />;
     case "welderstats":
       return <WelderStats />;
     case "welderreport":

@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
 import { api, errMsg } from "../api";
 import { useAuth } from "../auth";
-import type { SummaryReport } from "../types";
+import type { NdeComplianceReport, SummaryReport } from "../types";
 import { BarChart, ErrorBox, Spinner, StatCard, num, pct } from "../components/ui";
 
 export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
   const { user } = useAuth();
   const [rep, setRep] = useState<SummaryReport | null>(null);
+  const [nde, setNde] = useState<NdeComplianceReport | null>(null);
   const [drawingCount, setDrawingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.reportSummary().then(setRep).catch((e) => setError(errMsg(e)));
+    api.reportNdeCompliance().then(setNde).catch(() => {});
     api.listDrawings().then((d) => setDrawingCount(d.length)).catch(() => {});
   }, []);
 
@@ -101,6 +103,10 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
         />
       </div>
 
+      {nde && nde.welder_count > 0 && (
+        <NdeQuickRef nde={nde} onNavigate={onNavigate} />
+      )}
+
       <div className="grid cols-2">
         <div className="card card-pad">
           <h3>Welds by Joint Type</h3>
@@ -178,6 +184,62 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function NdeQuickRef({
+  nde,
+  onNavigate,
+}: {
+  nde: NdeComplianceReport;
+  onNavigate: (p: any) => void;
+}) {
+  const owed = nde.by_spec.reduce((a, s) => a + s.shortfall, 0);
+  const below = nde.noncompliant_count;
+  const worst = nde.welders.filter((w) => !w.compliant).slice(0, 4);
+  return (
+    <div className="card card-pad" style={below ? { borderColor: "#fca5a5" } : undefined}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <h3 style={{ margin: 0, color: below ? "var(--danger)" : "var(--navy)" }}>
+          NDE Compliance {below ? "⚠" : "✓"}
+        </h3>
+        <div className="spacer" style={{ flex: 1 }} />
+        <button className="btn btn-sm" onClick={() => onNavigate("statistics")}>
+          Open NDE Statistics →
+        </button>
+      </div>
+      <div className="nde-quick" style={{ marginTop: 12 }}>
+        <div>
+          <div className="nq-fig" style={{ color: below ? "var(--danger)" : "var(--ok)" }}>
+            {num(below)}
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>welders below spec</div>
+        </div>
+        <div>
+          <div className="nq-fig">{num(owed)}</div>
+          <div className="muted" style={{ fontSize: 12 }}>examinations owed</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {nde.by_spec.map((s) => (
+            <span key={s.spec} className={`badge ${s.compliant ? "badge-green" : "badge-red"}`} title={`${num(s.examined)} of ${num(s.population)} examined`}>
+              {s.spec} · {num(s.actual_pct, 0)}%
+            </span>
+          ))}
+        </div>
+      </div>
+      {worst.length > 0 && (
+        <p className="muted" style={{ marginBottom: 0, marginTop: 12, fontSize: 12.5 }}>
+          Needs attention:{" "}
+          {worst.map((w, i) => (
+            <span key={w.stamp}>
+              {i > 0 && ", "}
+              <strong>{w.name || w.stamp}</strong> (owe {num(w.worst_gap)})
+            </span>
+          ))}
+          {nde.noncompliant_count > worst.length && ` +${nde.noncompliant_count - worst.length} more`}
+        </p>
+      )}
     </div>
   );
 }

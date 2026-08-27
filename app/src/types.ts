@@ -239,5 +239,37 @@ export interface WorkOrderSummary {
   last_activity?: string | null;
 }
 
+export interface NdeSpecStat {
+  spec: string; // "5%" | "10%" | "20%" | "100%" | "API 570"
+  required_pct: number;
+  population: number;
+  examined: number;
+  required: number;
+  shortfall: number;
+  rejected: number;
+  actual_pct: number;
+  compliant: boolean;
+}
+
+export interface WelderNdeCompliance {
+  stamp: string;
+  name: string;
+  active: boolean;
+  specs: NdeSpecStat[];
+  total_welds: number;
+  total_examined: number;
+  total_rejected: number;
+  reject_rate: number;
+  compliant: boolean;
+  worst_gap: number;
+}
+
+export interface NdeComplianceReport {
+  welders: WelderNdeCompliance[];
+  by_spec: NdeSpecStat[];
+  welder_count: number;
+  noncompliant_count: number;
+}
+
 export type Lookups = Record<string, string[]>;
 export type Settings = Record<string, string>;

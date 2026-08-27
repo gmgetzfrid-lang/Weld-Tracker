@@ -154,6 +154,83 @@ pub struct JobReport {
     pub total_examined_pct: f64,
 }
 
+/// One NDE coverage spec's compliance picture for a single welder (or, in the
+/// fleet roll-up, for everyone). `examined` is the number of that welder's welds
+/// carrying this spec that have actually had the required NDE performed;
+/// `required` is the minimum they must reach to stay at or above the spec.
+#[derive(Debug, Clone, Serialize)]
+pub struct NdeSpecStat {
+    pub spec: String,      // "5%", "10%", "20%", "100%", "API 570"
+    pub required_pct: f64, // coverage the spec demands (100 for API 570)
+    pub population: i64,    // welds carrying this spec (count-omitted excluded)
+    pub examined: i64,      // of those, how many satisfy the NDE requirement
+    pub required: i64,      // minimum examinations to stay compliant (ceil)
+    pub shortfall: i64,     // examinations still owed (0 when compliant)
+    pub rejected: i64,      // examined welds that were rejected
+    pub actual_pct: f64,    // examined / population * 100
+    pub compliant: bool,    // examined >= required
+}
+
+impl NdeSpecStat {
+    fn empty(spec: &str, required_pct: f64) -> Self {
+        NdeSpecStat {
+            spec: spec.to_string(),
+            required_pct,
+            population: 0,
+            examined: 0,
+            required: 0,
+            shortfall: 0,
+            rejected: 0,
+            actual_pct: 0.0,
+            compliant: true,
+        }
+    }
+    /// Finalise a per-welder spec: required = ceil(population * pct / 100), or
+    /// the whole population for API 570 (every weld needs its two NDE forms).
+    fn finish_welder(mut self, is_api570: bool) -> Self {
+        self.required = if is_api570 {
+            self.population
+        } else {
+            // integer ceil of population * pct / 100
+            let pct = self.required_pct.round() as i64;
+            (self.population * pct + 99) / 100
+        };
+        self.shortfall = (self.required - self.examined).max(0);
+        self.compliant = self.examined >= self.required;
+        self.actual_pct = if self.population == 0 {
+            0.0
+        } else {
+            self.examined as f64 / self.population as f64 * 100.0
+        };
+        self
+    }
+}
+
+/// Per-welder NDE compliance across every spec they have welded to.
+#[derive(Debug, Clone, Serialize)]
+pub struct WelderNdeCompliance {
+    pub stamp: String,
+    pub name: String,
+    pub active: bool,
+    pub specs: Vec<NdeSpecStat>,
+    pub total_welds: i64,
+    pub total_examined: i64,
+    pub total_rejected: i64,
+    pub reject_rate: f64, // rejected / examined
+    pub compliant: bool,  // every spec at or above requirement
+    pub worst_gap: i64,   // largest single-spec shortfall (0 when all clear)
+}
+
+#[derive(Debug, Serialize)]
+pub struct NdeComplianceReport {
+    pub welders: Vec<WelderNdeCompliance>,
+    /// Fleet-wide roll-up per spec (summed per-welder requirements), for the
+    /// dashboard quick reference.
+    pub by_spec: Vec<NdeSpecStat>,
+    pub welder_count: i64,
+    pub noncompliant_count: i64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ClientReportRow {
     pub stamp: String,
@@ -528,5 +605,221 @@ impl Store {
         // reuse welder stats "all" but keep the by_joint breakdown
         let stats = self.report_welder_stats("all")?;
         Ok(stats.rows)
+    }
+
+    // ---- Per-welder NDE compliance -----------------------------------------
+    /// For every welder, how their actual NDE coverage measures against the spec
+    /// on each of their welds. Percentage specs (5/10/20/100%) require at least
+    /// that share of the welder's welds carrying the spec to be examined;
+    /// "API 570" (in lieu of hydro) requires *every* such weld to carry its two
+    /// forms of NDE — PT root & final plus RT for butt welds, PT root & final for
+    /// fillet / branch / slip-on flange / socket welds. This is the meticulous
+    /// per-welder tracking that keeps everyone at or above spec.
+    pub fn report_nde_compliance(&self) -> Result<NdeComplianceReport> {
+        // Canonical spec order for stable output.
+        const SPECS: &[(&str, f64)] = &[
+            ("5%", 5.0),
+            ("10%", 10.0),
+            ("20%", 20.0),
+            ("100%", 100.0),
+            ("API 570", 100.0),
+        ];
+
+        // Pull every countable, stamped weld's NDE-relevant fields.
+        let raw: Vec<(String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT stamp_number, nde_percent, nde_types, nde_result, joint_type, nde_date, rt_date
+                 FROM welds
+                 WHERE count_omission = 0 AND stamp_number IS NOT NULL AND stamp_number <> ''",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                ))
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        // Accumulate per (stamp, spec-index).
+        let mut acc: std::collections::BTreeMap<String, [NdeSpecStat; 5]> =
+            std::collections::BTreeMap::new();
+        for (stamp, nde_percent, nde_types, nde_result, joint_type, nde_date, rt_date) in &raw {
+            let Some(spec_idx) = canonical_spec_index(nde_percent.as_deref()) else {
+                continue; // no recognised spec on this weld
+            };
+            let entry = acc.entry(stamp.clone()).or_insert_with(|| {
+                [
+                    NdeSpecStat::empty(SPECS[0].0, SPECS[0].1),
+                    NdeSpecStat::empty(SPECS[1].0, SPECS[1].1),
+                    NdeSpecStat::empty(SPECS[2].0, SPECS[2].1),
+                    NdeSpecStat::empty(SPECS[3].0, SPECS[3].1),
+                    NdeSpecStat::empty(SPECS[4].0, SPECS[4].1),
+                ]
+            });
+            let s = &mut entry[spec_idx];
+            s.population += 1;
+            let is_api570 = spec_idx == 4;
+            let examined = if is_api570 {
+                api570_satisfied(joint_type.as_deref(), nde_types.as_deref())
+            } else {
+                nde_evidence(
+                    nde_result.as_deref(),
+                    nde_types.as_deref(),
+                    nde_date.as_deref(),
+                    rt_date.as_deref(),
+                )
+            };
+            if examined {
+                s.examined += 1;
+            }
+            if nde_result.as_deref().is_some_and(|r| r.eq_ignore_ascii_case("Rejected")) {
+                s.rejected += 1;
+            }
+        }
+
+        // welder name/active lookup
+        let welders = self.list_welders(true, "name")?;
+        let name_of = |stamp: &str| -> (String, bool) {
+            welders
+                .iter()
+                .find(|w| w.stamp.eq_ignore_ascii_case(stamp))
+                .map(|w| (w.name.clone(), w.active))
+                .unwrap_or_else(|| (String::new(), false))
+        };
+
+        let mut fleet: Vec<NdeSpecStat> = SPECS
+            .iter()
+            .map(|(s, p)| NdeSpecStat::empty(s, *p))
+            .collect();
+        let mut out: Vec<WelderNdeCompliance> = Vec::new();
+        for (stamp, arr) in acc {
+            let mut specs: Vec<NdeSpecStat> = Vec::new();
+            let (mut tw, mut te, mut tr, mut worst) = (0i64, 0i64, 0i64, 0i64);
+            let mut all_ok = true;
+            for (i, s) in arr.into_iter().enumerate() {
+                if s.population == 0 {
+                    continue;
+                }
+                let s = s.finish_welder(i == 4);
+                tw += s.population;
+                te += s.examined;
+                tr += s.rejected;
+                worst = worst.max(s.shortfall);
+                all_ok &= s.compliant;
+                // fold into fleet roll-up (sum per-welder requirements)
+                fleet[i].population += s.population;
+                fleet[i].examined += s.examined;
+                fleet[i].required += s.required;
+                fleet[i].shortfall += s.shortfall;
+                fleet[i].rejected += s.rejected;
+                specs.push(s);
+            }
+            if specs.is_empty() {
+                continue;
+            }
+            let (name, active) = name_of(&stamp);
+            out.push(WelderNdeCompliance {
+                stamp,
+                name,
+                active,
+                specs,
+                total_welds: tw,
+                total_examined: te,
+                total_rejected: tr,
+                reject_rate: ratio(tr, te),
+                compliant: all_ok,
+                worst_gap: worst,
+            });
+        }
+
+        // finalise fleet roll-up percentages / compliance
+        for f in &mut fleet {
+            f.compliant = f.shortfall == 0;
+            f.actual_pct = if f.population == 0 {
+                0.0
+            } else {
+                f.examined as f64 / f.population as f64 * 100.0
+            };
+        }
+        fleet.retain(|f| f.population > 0);
+
+        // most-behind welders first, then alphabetical.
+        out.sort_by(|a, b| {
+            b.worst_gap
+                .cmp(&a.worst_gap)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        let noncompliant_count = out.iter().filter(|w| !w.compliant).count() as i64;
+        let welder_count = out.len() as i64;
+        Ok(NdeComplianceReport {
+            welders: out,
+            by_spec: fleet,
+            welder_count,
+            noncompliant_count,
+        })
+    }
+}
+
+/// Map a weld's `nde_percent` value to a canonical spec index into `SPECS`
+/// (0=5%, 1=10%, 2=20%, 3=100%, 4=API 570). Returns None for unrecognised /
+/// unset specs so those welds sit outside compliance tracking.
+fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
+    let p = nde_percent?.trim();
+    if p.is_empty() {
+        return None;
+    }
+    let up = p.to_uppercase();
+    if up.contains("API") || up.contains("570") {
+        return Some(4);
+    }
+    let digits: String = p.chars().filter(|c| c.is_ascii_digit()).collect();
+    match digits.as_str() {
+        "5" => Some(0),
+        "10" => Some(1),
+        "20" => Some(2),
+        "100" => Some(3),
+        _ => None,
+    }
+}
+
+/// Whether a percentage-spec weld has actually had NDE performed — any of a
+/// recorded result, an NDE type, an NDE date, or a legacy RT date.
+fn nde_evidence(
+    nde_result: Option<&str>,
+    nde_types: Option<&str>,
+    nde_date: Option<&str>,
+    rt_date: Option<&str>,
+) -> bool {
+    let has = |o: Option<&str>| o.map(|s| !s.trim().is_empty()).unwrap_or(false);
+    has(nde_result) || has(nde_types) || has(nde_date) || has(rt_date)
+}
+
+/// Whether an API-570 in-lieu-of-hydro weld carries its required two forms of
+/// NDE. Butt welds need PT root & final *and* RT; fillet / branch (o-let) /
+/// slip-on flange / socket welds need PT root & final.
+fn api570_satisfied(joint_type: Option<&str>, nde_types: Option<&str>) -> bool {
+    let tokens: Vec<String> = nde_types
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let has_pt_root_final = tokens.iter().any(|t| t.contains("PT ROOT"));
+    let has_rt = tokens.iter().any(|t| t == "RT" || t.contains("RT "));
+    let joint = joint_type.unwrap_or_default().to_uppercase();
+    let is_butt = joint == "BW" || joint.contains("BUTT");
+    if is_butt {
+        has_pt_root_final && has_rt
+    } else {
+        // fillet, branch/o-let, slip-on flange, socket, and anything else on
+        // API 570 in lieu of hydro: PT root & final.
+        has_pt_root_final
     }
 }

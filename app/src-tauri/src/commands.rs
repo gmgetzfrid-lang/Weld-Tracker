@@ -512,3 +512,9 @@ pub fn report_qm(state: State<AppState>) -> R<Vec<WelderStatRow>> {
     state.require_login()?;
     e(state.store.report_qm())
 }
+
+#[tauri::command]
+pub fn report_nde_compliance(state: State<AppState>) -> R<NdeComplianceReport> {
+    state.require_login()?;
+    e(state.store.report_nde_compliance())
+}

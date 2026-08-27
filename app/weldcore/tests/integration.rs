@@ -375,3 +375,78 @@ fn rejected_weld_repair_workflow() {
     let repair2 = s.get_weld(again[0]).unwrap();
     assert_eq!(repair2.weld_number.as_deref(), Some("W122R2"));
 }
+
+fn nde_weld(stamp: &str, num: &str, pct: &str, joint: &str) -> Weld {
+    Weld {
+        work_order: Some("WO1".into()),
+        joint_type: Some(joint.into()),
+        stamp_number: Some(stamp.into()),
+        date_welded: Some("2026-02-01".into()),
+        weld_number: Some(num.into()),
+        nde_percent: Some(pct.into()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn nde_compliance_percentage_and_api570() {
+    let s = store();
+    s.create_welder(&mk_welder("K1", "Alex")).unwrap();
+    s.create_welder(&mk_welder("K2", "Blair")).unwrap();
+
+    // K1: 20 welds at 5%, exactly one RT'd + accepted -> needs 1, has 1 = OK.
+    for i in 0..20 {
+        let mut w = nde_weld("K1", &format!("K1W{i}"), "5%", "BW");
+        if i == 0 {
+            w.nde_types = Some("RT".into());
+            w.nde_result = Some("Accepted".into());
+            w.nde_date = Some("2026-02-05".into());
+        }
+        s.create_weld(&w, "admin").unwrap();
+    }
+    // K2: 20 welds at 5%, none examined -> owes 1.
+    for i in 0..20 {
+        let w = nde_weld("K2", &format!("K2W{i}"), "5%", "BW");
+        s.create_weld(&w, "admin").unwrap();
+    }
+    // K1: two API-570 butt welds — one fully formed (PT root&final + RT), one
+    // missing RT, so only one satisfies the two-form requirement.
+    let mut a = nde_weld("K1", "A1", "API 570", "BW");
+    a.nde_types = Some("PT Root & Final, RT".into());
+    a.nde_result = Some("Accepted".into());
+    a.nde_date = Some("2026-02-06".into());
+    s.create_weld(&a, "admin").unwrap();
+    let mut b = nde_weld("K1", "A2", "API 570", "BW");
+    b.nde_types = Some("PT Root & Final".into());
+    s.create_weld(&b, "admin").unwrap();
+
+    let rep = s.report_nde_compliance().unwrap();
+    let k1 = rep.welders.iter().find(|w| w.stamp == "K1").unwrap();
+    let k2 = rep.welders.iter().find(|w| w.stamp == "K2").unwrap();
+
+    let k1_5 = k1.specs.iter().find(|x| x.spec == "5%").unwrap();
+    assert_eq!(k1_5.population, 20);
+    assert_eq!(k1_5.examined, 1);
+    assert_eq!(k1_5.required, 1);
+    assert!(k1_5.compliant);
+
+    let k1_api = k1.specs.iter().find(|x| x.spec == "API 570").unwrap();
+    assert_eq!(k1_api.population, 2);
+    assert_eq!(k1_api.examined, 1);
+    assert_eq!(k1_api.required, 2);
+    assert_eq!(k1_api.shortfall, 1);
+    assert!(!k1_api.compliant);
+    assert!(!k1.compliant, "API 570 gap drags the welder below spec");
+
+    let k2_5 = k2.specs.iter().find(|x| x.spec == "5%").unwrap();
+    assert_eq!(k2_5.required, 1);
+    assert_eq!(k2_5.examined, 0);
+    assert_eq!(k2_5.shortfall, 1);
+    assert!(!k2.compliant);
+
+    assert!(rep.by_spec.iter().any(|x| x.spec == "5%"));
+    assert!(rep.by_spec.iter().any(|x| x.spec == "API 570"));
+    assert_eq!(rep.noncompliant_count, 2);
+    // most-behind welder is surfaced first.
+    assert_eq!(rep.welders[0].stamp, "K1");
+}

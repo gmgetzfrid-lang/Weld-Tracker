@@ -7,6 +7,7 @@ import type {
   JobReport,
   Lookups,
   MonthlyReport,
+  NdeComplianceReport,
   PipeRow,
   Settings,
   SummaryReport,
@@ -171,6 +172,8 @@ export const api = {
   reportClient: (month: number, year: number) =>
     invoke<ClientReportRow[]>("report_client", { month, year }),
   reportQm: () => invoke<WelderStatRow[]>("report_qm"),
+  reportNdeCompliance: () =>
+    invoke<NdeComplianceReport>("report_nde_compliance"),
 };
 
 /** Reject-rate warning threshold (as a 0..1 fraction) from settings. */

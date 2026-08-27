@@ -28,6 +28,8 @@
   --danger: #dc2626;
   --danger-bg: #fef2f2;
   --ok: #16a34a;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
 
   --radius: 10px;
   --radius-sm: 7px;
@@ -494,3 +496,43 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 .wo-pick:last-child { border-bottom: 0; }
 .wo-pick:hover { background: #eef3ff; }
 .wo-pick .wo-name { font-weight: 700; color: var(--navy); }
+
+/* ---- Statistics page: NDE compliance ---- */
+.badge-amber { background: var(--warn-bg); color: var(--warn); }
+.stat.alert { border-color: #fca5a5; background: linear-gradient(180deg, #fff, var(--danger-bg)); }
+.stat.good { border-color: #a7f3d0; background: linear-gradient(180deg, #fff, #ecfdf5); }
+
+.spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.spec-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface); }
+.spec-card.short { border-color: #fca5a5; }
+.spec-card .spec-top { display: flex; align-items: baseline; justify-content: space-between; }
+.spec-card .spec-name { font-weight: 800; color: var(--navy); font-size: 15px; }
+.spec-card .spec-pct { font-size: 22px; font-weight: 800; }
+.spec-card .spec-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* Coverage meter: fill = actual %, tick marks the required threshold */
+.meter { position: relative; height: 12px; border-radius: 7px; background: var(--surface-2);
+  border: 1px solid var(--border); overflow: hidden; margin: 10px 0 6px; }
+.meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 7px 0 0 7px; }
+.meter-fill.ok { background: linear-gradient(90deg, #34d399, #16a34a); }
+.meter-fill.short { background: linear-gradient(90deg, #f59e0b, #dc2626); }
+.meter-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--navy); opacity: .75; }
+.meter-mark::after { content: ""; position: absolute; top: -3px; left: -2px; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--navy); }
+
+/* Per-welder compliance table cells */
+.cmp-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 60px; }
+.cmp-cell .cmp-frac { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cmp-cell .cmp-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+.cmp-ok { color: var(--ok); }
+.cmp-short { color: var(--danger); }
+.cmp-na { color: var(--text-faint); }
+
+.watch-item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.watch-item:last-child { border-bottom: 0; }
+.watch-item .wi-name { font-weight: 700; color: var(--navy); min-width: 160px; }
+.watch-item .wi-gaps { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Dashboard NDE quick-ref */
+.nde-quick { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.nde-quick .nq-fig { font-size: 30px; font-weight: 800; line-height: 1; }
