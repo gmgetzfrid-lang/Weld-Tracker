@@ -3,6 +3,7 @@ import { api, errMsg } from "../api";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
 import { Coach, Stepper } from "../components/Stepper";
+import { Combobox, InlineSelect, InlineText } from "../components/inline";
 import { WeldAnnotator } from "./annotator/WeldAnnotator";
 import { fileToBase64, loadPdf, base64ToBytes } from "../pdf";
 
@@ -129,7 +130,7 @@ export function DrawingWizard({
             />
           </>
         )}
-        {step === 2 && <AttributesStep drawing={drawing} lookups={lookups} />}
+        {step === 2 && <AttributesStep drawing={drawing} lookups={lookups} welders={welders} />}
         {step === 3 && <ReviewStep drawing={drawing} onClose={onClose} />}
 
         <div className="wizard-foot">
@@ -210,15 +211,9 @@ function HeaderStep({
         <div className="field"><label>Title</label>
           <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} /></div>
         <div className="field"><label>Default Material</label>
-          <select value={drawing.default_material ?? ""} onChange={(e) => set("default_material", e.target.value || null)}>
-            <option value="">—</option>
-            {(lookups.material ?? []).map((m) => <option key={m} value={m}>{m}</option>)}
-          </select></div>
+          <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
         <div className="field"><label>Default Schedule</label>
-          <select value={drawing.default_schedule ?? ""} onChange={(e) => set("default_schedule", e.target.value || null)}>
-            <option value="">—</option>
-            {(lookups.schedule ?? []).map((m) => <option key={m} value={m}>{m}</option>)}
-          </select></div>
+          <Combobox value={drawing.default_schedule ?? ""} options={lookups.schedule ?? []} allowCustom onChange={(v) => set("default_schedule", v || null)} placeholder="e.g. STD/40s" /></div>
       </div>
       <div className="field">
         <label>NDE requirement (RT coverage)</label>
@@ -240,110 +235,107 @@ function HeaderStep({
   );
 }
 
-function AttributesStep({ drawing, lookups }: { drawing: Drawing; lookups: Lookups }) {
+function AttributesStep({
+  drawing,
+  lookups,
+  welders,
+}: {
+  drawing: Drawing;
+  lookups: Lookups;
+  welders: Welder[];
+}) {
   const toast = useToast();
   const [welds, setWelds] = useState<Weld[]>([]);
-  const [sel, setSel] = useState<Set<number>>(new Set());
-  const [attrs, setAttrs] = useState<{ size: string; joint_type: string; groove_type: string; process: string; schedule: string; material: string }>(
-    { size: "", joint_type: "", groove_type: "", process: "", schedule: "", material: "" }
-  );
+  const [loading, setLoading] = useState(true);
 
-  const load = () => api.listDrawingWelds(drawing.id).then((r) => setWelds(r.sort((a, b) => (a.weld_number ?? "").localeCompare(b.weld_number ?? "", undefined, { numeric: true }))));
+  const load = () =>
+    api.listDrawingWelds(drawing.id).then((r) => {
+      setWelds(
+        r.sort((a, b) =>
+          (a.weld_number ?? "").localeCompare(b.weld_number ?? "", undefined, { numeric: true })
+        )
+      );
+      setLoading(false);
+    });
   useEffect(() => { load(); }, [drawing.id]);
 
-  const toggle = (id: number) =>
-    setSel((s) => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-  const allSelected = welds.length > 0 && sel.size === welds.length;
-
-  const apply = async () => {
-    if (sel.size === 0) return toast.push("err", "Select one or more welds first");
+  // Inline edit: optimistic local patch, then persist (thickness/inches recompute).
+  const save = async (w: Weld, changes: Partial<Weld>) => {
+    const updated = { ...w, ...changes };
+    setWelds((prev) => prev.map((x) => (x.id === w.id ? updated : x)));
     try {
-      await api.applyWeldAttributes([...sel], {
-        size: attrs.size ? Number(attrs.size) : null,
-        joint_type: attrs.joint_type || null,
-        groove_type: attrs.groove_type || null,
-        process: attrs.process || null,
-        schedule: attrs.schedule || null,
-        material: attrs.material || null,
+      await api.updateWeld(updated);
+      const fresh = await api.getWeld(w.id);
+      setWelds((prev) => prev.map((x) => (x.id === w.id ? fresh : x)));
+    } catch (e) {
+      toast.push("err", errMsg(e));
+      load();
+    }
+  };
+
+  const fillDown = async (i: number) => {
+    const src = welds[i];
+    const below = welds.slice(i + 1).map((w) => w.id);
+    if (below.length === 0) return toast.push("ok", "Nothing below to fill");
+    try {
+      await api.applyWeldAttributes(below, {
+        size: src.size ?? null,
+        joint_type: src.joint_type ?? null,
+        groove_type: src.groove_type ?? null,
+        process: src.process ?? null,
+        schedule: src.schedule ?? null,
+        material: src.material ?? null,
       });
-      toast.push("ok", `Applied to ${sel.size} weld(s)`);
+      toast.push("ok", `Copied to ${below.length} weld(s) below`);
       await load();
     } catch (e) {
       toast.push("err", errMsg(e));
     }
   };
 
+  const stamps = welders.map((w) => w.stamp);
   const missing = (w: Weld) => !w.size || !w.joint_type;
 
   return (
     <>
-      <Coach title="Fill what the drawing can't infer">
-        Header, welder, weld number and NDE % are already set. Select a run of
-        welds (they're often the same size &amp; joint), choose the values below and
-        <b> apply to selection</b>. Rows still missing size or joint type are
-        flagged.
+      <Coach title="Click any cell to edit — no selecting first">
+        Fill what the drawing can't infer. <b>Click a cell, type or pick, done.</b>{" "}
+        Welds usually run the same, so use <b>⭳ fill down</b> on a row to copy its
+        values to every weld below it. Thickness auto-computes from size + schedule.
       </Coach>
-      <div className="card card-pad" style={{ background: "var(--surface-2)", marginBottom: 14 }}>
-        <div className="form-grid cols-4" style={{ marginBottom: 10 }}>
-          <div className="field"><label>Size (NPS)</label>
-            <input type="number" step="any" value={attrs.size} onChange={(e) => setAttrs({ ...attrs, size: e.target.value })} /></div>
-          <div className="field"><label>Joint Type</label>
-            <select value={attrs.joint_type} onChange={(e) => setAttrs({ ...attrs, joint_type: e.target.value })}>
-              <option value="">—</option>{(lookups.joint_type ?? []).map((v) => <option key={v}>{v}</option>)}
-            </select></div>
-          <div className="field"><label>Groove Type</label>
-            <select value={attrs.groove_type} onChange={(e) => setAttrs({ ...attrs, groove_type: e.target.value })}>
-              <option value="">—</option>{(lookups.groove_type ?? []).map((v) => <option key={v}>{v}</option>)}
-            </select></div>
-          <div className="field"><label>Process</label>
-            <select value={attrs.process} onChange={(e) => setAttrs({ ...attrs, process: e.target.value })}>
-              <option value="">—</option>{(lookups.process ?? []).map((v) => <option key={v}>{v}</option>)}
-            </select></div>
-          <div className="field"><label>Schedule</label>
-            <select value={attrs.schedule} onChange={(e) => setAttrs({ ...attrs, schedule: e.target.value })}>
-              <option value="">—</option>{(lookups.schedule ?? []).map((v) => <option key={v}>{v}</option>)}
-            </select></div>
-          <div className="field"><label>Material</label>
-            <select value={attrs.material} onChange={(e) => setAttrs({ ...attrs, material: e.target.value })}>
-              <option value="">—</option>{(lookups.material ?? []).map((v) => <option key={v}>{v}</option>)}
-            </select></div>
-        </div>
-        <button className="btn btn-primary" onClick={apply}>Apply to {sel.size} selected</button>
-        <span className="hint" style={{ marginLeft: 10 }}>Only filled fields are written.</span>
-      </div>
-
-      <div className="table-wrap">
-        <table className="data">
-          <thead>
-            <tr>
-              <th><input type="checkbox" checked={allSelected} onChange={(e) => setSel(e.target.checked ? new Set(welds.map((w) => w.id)) : new Set())} /></th>
-              <th>Weld #</th><th>Welder</th><th className="num">Size</th><th>Joint</th>
-              <th>Groove</th><th>Process</th><th className="num">Sched</th><th className="num">Thk</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {welds.map((w) => (
-              <tr key={w.id} className={missing(w) ? "" : ""}>
-                <td><input type="checkbox" checked={sel.has(w.id)} onChange={() => toggle(w.id)} /></td>
-                <td style={{ fontWeight: 600 }}>{w.weld_number}</td>
-                <td>{w.stamp_number ?? "—"}</td>
-                <td className="num">{w.size ?? "—"}</td>
-                <td>{w.joint_type ?? "—"}</td>
-                <td>{w.groove_type ?? "—"}</td>
-                <td>{w.process ?? "—"}</td>
-                <td className="num">{w.schedule ?? "—"}</td>
-                <td className="num">{w.thickness ?? "—"}</td>
-                <td>{missing(w) && <span className="badge badge-red">needs size/joint</span>}</td>
+      {loading ? (
+        <Spinner />
+      ) : (
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Weld #</th><th>Welder</th><th className="num">Size</th><th>Joint</th>
+                <th>Groove</th><th>Process</th><th>Sched</th><th>Material</th>
+                <th className="num">Thk</th><th></th><th></th>
               </tr>
-            ))}
-            {welds.length === 0 && <tr><td colSpan={10} className="table-empty">No bubbles placed yet — go back to Annotate.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {welds.map((w, i) => (
+                <tr key={w.id}>
+                  <td style={{ fontWeight: 600 }}>{w.weld_number}</td>
+                  <td><InlineSelect value={w.stamp_number} options={stamps} onCommit={(v) => save(w, { stamp_number: v })} /></td>
+                  <td className="num"><InlineText value={w.size} numeric align="right" onCommit={(v) => save(w, { size: v == null ? null : Number(v) })} /></td>
+                  <td><InlineSelect value={w.joint_type} options={lookups.joint_type ?? []} onCommit={(v) => save(w, { joint_type: v })} /></td>
+                  <td><InlineSelect value={w.groove_type} options={lookups.groove_type ?? []} onCommit={(v) => save(w, { groove_type: v })} /></td>
+                  <td><InlineSelect value={w.process} options={lookups.process ?? []} onCommit={(v) => save(w, { process: v })} /></td>
+                  <td><InlineSelect value={w.schedule} options={lookups.schedule ?? []} onCommit={(v) => save(w, { schedule: v })} /></td>
+                  <td><InlineSelect value={w.material} options={lookups.material ?? []} onCommit={(v) => save(w, { material: v })} /></td>
+                  <td className="num">{w.thickness ?? "—"}</td>
+                  <td>{missing(w) && <span className="badge badge-red">needs size/joint</span>}</td>
+                  <td><button className="filldown" title="Copy this row's values to all welds below" onClick={() => fillDown(i)}>⭳ fill down</button></td>
+                </tr>
+              ))}
+              {welds.length === 0 && <tr><td colSpan={11} className="table-empty">No bubbles placed yet — go back to Place Welds.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }

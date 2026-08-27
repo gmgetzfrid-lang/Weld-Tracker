@@ -307,3 +307,75 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .hub-actions .btn { flex-shrink: 0; }
 .wo-link { color: var(--blue); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 tr:hover .wo-link { color: var(--navy); }
+
+/* ---------------- Inline click-to-edit ---------------- */
+.inline-cell {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 40px; min-height: 24px;
+  padding: 2px 6px; border-radius: 6px; cursor: text; border: 1px solid transparent;
+  transition: background .1s, border-color .1s;
+}
+.inline-cell.r { justify-content: flex-end; }
+.inline-cell:hover { background: #eef3ff; border-color: #d4e0fb; }
+.inline-cell:focus { outline: none; background: #eef3ff; border-color: var(--blue); }
+.inline-empty { color: var(--text-faint); }
+.inline-pen, .inline-caret { font-size: 10px; opacity: 0; color: var(--blue); transition: opacity .1s; }
+.inline-cell:hover .inline-pen, .inline-cell:hover .inline-caret,
+.inline-cell:focus .inline-pen, .inline-cell:focus .inline-caret { opacity: .7; }
+.inline-input {
+  width: 100%; min-width: 80px; padding: 4px 7px; border: 1.5px solid var(--blue);
+  border-radius: 6px; font-size: 13px; font-family: inherit; background: #fff;
+  box-shadow: 0 0 0 3px rgba(37,64,143,.12);
+}
+.inline-input.r { text-align: right; }
+.inline-combo { position: relative; min-width: 120px; }
+.inline-menu, .combo-menu {
+  position: absolute; top: calc(100% + 3px); left: 0; z-index: 40; min-width: 100%;
+  max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: var(--shadow-lg); padding: 4px;
+}
+.inline-opt {
+  padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.inline-opt:hover, .inline-opt.hi { background: #eef3ff; }
+.inline-opt.cur { font-weight: 700; color: var(--navy); }
+.inline-opt.clear { color: var(--text-faint); font-style: italic; }
+.inline-opt.add { color: var(--teal); font-weight: 600; }
+.inline-opt.none { color: var(--text-faint); cursor: default; }
+
+/* Form-field combobox */
+.combo { position: relative; }
+.combo-input {
+  width: 100%; padding: 8px 28px 8px 11px; border: 1px solid var(--border-strong);
+  border-radius: 8px; font-size: 13.5px; font-family: inherit; background: #fff;
+}
+.combo-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,64,143,.12); }
+.combo-caret { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-faint); pointer-events: none; }
+
+/* Segmented chips */
+.segmented { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+.segmented .seg { border: 0; background: transparent; padding: 4px 11px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.segmented .seg:hover { color: var(--text); }
+.segmented .seg.on { background: #fff; color: var(--navy); box-shadow: var(--shadow-sm); }
+.segmented .seg.on.ok { background: var(--st-clear); color: #fff; }
+.segmented .seg.on.bad { background: var(--danger); color: #fff; }
+.segmented .seg.on.mid { background: var(--st-pending); color: #fff; }
+
+/* Fill-down affordance */
+.filldown { border: 0; background: transparent; cursor: pointer; color: var(--blue); font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+.filldown:hover { background: #eef3ff; }
+
+/* New-entry chooser */
+.chooser-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.chooser-card {
+  border: 1.5px solid var(--border); border-radius: 12px; padding: 22px; cursor: pointer;
+  background: var(--surface); transition: all .12s; text-align: left;
+}
+.chooser-card:hover { border-color: var(--blue); box-shadow: var(--shadow); transform: translateY(-2px); }
+.chooser-card .ico { font-size: 30px; }
+.chooser-card h4 { margin: 10px 0 4px; color: var(--navy); font-size: 15px; }
+.chooser-card p { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.wo-picklist { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.wo-pick { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.wo-pick:last-child { border-bottom: 0; }
+.wo-pick:hover { background: #eef3ff; }
+.wo-pick .wo-name { font-weight: 700; color: var(--navy); }

@@ -5,6 +5,7 @@ import type { Lookups, Welder, WorkOrderSummary } from "../types";
 import { ErrorBox, Spinner, num } from "../components/ui";
 import { DrawingWizard } from "./DrawingWizard";
 import { WorkOrderRecord } from "./WorkOrderRecord";
+import { NewEntryChooser } from "../components/NewEntryChooser";
 
 type View =
   | { kind: "list" }
@@ -20,6 +21,7 @@ export function WorkOrders() {
   const [welders, setWelders] = useState<Welder[]>([]);
   const [lookups, setLookups] = useState<Lookups>({});
   const [sizes, setSizes] = useState<number[]>([]);
+  const [chooser, setChooser] = useState(false);
 
   const load = () => api.listWorkOrders().then(setRows).catch((e) => setError(errMsg(e)));
   useEffect(() => {
@@ -68,11 +70,19 @@ export function WorkOrders() {
         </div>
         <div className="spacer" />
         {can("editor") && (
-          <button className="btn btn-accent" onClick={() => setView({ kind: "wizard", drawingId: null })}>
+          <button className="btn btn-accent" onClick={() => setChooser(true)}>
             + New Weld Entry
           </button>
         )}
       </div>
+      {chooser && (
+        <NewEntryChooser
+          onClose={() => setChooser(false)}
+          onExisting={(wo) => { setChooser(false); setView({ kind: "record", wo }); }}
+          onNew={() => { setChooser(false); setView({ kind: "wizard", drawingId: null }); }}
+        />
+      )}
+
       <ErrorBox message={error} />
       {!rows ? (
         <Spinner />

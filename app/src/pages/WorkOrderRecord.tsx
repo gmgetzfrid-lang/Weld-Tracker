@@ -3,6 +3,7 @@ import { api, errMsg } from "../api";
 import { useAuth } from "../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, StatusBadge, num, useToast } from "../components/ui";
+import { InlineSelect, InlineText, Segmented } from "../components/inline";
 import { WeldEditor } from "./WeldEditor";
 
 export function WorkOrderRecord({
@@ -43,6 +44,19 @@ export function WorkOrderRecord({
       .finally(() => setLoading(false));
   }, [workOrder]);
   useEffect(load, [load]);
+
+  const editable = can("editor");
+  const stamps = welders.map((w) => w.stamp);
+  const saveWeld = async (w: Weld, changes: Partial<Weld>) => {
+    const updated = { ...w, ...changes };
+    setWelds((prev) => prev.map((x) => (x.id === w.id ? updated : x)));
+    try {
+      await api.updateWeld(updated);
+    } catch (e) {
+      toast.push("err", errMsg(e));
+      load();
+    }
+  };
 
   const delDrawing = async (d: Drawing) => {
     if (!confirm(`Delete isometric ${d.drawing_no ?? d.id}? Its welds are kept.`)) return;
@@ -124,23 +138,37 @@ export function WorkOrderRecord({
                 {welds.length === 0 && (
                   <tr><td colSpan={8} className="table-empty">No welds recorded on this work order yet.</td></tr>
                 )}
-                {welds.map((w) => (
+                {welds.map((w) => {
+                  const rt = w.rt_rejected === "Y" ? "reject" : w.rt_accepted === "Y" ? "accept" : "";
+                  const stop = (e: React.MouseEvent) => e.stopPropagation();
+                  return (
                   <tr key={w.id} className="clickable" onClick={() => setEditWeld(w)}>
                     <td style={{ fontWeight: 600 }}>{w.weld_number ?? "—"}</td>
                     <td>{w.drawing_no ?? "—"}</td>
-                    <td>{w.joint_type ?? "—"}</td>
-                    <td className="num">{w.size ?? "—"}</td>
-                    <td>{w.stamp_number ?? "—"}</td>
-                    <td>{w.date_welded ?? "—"}</td>
-                    <td>
-                      {w.rt_rejected === "Y" ? <span className="badge badge-red">Reject</span>
-                        : w.rt_accepted === "Y" ? <span className="badge badge-green">Accept</span>
+                    <td onClick={stop}>{editable ? <InlineSelect value={w.joint_type} options={lookups.joint_type ?? []} onCommit={(v) => saveWeld(w, { joint_type: v })} /> : (w.joint_type ?? "—")}</td>
+                    <td className="num" onClick={stop}>{editable ? <InlineText value={w.size} numeric align="right" onCommit={(v) => saveWeld(w, { size: v == null ? null : Number(v) })} /> : (w.size ?? "—")}</td>
+                    <td onClick={stop}>{editable ? <InlineSelect value={w.stamp_number} options={stamps} onCommit={(v) => saveWeld(w, { stamp_number: v })} /> : (w.stamp_number ?? "—")}</td>
+                    <td onClick={stop}>{editable ? <InlineText value={w.date_welded} date onCommit={(v) => saveWeld(w, { date_welded: v })} /> : (w.date_welded ?? "—")}</td>
+                    <td onClick={stop}>
+                      {editable ? (
+                        <Segmented
+                          value={rt}
+                          options={[
+                            { value: "", label: "—" },
+                            { value: "accept", label: "Accept", cls: "ok" },
+                            { value: "reject", label: "Reject", cls: "bad" },
+                          ]}
+                          onChange={(v) => saveWeld(w, { rt_accepted: v === "accept" ? "Y" : null, rt_rejected: v === "reject" ? "Y" : null })}
+                        />
+                      ) : rt === "reject" ? <span className="badge badge-red">Reject</span>
+                        : rt === "accept" ? <span className="badge badge-green">Accept</span>
                         : w.rt_date ? <span className="badge badge-blue">Shot</span>
                         : <span className="faint">—</span>}
                     </td>
-                    <td><StatusBadge status={w.status} /></td>
+                    <td onClick={stop}>{editable ? <InlineSelect value={w.status} options={lookups.status ?? []} onCommit={(v) => saveWeld(w, { status: v ?? "" })} render={(s) => <StatusBadge status={s} />} /> : <StatusBadge status={w.status} />}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

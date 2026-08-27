@@ -8,10 +8,13 @@ import {
   StatusBadge,
   downloadCsv,
   num,
+  useToast,
 } from "../components/ui";
+import { InlineSelect, InlineText, Segmented } from "../components/inline";
 import { WeldEditor } from "./WeldEditor";
 import { DrawingWizard } from "./DrawingWizard";
 import { WorkOrderRecord } from "./WorkOrderRecord";
+import { NewEntryChooser } from "../components/NewEntryChooser";
 
 type View =
   | { kind: "log" }
@@ -20,6 +23,7 @@ type View =
 
 export function WeldLog() {
   const { can } = useAuth();
+  const toast = useToast();
   const [view, setView] = useState<View>({ kind: "log" });
   const [welds, setWelds] = useState<Weld[]>([]);
   const [total, setTotal] = useState(0);
@@ -29,6 +33,7 @@ export function WeldLog() {
   const [joint, setJoint] = useState("");
   const [status, setStatus] = useState("");
   const [editing, setEditing] = useState<Weld | null | undefined>(undefined);
+  const [chooser, setChooser] = useState(false);
 
   const [welders, setWelders] = useState<Welder[]>([]);
   const [lookups, setLookups] = useState<Lookups>({});
@@ -89,6 +94,21 @@ export function WeldLog() {
     );
   }
 
+  const editable = can("editor");
+  const stamps = welders.map((w) => w.stamp);
+
+  // Inline quick-edit: optimistic local patch, then persist.
+  const saveWeld = async (w: Weld, changes: Partial<Weld>) => {
+    const updated = { ...w, ...changes };
+    setWelds((prev) => prev.map((x) => (x.id === w.id ? updated : x)));
+    try {
+      await api.updateWeld(updated);
+    } catch (e) {
+      toast.push("err", errMsg(e));
+      load();
+    }
+  };
+
   const exportCsv = () => {
     const header = [
       "Weld #", "Work Order", "Iso", "Unit", "Joint", "Material", "Sched",
@@ -116,16 +136,21 @@ export function WeldLog() {
               fill themselves. This is the fast way.
             </div>
           </div>
-          <button
-            className="btn btn-accent"
-            onClick={() => setView({ kind: "wizard", drawingId: null })}
-          >
+          <button className="btn btn-accent" onClick={() => setChooser(true)}>
             + New Weld Entry
           </button>
           <button className="btn" onClick={() => setEditing(null)}>
             Quick single weld
           </button>
         </div>
+      )}
+
+      {chooser && (
+        <NewEntryChooser
+          onClose={() => setChooser(false)}
+          onExisting={(wo) => { setChooser(false); setView({ kind: "record", wo }); }}
+          onNew={() => { setChooser(false); setView({ kind: "wizard", drawingId: null }); }}
+        />
       )}
 
       <div className="toolbar">
@@ -180,7 +205,10 @@ export function WeldLog() {
                   </td>
                 </tr>
               )}
-              {welds.map((w) => (
+              {welds.map((w) => {
+                const rt = w.rt_rejected === "Y" ? "reject" : w.rt_accepted === "Y" ? "accept" : "";
+                const stop = (e: React.MouseEvent) => e.stopPropagation();
+                return (
                 <tr key={w.id} className="clickable" onClick={() => setEditing(w)}>
                   <td style={{ fontWeight: 600 }}>{w.weld_number ?? "—"}</td>
                   <td onClick={(e) => { if (w.work_order) { e.stopPropagation(); setView({ kind: "record", wo: w.work_order }); } }}>
@@ -188,20 +216,48 @@ export function WeldLog() {
                   </td>
                   <td>{w.drawing_no ?? "—"}</td>
                   <td>{w.unit ?? "—"}</td>
-                  <td>{w.joint_type ?? "—"}</td>
-                  <td className="num">{w.size ?? "—"}</td>
-                  <td>{w.stamp_number ?? "—"}</td>
-                  <td>{w.date_welded ?? "—"}</td>
-                  <td>{w.rt_date ?? "—"}</td>
-                  <td>
-                    {w.rt_rejected === "Y" ? <span className="badge badge-red">Reject</span>
-                      : w.rt_accepted === "Y" ? <span className="badge badge-green">Accept</span>
+                  <td onClick={stop}>
+                    {editable ? <InlineSelect value={w.joint_type} options={lookups.joint_type ?? []} onCommit={(v) => saveWeld(w, { joint_type: v })} /> : (w.joint_type ?? "—")}
+                  </td>
+                  <td className="num" onClick={stop}>
+                    {editable ? <InlineText value={w.size} numeric align="right" onCommit={(v) => saveWeld(w, { size: v == null ? null : Number(v) })} /> : (w.size ?? "—")}
+                  </td>
+                  <td onClick={stop}>
+                    {editable ? <InlineSelect value={w.stamp_number} options={stamps} onCommit={(v) => saveWeld(w, { stamp_number: v })} /> : (w.stamp_number ?? "—")}
+                  </td>
+                  <td onClick={stop}>
+                    {editable ? <InlineText value={w.date_welded} date onCommit={(v) => saveWeld(w, { date_welded: v })} /> : (w.date_welded ?? "—")}
+                  </td>
+                  <td onClick={stop}>
+                    {editable ? <InlineText value={w.rt_date} date onCommit={(v) => saveWeld(w, { rt_date: v })} /> : (w.rt_date ?? "—")}
+                  </td>
+                  <td onClick={stop}>
+                    {editable ? (
+                      <Segmented
+                        value={rt}
+                        options={[
+                          { value: "", label: "—" },
+                          { value: "accept", label: "Accept", cls: "ok" },
+                          { value: "reject", label: "Reject", cls: "bad" },
+                        ]}
+                        onChange={(v) =>
+                          saveWeld(w, {
+                            rt_accepted: v === "accept" ? "Y" : null,
+                            rt_rejected: v === "reject" ? "Y" : null,
+                          })
+                        }
+                      />
+                    ) : rt === "reject" ? <span className="badge badge-red">Reject</span>
+                      : rt === "accept" ? <span className="badge badge-green">Accept</span>
                       : w.rt_date ? <span className="badge badge-blue">Shot</span>
                       : <span className="faint">—</span>}
                   </td>
-                  <td><StatusBadge status={w.status} /></td>
+                  <td onClick={stop}>
+                    {editable ? <InlineSelect value={w.status} options={lookups.status ?? []} onCommit={(v) => saveWeld(w, { status: v ?? "" })} render={(s) => <StatusBadge status={s} />} /> : <StatusBadge status={w.status} />}
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
