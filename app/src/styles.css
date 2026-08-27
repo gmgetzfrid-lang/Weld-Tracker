@@ -245,6 +245,27 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 
 .wizard-foot { display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 
+/* Wizard sections */
+.wsection { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; background: var(--surface); }
+.wsection-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.wsection-head h4 { margin: 0; color: var(--navy); font-size: 14px; }
+.wsection-head .muted { font-size: 12px; margin-left: 2px; }
+.wsection-ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); font-size: 15px; }
+.field input.big { font-size: 18px; font-weight: 700; padding: 10px 12px; color: var(--navy); }
+.nde-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip.lg { padding: 8px 18px; font-size: 14px; }
+
+/* Drag & drop */
+.dropzone {
+  border: 2px dashed var(--border-strong); border-radius: 12px; padding: 26px; text-align: center;
+  cursor: pointer; transition: all .12s; background: var(--surface-2); color: var(--text-muted);
+}
+.dropzone:hover { border-color: var(--blue); background: #eef3ff; }
+.dropzone.over { border-color: var(--teal); background: #e9f8f1; }
+.dz-ico { font-size: 26px; color: var(--blue); }
+.dz-main { font-weight: 700; color: var(--navy); margin-top: 4px; }
+.dz-file { display: flex; align-items: center; gap: 12px; text-align: left; }
+
 /* ---------------- Weld-bubble annotator ---------------- */
 .anno { display: flex; flex-direction: column; }
 .anno-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px 10px 0 0; }

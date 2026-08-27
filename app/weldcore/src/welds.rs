@@ -284,6 +284,10 @@ impl Store {
             "unit" => "unit",
             "joint_type" => "joint_type",
             "status" => "status",
+            "line_spec" => "line_spec",
+            "material" => "material",
+            "schedule" => "schedule",
+            "drawing_no" => "drawing_no",
             _ => return Err(Error::Invalid(format!("field '{field}' not allowed"))),
         };
         let conn = self.conn.lock().unwrap();

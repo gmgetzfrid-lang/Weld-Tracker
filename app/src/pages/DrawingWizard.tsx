@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errMsg } from "../api";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
@@ -181,57 +181,108 @@ function HeaderStep({
   setPdfFile: (f: File | null) => void;
   error: string | null;
 }) {
-  const nde: [keyof Drawing, string][] = [
-    ["spec_5", "5%"],
-    ["spec_10", "10%"],
-    ["spec_20", "20%"],
-    ["spec_25", "25%"],
-    ["spec_50", "50%"],
-    ["spec_100", "100%"],
-  ];
+  const [lineSpecs, setLineSpecs] = useState<string[]>([]);
+  useEffect(() => { api.distinctWeldValues("line_spec").then(setLineSpecs).catch(() => {}); }, []);
+
+  const NDE = ["5%", "10%", "20%", "25%", "50%", "100%"];
+  const specKey = (p: string) => `spec_${p.replace("%", "")}` as keyof Drawing;
+  const currentNde = NDE.find((p) => drawing[specKey(p)]);
+  const setNde = (p: string) => {
+    (["spec_5", "spec_10", "spec_20", "spec_25", "spec_50", "spec_100"] as (keyof Drawing)[])
+      .forEach((k) => set(k, false as any));
+    set(specKey(p), true as any);
+  };
+
   return (
     <>
       <Coach title="Start with the work order, then the isometric">
-        Everything ties back to the <b>work order number</b>. Enter it (and the iso
-        details) once here — it cascades to <b>every weld</b> you place, so you never
-        retype it. The NDE % you pick becomes each weld's required coverage.
+        Everything ties back to the <b>work order number</b>. Fill these once and
+        they cascade to <b>every weld</b> you place — you never retype them.
       </Coach>
       <ErrorBox message={error} />
-      <div className="form-grid cols-3">
-        <div className="field"><label>Work Order #</label>
-          <input value={drawing.work_order ?? ""} onChange={(e) => set("work_order", e.target.value)} /></div>
-        <div className="field"><label>Drawing / Iso #</label>
-          <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} /></div>
-        <div className="field"><label>Unit</label>
-          <input value={drawing.unit ?? ""} onChange={(e) => set("unit", e.target.value)} /></div>
-        <div className="field"><label>Line Spec</label>
-          <input value={drawing.line_spec ?? ""} onChange={(e) => set("line_spec", e.target.value)} /></div>
-        <div className="field"><label>Revision</label>
-          <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} /></div>
-        <div className="field"><label>Title</label>
-          <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} /></div>
-        <div className="field"><label>Default Material</label>
-          <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
-        <div className="field"><label>Default Schedule</label>
-          <Combobox value={drawing.default_schedule ?? ""} options={lookups.schedule ?? []} allowCustom onChange={(v) => set("default_schedule", v || null)} placeholder="e.g. STD/40s" /></div>
+
+      <div className="wsection">
+        <div className="wsection-head"><span className="wsection-ico">🗂️</span><h4>Work Order</h4></div>
+        <div className="form-grid cols-2">
+          <div className="field"><label>Work Order # *</label>
+            <input className="big" value={drawing.work_order ?? ""} onChange={(e) => set("work_order", e.target.value)} placeholder="e.g. 302719" /></div>
+          <div className="field"><label>Unit</label>
+            <input value={drawing.unit ?? ""} onChange={(e) => set("unit", e.target.value)} placeholder="e.g. 61 - Steam" /></div>
+        </div>
       </div>
-      <div className="field">
-        <label>NDE requirement (RT coverage)</label>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 4 }}>
-          {nde.map(([k, label]) => (
-            <label className="checkline" key={k as string} style={{ margin: 0 }}>
-              <input type="checkbox" checked={Boolean(drawing[k])} onChange={(e) => set(k, e.target.checked as any)} />
-              {label}
-            </label>
+
+      <div className="wsection">
+        <div className="wsection-head"><span className="wsection-ico">📐</span><h4>Isometric Details</h4></div>
+        <div className="form-grid cols-3">
+          <div className="field"><label>Drawing / Iso #</label>
+            <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} /></div>
+          <div className="field"><label>Revision</label>
+            <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} /></div>
+          <div className="field"><label>Line Spec <span className="faint">(autocompletes)</span></label>
+            <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" /></div>
+          <div className="field"><label>Default Material</label>
+            <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
+          <div className="field"><label>Default Schedule</label>
+            <Combobox value={drawing.default_schedule ?? ""} options={lookups.schedule ?? []} allowCustom onChange={(v) => set("default_schedule", v || null)} placeholder="e.g. STD/40s" /></div>
+          <div className="field"><label>Title / Description</label>
+            <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} /></div>
+        </div>
+      </div>
+
+      <div className="wsection">
+        <div className="wsection-head"><span className="wsection-ico">◎</span><h4>NDE Coverage</h4><span className="muted">required RT % for welds on this line</span></div>
+        <div className="nde-chips">
+          {NDE.map((p) => (
+            <button key={p} type="button" className={`chip lg ${currentNde === p ? "on" : ""}`} onClick={() => setNde(p)}>{p}</button>
           ))}
         </div>
       </div>
-      <div className="field">
-        <label>Isometric PDF {drawing.has_pdf && <span className="badge badge-green">attached</span>}</label>
-        <input type="file" accept="application/pdf" onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)} />
-        {pdfFile && <div className="hint">Selected: {pdfFile.name}</div>}
+
+      <div className="wsection">
+        <div className="wsection-head"><span className="wsection-ico">📎</span><h4>Isometric PDF</h4>{drawing.has_pdf && <span className="badge badge-green">attached</span>}</div>
+        <DropZone file={pdfFile} onFile={setPdfFile} hasExisting={drawing.has_pdf} />
       </div>
     </>
+  );
+}
+
+function DropZone({
+  file,
+  onFile,
+  hasExisting,
+}: {
+  file: File | null;
+  onFile: (f: File | null) => void;
+  hasExisting: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+  const pick = (f?: File | null) => {
+    if (f && (f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))) onFile(f);
+  };
+  return (
+    <div
+      className={`dropzone ${over ? "over" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files?.[0]); }}
+      onClick={() => ref.current?.click()}
+    >
+      <input ref={ref} type="file" accept="application/pdf" hidden onChange={(e) => pick(e.target.files?.[0])} />
+      {file ? (
+        <div className="dz-file">
+          <span style={{ fontSize: 22 }}>📄</span>
+          <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 12 }}>ready to attach</div></div>
+          <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); onFile(null); }}>Remove</button>
+        </div>
+      ) : (
+        <>
+          <div className="dz-ico">⬆</div>
+          <div className="dz-main">Drag the isometric PDF here</div>
+          <div className="muted">or click to browse{hasExisting ? " · replaces the current PDF" : ""}</div>
+        </>
+      )}
+    </div>
   );
 }
 
