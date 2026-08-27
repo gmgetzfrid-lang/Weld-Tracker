@@ -244,19 +244,21 @@ fn drawing_bubble_annotation_flow() {
     };
     let did = s.create_drawing(&d, "admin").unwrap();
 
-    // Numbering starts at 1 and increments as bubbles are dropped.
+    // Numbering starts at 1 and increments; weld numbers are W-prefixed.
     assert_eq!(s.next_weld_number(did).unwrap(), 1);
     let w1 = s
-        .add_bubble_weld(did, Some("K1".into()), "1", 1, 0.5, 0.4, 0.5, 0.5, "admin")
+        .add_bubble_weld(did, Some("K1".into()), "W1", 1, 0.5, 0.4, 0.5, 0.5, "admin")
         .unwrap();
-    assert_eq!(w1.weld_number.as_deref(), Some("1"));
+    assert_eq!(w1.weld_number.as_deref(), Some("W1"));
     assert_eq!(w1.unit.as_deref(), Some("61")); // header inherited
     assert!(w1.spec_5); // NDE requirement inherited
     assert_eq!(w1.stamp_number.as_deref(), Some("K1"));
     assert_eq!(w1.status, "Required");
+    // next_weld_number parses the "W" prefix
     assert_eq!(s.next_weld_number(did).unwrap(), 2);
-    s.add_bubble_weld(did, Some("K1".into()), "2", 1, 0.6, 0.4, 0.6, 0.5, "admin")
+    s.add_bubble_weld(did, Some("K1".into()), "W2", 1, 0.6, 0.4, 0.6, 0.5, "admin")
         .unwrap();
+    assert_eq!(s.next_weld_number(did).unwrap(), 3);
     assert_eq!(s.list_drawing_welds(did).unwrap().len(), 2);
     assert_eq!(s.get_drawing(did).unwrap().weld_count, 2);
 

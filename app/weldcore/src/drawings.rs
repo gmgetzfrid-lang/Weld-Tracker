@@ -218,9 +218,14 @@ impl Store {
         let rows = stmt.query_map(params![drawing_id], |r| r.get::<_, String>(0))?;
         let mut max = 0i64;
         for wn in rows {
-            // parse a leading integer (ignores repair/tracer suffixes like R1/T1)
+            // Parse the integer part of e.g. "W12" or "W12R1" (skip a leading
+            // "W"/letters, then take the digit run before any repair suffix).
             let wn = wn?;
-            let digits: String = wn.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = wn
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             if let Ok(n) = digits.parse::<i64>() {
                 max = max.max(n);
             }

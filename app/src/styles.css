@@ -267,7 +267,7 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .dz-file { display: flex; align-items: center; gap: 12px; text-align: left; }
 
 /* ---------------- Weld-bubble annotator ---------------- */
-.anno { display: flex; flex-direction: column; }
+.anno { display: flex; flex-direction: column; position: relative; }
 .anno-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px 10px 0 0; }
 .anno-toolbar .spacer { flex: 1; }
 .anno-num { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
@@ -287,16 +287,63 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .anno-page { position: relative; background: #fff; box-shadow: var(--shadow-lg); flex-shrink: 0; }
 .anno-page canvas { display: block; }
 .anno-svg { position: absolute; top: 0; left: 0; }
-.anno-leader { stroke: #e0322c; stroke-width: 1.4; }
-.anno-leader.pending { stroke-dasharray: 4 3; }
+.anno-leader { stroke: #e0322c; stroke-width: 1.6; }
 .anno-joint { fill: #e0322c; }
 .anno-bubble { fill: #ffffff; stroke: #e0322c; stroke-width: 1.8; }
 .anno-bubble.sel { stroke: var(--navy); stroke-width: 2.6; fill: #eef3ff; }
-.anno-bubble.ghost { fill: rgba(255,255,255,.65); stroke-dasharray: 3 3; }
+.anno-bubble.ghost { fill: rgba(255,255,255,.7); }
+.anno-bubble.active { stroke: var(--teal); stroke-width: 3.2; fill: #e9f8f1; transform-box: fill-box; transform-origin: center; animation: bubblePulse 1.1s ease-in-out infinite; }
+@keyframes bubblePulse { 0%,100% { stroke-width: 3.2; } 50% { stroke-width: 5; } }
 .anno-divider { stroke: #e0322c; stroke-width: 1.4; }
 .anno-txt { font-size: 11px; font-weight: 700; text-anchor: middle; fill: #16233b; dominant-baseline: middle; user-select: none; }
 .anno-selbar { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .anno-selbar .spacer { flex: 1; }
+
+/* Tool chest */
+.toolchest { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
+.toolchest .tool { width: 32px; height: 30px; border: 0; background: transparent; border-radius: 6px; cursor: pointer; font-size: 15px; color: var(--text-muted); }
+.toolchest .tool:hover { background: #e6edff; color: var(--navy); }
+.toolchest .tool.on { background: var(--navy); color: #fff; }
+.welder-switch { display: flex; align-items: center; gap: 6px; }
+.welder-switch .ws-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
+.welder-switch select { padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 13px; font-weight: 600; }
+
+/* Legend stamp */
+.wm-legend { position: absolute; z-index: 6; min-width: 190px; background: #fff; border: 2px solid var(--navy); border-radius: 8px; box-shadow: var(--shadow-lg); font-size: 12px; overflow: hidden; }
+.wm-legend-head { background: var(--navy); color: #fff; font-weight: 800; font-size: 11px; letter-spacing: .06em; padding: 6px 10px; cursor: move; display: flex; align-items: center; justify-content: space-between; }
+.wm-x { border: 0; background: transparent; color: #fff; cursor: pointer; font-size: 12px; }
+.wm-legend-key { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border); }
+.wm-legend-keytext div { line-height: 1.5; }
+.wm-legend-tot { padding: 8px 10px; }
+.wm-legend-toth { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 700; margin-bottom: 5px; }
+.wm-legend-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.wm-legend-stamp { font-weight: 800; color: var(--navy); }
+.wm-legend-count { color: var(--text-muted); }
+
+/* Guided fill card */
+.guided-card { position: sticky; bottom: 0; margin-top: 12px; background: var(--surface); border: 2px solid var(--teal); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 14px 16px; }
+.guided-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.guided-head .spacer { flex: 1; }
+.guided-weld { font-size: 18px; font-weight: 800; color: var(--navy); }
+.guided-prog { background: var(--teal); color: #fff; font-size: 12px; font-weight: 700; padding: 3px 12px; border-radius: 999px; }
+.guided-fields { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (max-width: 1100px) { .guided-fields { grid-template-columns: repeat(3, 1fr); } }
+.guided-fields .field { margin: 0; }
+.guided-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.guided-foot .spacer { flex: 1; }
+
+/* First-run coach marks */
+.coachmarks { position: absolute; z-index: 8; left: 12px; bottom: 12px; max-width: 320px; }
+.coachmark { background: var(--navy); color: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-lg); animation: coachIn .3s ease, coachGlow 1.8s ease-in-out infinite; }
+@keyframes coachIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes coachGlow { 0%,100% { box-shadow: 0 12px 32px rgba(10,31,107,.35); } 50% { box-shadow: 0 12px 40px rgba(47,158,126,.6); } }
+.coachmark .cm-eyebrow { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--gold); font-weight: 800; }
+.coachmark h5 { margin: 4px 0 6px; font-size: 14px; }
+.coachmark p { margin: 0 0 10px; font-size: 12.5px; color: #cdd9f5; line-height: 1.5; }
+.coachmark .cm-foot { display: flex; align-items: center; gap: 8px; }
+.coachmark .cm-dots { flex: 1; display: flex; gap: 4px; }
+.coachmark .cm-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.3); }
+.coachmark .cm-dot.on { background: var(--gold); }
 
 /* ---------------- Getting-started guide ---------------- */
 .guide { border-left: 4px solid transparent; border-image: var(--brand-gradient) 1; }

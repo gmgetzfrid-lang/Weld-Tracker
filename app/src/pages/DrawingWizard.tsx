@@ -7,7 +7,7 @@ import { Combobox, InlineSelect, InlineText } from "../components/inline";
 import { WeldAnnotator } from "./annotator/WeldAnnotator";
 import { fileToBase64, loadPdf, base64ToBytes } from "../pdf";
 
-const STEPS = ["Work Order & Iso", "Place Welds", "Details", "Review"];
+const STEPS = ["Work Order & Iso", "Weld Map", "Weld Details", "Review"];
 
 const EMPTY: Drawing = {
   id: 0,
@@ -45,6 +45,8 @@ export function DrawingWizard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!!drawingId);
+  const [sizes, setSizes] = useState<number[]>([]);
+  useEffect(() => { api.pipeSizes().then(setSizes).catch(() => {}); }, []);
 
   useEffect(() => {
     if (drawingId) {
@@ -117,15 +119,18 @@ export function DrawingWizard({
         )}
         {step === 1 && (
           <>
-            <Coach title="Place the weld bubbles">
-              Pick a welder, click a weld joint on the isometric to pull the leader
-              line, then click again to drop the bubble. The weld number
-              auto-increments and the welder stays selected — keep clicking down the
-              line, press <b>Enter</b> to end a run. Each bubble creates a weld row.
+            <Coach title="Build the weld map">
+              Pick a welder, click a weld joint to pull the leader line, then click
+              again to drop the bubble. The <b>W-number</b> auto-increments and the
+              welder stays selected — keep clicking down the line. Switch welders any
+              time (or number keys 1–9). When the bubbles are down, hit{" "}
+              <b>Fill details</b> to walk each weld. Each bubble is a weld in the log.
             </Coach>
             <WeldAnnotator
               drawing={drawing}
               welders={welders}
+              lookups={lookups}
+              sizes={sizes}
               onChange={() => api.getDrawing(drawing.id).then(setDrawing).catch(() => {})}
             />
           </>
