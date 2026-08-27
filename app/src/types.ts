@@ -111,6 +111,7 @@ export interface Drawing {
   has_pdf: boolean;
   page_count: number;
   weld_count: number;
+  created_by?: string | null;
   created_at?: string;
   updated_at?: string;
 }

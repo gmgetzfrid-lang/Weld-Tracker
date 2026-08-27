@@ -218,6 +218,8 @@ pub struct Drawing {
     #[serde(default)]
     pub weld_count: i64,
     #[serde(default)]
+    pub created_by: Option<String>,
+    #[serde(default)]
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,

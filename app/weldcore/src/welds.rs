@@ -266,12 +266,17 @@ impl Store {
         Ok(())
     }
 
-    pub fn delete_weld(&self, id: i64, actor: &str) -> Result<()> {
+    /// Delete a weld. A non-admin may only delete a weld they created; an admin
+    /// may delete anyone's.
+    pub fn delete_weld(&self, id: i64, actor: &str, role: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let n = conn.execute("DELETE FROM welds WHERE id = ?1", params![id])?;
-        if n == 0 {
-            return Err(Error::NotFound);
+        let created_by: Option<String> = conn
+            .query_row("SELECT created_by FROM welds WHERE id = ?1", params![id], |r| r.get(0))
+            .map_err(|_| Error::NotFound)?;
+        if role != "admin" && created_by.as_deref() != Some(actor) {
+            return Err(Error::PermissionDenied);
         }
+        conn.execute("DELETE FROM welds WHERE id = ?1", params![id])?;
         drop(conn);
         self.audit(actor, "delete", "weld", &id.to_string(), "");
         Ok(())

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
 import type { Lookups, Weld, Welder } from "../types";
+import { useAuth } from "../auth";
 import { StatusBadge, useToast } from "./ui";
 import { InlineMulti, InlineSelect, InlineText, Segmented } from "./inline";
 
@@ -31,6 +32,10 @@ export function WeldTable({
   onOpenWorkOrder?: (wo: string) => void;
 }) {
   const toast = useToast();
+  const { user } = useAuth();
+  // Non-admins may delete only the welds they created themselves.
+  const canDelete = (w: Weld) =>
+    user != null && (user.role === "admin" || w.created_by === user.username);
   const [rows, setRows] = useState<Weld[]>(welds);
   const [edit, setEdit] = useState(false);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -165,7 +170,7 @@ export function WeldTable({
                     <tr className="wt-detail">
                       <td colSpan={cols}>
                         <DetailPanel w={w} edit={edit} editable={editable} lookups={lookups} save={save}
-                          onRepair={() => repair(w)} onDelete={() => del(w)} />
+                          canDelete={canDelete(w)} onRepair={() => repair(w)} onDelete={() => del(w)} />
                       </td>
                     </tr>
                   )}
@@ -180,10 +185,10 @@ export function WeldTable({
 }
 
 function DetailPanel({
-  w, edit, editable, lookups, save, onRepair, onDelete,
+  w, edit, editable, lookups, save, canDelete, onRepair, onDelete,
 }: {
   w: Weld; edit: boolean; editable: boolean; lookups: Lookups;
-  save: (w: Weld, c: Partial<Weld>) => void; onRepair: () => void; onDelete: () => void;
+  save: (w: Weld, c: Partial<Weld>) => void; canDelete: boolean; onRepair: () => void; onDelete: () => void;
 }) {
   const opt = (k: string) => lookups[k] ?? [];
   const F = ({ label, node }: { label: string; node: React.ReactNode }) => (
@@ -221,7 +226,13 @@ function DetailPanel({
             <button className="btn btn-sm" onClick={onRepair}>＋ Repair &amp; Tracers</button>
           )}
           <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn btn-sm btn-danger" onClick={onDelete}>Delete weld</button>
+          {canDelete ? (
+            <button className="btn btn-sm btn-danger" onClick={onDelete}>Delete weld</button>
+          ) : (
+            <span className="faint" title="Only the person who created this weld (or an admin) can delete it.">
+              Delete restricted to its creator
+            </span>
+          )}
         </div>
       )}
     </div>

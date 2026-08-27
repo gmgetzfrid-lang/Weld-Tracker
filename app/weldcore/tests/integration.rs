@@ -119,7 +119,30 @@ fn weld_crud_and_derived_fields() {
         ..Default::default()
     };
     assert_eq!(s.count_welds(&f).unwrap(), 1);
-    s.delete_weld(id, "admin").unwrap();
+    s.delete_weld(id, "admin", "admin").unwrap();
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 0);
+}
+
+#[test]
+fn delete_permissions_owner_only_for_non_admin() {
+    let s = store();
+    // alice (an editor) creates a weld.
+    let id = s
+        .create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice")
+        .unwrap();
+    // bob, another editor, may NOT delete a weld he did not create.
+    assert!(matches!(
+        s.delete_weld(id, "bob", "editor"),
+        Err(weldcore::Error::PermissionDenied)
+    ));
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 1);
+    // an admin may delete anyone's weld.
+    let id2 = s
+        .create_weld(&weld("101", "BW", "K1", "2026-01-16"), "alice")
+        .unwrap();
+    s.delete_weld(id2, "carol", "admin").unwrap();
+    // the original creator may delete their own weld.
+    s.delete_weld(id, "alice", "editor").unwrap();
     assert_eq!(s.count_welds(&Default::default()).unwrap(), 0);
 }
 
@@ -295,7 +318,7 @@ fn drawing_bubble_annotation_flow() {
     assert!(s.get_drawing(did).unwrap().has_pdf);
 
     // Deleting the drawing detaches welds but keeps them.
-    s.delete_drawing(did).unwrap();
+    s.delete_drawing(did, "admin", "admin").unwrap();
     assert_eq!(s.count_welds(&WeldFilter::default()).unwrap(), 2);
     assert!(s.get_weld(w1.id).unwrap().drawing_id.is_none());
 }

@@ -28,9 +28,12 @@ export function WorkOrderRecord({
   onOpenDrawing: (drawingId: number | null) => void;
   onBack: () => void;
 }) {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const toast = useToast();
   const editable = can("editor");
+  // Non-admins may delete only the drawings they created themselves.
+  const canDeleteDrawing = (d: Drawing) =>
+    user != null && (user.role === "admin" || d.created_by === user.username);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [welds, setWelds] = useState<Weld[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +107,9 @@ export function WorkOrderRecord({
                   </div>
                   <div className="drawing-card-foot">
                     <span className="link">Open weld map ›</span>
-                    {editable && <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); delDrawing(d); }}>✕</button>}
+                    {editable && canDeleteDrawing(d) && (
+                      <button className="btn btn-sm btn-danger" title="Delete drawing" onClick={(e) => { e.stopPropagation(); delDrawing(d); }}>✕</button>
+                    )}
                   </div>
                 </div>
               ))}

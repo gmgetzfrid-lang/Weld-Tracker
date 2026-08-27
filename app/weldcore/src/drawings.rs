@@ -30,6 +30,7 @@ fn drawing_from_row(r: &Row) -> rusqlite::Result<Drawing> {
         has_pdf: r.get::<_, i64>("has_pdf")? != 0,
         page_count: r.get("page_count")?,
         weld_count: r.get("weld_count")?,
+        created_by: r.get("created_by")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -39,7 +40,7 @@ const DRAWING_SELECT: &str = "SELECT id, work_order, drawing_no, unit, line_spec
     title, spec_5, spec_10, spec_20, spec_25, spec_50, spec_100, default_material,
     default_schedule, pdf_name, (pdf_data IS NOT NULL) AS has_pdf, page_count,
     (SELECT COUNT(*) FROM welds w WHERE w.drawing_id = drawings.id) AS weld_count,
-    created_at, updated_at
+    created_by, created_at, updated_at
     FROM drawings";
 
 impl Store {
@@ -135,14 +136,18 @@ impl Store {
     }
 
     /// Delete a drawing. Its welds are kept but detached (drawing_id -> NULL)
-    /// so the weld-log history is never lost.
-    pub fn delete_drawing(&self, id: i64) -> Result<()> {
+    /// so the weld-log history is never lost. A non-admin may only delete a
+    /// drawing they created; an admin may delete anyone's.
+    pub fn delete_drawing(&self, id: i64, actor: &str, role: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("UPDATE welds SET drawing_id = NULL WHERE drawing_id = ?1", params![id])?;
-        let n = conn.execute("DELETE FROM drawings WHERE id = ?1", params![id])?;
-        if n == 0 {
-            return Err(Error::NotFound);
+        let created_by: Option<String> = conn
+            .query_row("SELECT created_by FROM drawings WHERE id = ?1", params![id], |r| r.get(0))
+            .map_err(|_| Error::NotFound)?;
+        if role != "admin" && created_by.as_deref() != Some(actor) {
+            return Err(Error::PermissionDenied);
         }
+        conn.execute("UPDATE welds SET drawing_id = NULL WHERE drawing_id = ?1", params![id])?;
+        conn.execute("DELETE FROM drawings WHERE id = ?1", params![id])?;
         Ok(())
     }
 

@@ -243,7 +243,7 @@ pub fn update_weld(state: State<AppState>, weld: Weld) -> R<()> {
 #[tauri::command]
 pub fn delete_weld(state: State<AppState>, id: i64) -> R<()> {
     let actor = state.require_editor()?;
-    e(state.store.delete_weld(id, &actor.username))
+    e(state.store.delete_weld(id, &actor.username, &actor.role))
 }
 
 #[tauri::command]
@@ -304,8 +304,8 @@ pub fn update_drawing(state: State<AppState>, drawing: Drawing) -> R<()> {
 
 #[tauri::command]
 pub fn delete_drawing(state: State<AppState>, id: i64) -> R<()> {
-    state.require_editor()?;
-    e(state.store.delete_drawing(id))
+    let actor = state.require_editor()?;
+    e(state.store.delete_drawing(id, &actor.username, &actor.role))
 }
 
 #[tauri::command]
