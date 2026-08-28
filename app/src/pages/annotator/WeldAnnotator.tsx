@@ -29,6 +29,24 @@ export const B31_CODES = ["B31.3", "B31.1", "B31.4"];
 export const SHOP_FIELD = ["SHOP", "FW"];
 export const HYDRO_STATES = ["Pending", "Complete", "NA-API570", "NA-Service"];
 export const NDE_RESULTS = ["", "Accepted", "Rejected"];
+
+// Fields that repeat weld-to-weld along a line and are carried forward to the
+// next weld in the guided walk. The disposition (NDE %/type/result/date) is
+// never carried — it's specific to each weld's examination.
+const STICKY_KEYS: (keyof Weld)[] = [
+  "stamp_number", "date_welded", "size", "joint_type", "shop_or_field",
+  "service_category", "flange_class", "b31_code", "material", "material_group",
+  "schedule", "groove_type", "process", "line_spec", "aes_service",
+  "new_to_existing", "hydro_status", "pwht_required", "pmi_required",
+];
+function pickSticky(changes: Partial<Weld>): Partial<Weld> {
+  const out: Partial<Weld> = {};
+  for (const k of STICKY_KEYS) {
+    const v = changes[k];
+    if (v !== undefined && v !== null && v !== "") (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
 // A drag in progress on a selected weld: "both" translates the bubble + leader
 // together (move the whole thing); "joint" moves only the joint end of the
 // leader (re-extend / re-aim the line).
@@ -91,6 +109,9 @@ export function WeldAnnotator({
   const legendKey = `wm-legend-${drawing.id}`;
 
   const [guided, setGuided] = useState<number | null>(null); // index into ordered welds
+  // Carry-forward: the driver values last entered in the guided walk, so the
+  // next weld inherits them and the welder only changes what differs.
+  const stickyRef = useRef<Partial<Weld>>({});
   const [showCoach, setShowCoach] = useState(false);
   useEffect(() => {
     try { if (!localStorage.getItem("wm-coach-seen")) setShowCoach(true); } catch { /* ignore */ }
@@ -450,9 +471,12 @@ export function WeldAnnotator({
               lookups={lookups}
               sizes={sizes}
               specOptions={specOptions}
+              sticky={stickyRef.current}
               anchor={{ cx: gcx, cy: gcy, left: gLeftSide, pageH: size.h }}
               onSaveNext={async (changes) => {
                 const w = ordered[guided];
+                // Remember the driver values so the next weld inherits them.
+                stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
                 try {
                   await api.updateWeld({ ...w, ...changes });
                   await refreshWelds();
@@ -635,30 +659,48 @@ function Legend({
 }
 
 function GuidedPopup({
-  weld, index, total, welders, lookups, sizes, specOptions, anchor, onSaveNext, onBack, onSkip, onExit,
+  weld, index, total, welders, lookups, sizes, specOptions, sticky, anchor, onSaveNext, onBack, onSkip, onExit,
 }: {
   weld: Weld; index: number; total: number; welders: Welder[]; lookups: Lookups; sizes: number[];
-  specOptions: string[];
+  specOptions: string[]; sticky: Partial<Weld>;
   anchor: { cx: number; cy: number; left: boolean; pageH: number };
   onSaveNext: (c: Partial<Weld>) => void; onBack: () => void; onSkip: () => void; onExit: () => void;
 }) {
-  const mk = (w: Weld) => ({
-    stamp_number: w.stamp_number ?? "",
-    size: w.size?.toString() ?? "", joint_type: w.joint_type ?? "", groove_type: w.groove_type ?? "",
-    process: w.process ?? "", schedule: w.schedule ?? "", material: w.material ?? "",
-    line_spec: w.line_spec ?? "", nde_percent: w.nde_percent ?? "", nde_types: w.nde_types ?? "",
-    nde_result: w.nde_result ?? "", nde_date: w.nde_date ?? "", date_welded: w.date_welded ?? "",
-    shop_or_field: w.shop_or_field ?? "", material_group: w.material_group ?? "",
-    flange_class: w.flange_class ?? "", service_category: w.service_category ?? "",
-    b31_code: w.b31_code ?? "", aes_service: !!w.aes_service, new_to_existing: !!w.new_to_existing,
-    ut_wall_existing: w.ut_wall_existing?.toString() ?? "", ut_wall_new: w.ut_wall_new?.toString() ?? "",
-    hydro_status: w.hydro_status ?? "", pwht_required: !!w.pwht_required, pwht_temp: w.pwht_temp ?? "",
-    pmi_required: !!w.pmi_required,
-  });
+  // Seed each field from the weld's own value, falling back to the carried-
+  // forward value from the previous weld, so repeated data isn't re-typed.
+  const mk = (w: Weld) => {
+    const s = (k: keyof Weld) => {
+      const v = w[k]; if (v !== undefined && v !== null && v !== "") return v as unknown;
+      const sv = sticky[k]; return sv !== undefined && sv !== null ? sv : "";
+    };
+    const str = (k: keyof Weld) => { const v = s(k); return v == null ? "" : String(v); };
+    const bool = (k: keyof Weld) => { const v = w[k] ?? sticky[k]; return !!v; };
+    return {
+      stamp_number: str("stamp_number"), size: str("size"), joint_type: str("joint_type"),
+      groove_type: str("groove_type"), process: str("process"), schedule: str("schedule"),
+      material: str("material"), line_spec: str("line_spec"),
+      nde_percent: w.nde_percent ?? "", nde_types: w.nde_types ?? "",
+      nde_result: w.nde_result ?? "", nde_date: w.nde_date ?? "", date_welded: str("date_welded"),
+      shop_or_field: str("shop_or_field"), material_group: str("material_group"),
+      flange_class: str("flange_class"), service_category: str("service_category"),
+      b31_code: str("b31_code"), aes_service: bool("aes_service"), new_to_existing: bool("new_to_existing"),
+      ut_wall_existing: w.ut_wall_existing?.toString() ?? "", ut_wall_new: w.ut_wall_new?.toString() ?? "",
+      hydro_status: str("hydro_status"), pwht_required: bool("pwht_required"), pwht_temp: w.pwht_temp ?? "",
+      pmi_required: bool("pmi_required"),
+    };
+  };
   const [f, setF] = useState(mk(weld));
+  const [showMore, setShowMore] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setF(mk(weld)); }, [weld.id]);
+  // Autofocus the first field each time we land on a weld — no click needed.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      rootRef.current?.querySelector<HTMLElement>("select,input,.combo-input")?.focus();
+    }, 30);
+    return () => clearTimeout(t);
+  }, [weld.id]);
 
-  // Build the partial weld the changes describe (also used for the live readout).
   const changes = (): Partial<Weld> => ({
     stamp_number: f.stamp_number || null,
     size: f.size ? Number(f.size) : null, joint_type: f.joint_type || null, groove_type: f.groove_type || null,
@@ -673,12 +715,29 @@ function GuidedPopup({
     hydro_status: f.hydro_status || null, pwht_required: f.pwht_required,
     pwht_temp: f.pwht_temp || null, pmi_required: f.pmi_required,
   });
-  const save = () => onSaveNext(changes());
 
-  // Live EP 5-5-1 Table 4 requirement, recomputed as the drivers change. This
-  // calls the same Rust engine used on save, so it can never disagree.
+  // Required-to-advance fields — the safety inputs that make a weld's NDE
+  // determinable. The walk won't move on until they're set.
+  const REQUIRED: { k: keyof typeof f; label: string }[] = [
+    { k: "stamp_number", label: "Welder" }, { k: "date_welded", label: "Date welded" },
+    { k: "size", label: "Size" }, { k: "joint_type", label: "Joint type" },
+    { k: "shop_or_field", label: "Shop/Field" }, { k: "service_category", label: "Service" },
+    { k: "flange_class", label: "Flange class" }, { k: "material", label: "Material" },
+  ];
+  const missing = REQUIRED.filter((r) => !String(f[r.k] ?? "").trim());
+  const canSave = missing.length === 0;
+  const save = () => { if (canSave) onSaveNext(changes()); };
+
+  // The requirement is only asserted once we know which column (joint) and
+  // which pair (shop vs field) apply — otherwise a default would be misleading.
+  const driversReady = !!f.shop_or_field && !!f.joint_type;
+  // The NDE result fields stay locked until the drivers that determine the
+  // required coverage are all set (so you can't record NDE before the spec).
+  const driversComplete = driversReady && !!f.service_category && !!f.flange_class && !!f.material;
+
   const [req, setReq] = useState<import("../../types").NdeRequirement | null>(null);
   useEffect(() => {
+    if (!driversReady) { setReq(null); return; }
     let live = true;
     const id = setTimeout(() => {
       api.computeNde({ ...weld, ...changes() }).then((r) => { if (live) setReq(r); }).catch(() => {});
@@ -686,23 +745,38 @@ function GuidedPopup({
     return () => { live = false; clearTimeout(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f]);
-  // Whether the entered NDE % matches the computed requirement.
   const enteredPct = f.nde_percent.replace(/[^0-9]/g, "");
   const mismatch = req && enteredPct && Number(enteredPct) < req.required_percent;
 
   const opt = (k: string) => lookups[k] ?? [];
   const hasBreak = specOptions.length > 1;
   const tieIn = f.new_to_existing;
+  const rq = <span className="req-star" title="required">*</span>;
 
-  const W = 344;
+  // Enter advances to the next field; on the last, it saves. Comboboxes commit
+  // their own value on Enter and stop propagation, so Enter here means "move on".
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const root = rootRef.current; if (!root) return;
+    const fields = Array.from(
+      root.querySelectorAll<HTMLElement>("select, input:not([type=checkbox]), .combo-input")
+    ).filter((el) => (el as HTMLInputElement).disabled !== true && el.offsetParent !== null);
+    const i = fields.indexOf(e.target as HTMLElement);
+    if (i >= 0 && i < fields.length - 1) fields[i + 1].focus();
+    else save();
+  };
+
+  const W = 372;
   const left = anchor.left ? Math.max(8, anchor.cx - W - 34) : anchor.cx + 34;
   const top = Math.max(8, anchor.cy - 54);
 
   return (
     <div
+      ref={rootRef}
       className={`guided-pop ${anchor.left ? "to-left" : "to-right"}`}
       style={{ left, top, width: W }}
-      onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "SELECT") { e.preventDefault(); save(); } }}
+      onKeyDown={onKeyDown}
     >
       <div className="guided-head">
         <span className="guided-weld">{weld.weld_number}</span>
@@ -712,7 +786,7 @@ function GuidedPopup({
         <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill">✕</button>
       </div>
 
-      {req && (
+      {driversReady && req ? (
         <div className={`guided-req ${mismatch ? "warn" : ""}`}>
           <div className="guided-req-main">
             <span className="guided-req-pct">{req.required_percent}%</span>
@@ -722,41 +796,41 @@ function GuidedPopup({
           {req.supplemental.map((s, i) => <div key={i} className="guided-req-sup">＋ {s}</div>)}
           {mismatch && <div className="guided-req-mismatch">Entered {f.nde_percent} is below the required {req.required_percent}%</div>}
         </div>
+      ) : (
+        <div className="guided-req guided-req-idle">
+          <div className="guided-req-note">Set <b>Shop/Field</b> and <b>Joint Type</b> to compute the required NDE %.</div>
+        </div>
       )}
 
-      <div className="guided-fields">
-        <div className="field span2"><label>Welder</label>
+      <div className={`guided-fields ${driversComplete ? "" : "section-locked-nde"}`}>
+        <div className={`field span2 ${cls(f.stamp_number)}`}><label>Welder{rq}</label>
           <select value={f.stamp_number} onChange={(e) => setF({ ...f, stamp_number: e.target.value })}>
             <option value="">— pick —</option>
             {welders.map((w) => <option key={w.stamp} value={w.stamp}>{w.stamp} — {w.name}</option>)}
           </select>
         </div>
-        <div className="field"><label>Date welded</label>
+        <div className={`field ${cls(f.date_welded)}`}><label>Date welded{rq}</label>
           <input type="date" value={f.date_welded} onChange={(e) => setF({ ...f, date_welded: e.target.value })} /></div>
-        <div className="field"><label>Size (NPS)</label><Combobox value={f.size} options={sizes.map(String)} allowCustom onChange={(v) => setF({ ...f, size: v })} /></div>
+        <div className={`field ${cls(f.size)}`}><label>Size (NPS){rq}</label><Combobox value={f.size} options={sizes.map(String)} allowCustom onChange={(v) => setF({ ...f, size: v })} /></div>
 
         <div className="guided-sec">Table 4 drivers → NDE %</div>
-        <div className="field"><label>Joint Type</label><Combobox value={f.joint_type} options={opt("joint_type")} onChange={(v) => setF({ ...f, joint_type: v })} /></div>
-        <div className="field"><label>Shop / Field</label>
+        <div className={`field ${cls(f.joint_type)}`}><label>Joint Type{rq}</label><Combobox value={f.joint_type} options={opt("joint_type")} onChange={(v) => setF({ ...f, joint_type: v })} /></div>
+        <div className={`field ${cls(f.shop_or_field)}`}><label>Shop / Field{rq}</label>
           <select value={f.shop_or_field} onChange={(e) => setF({ ...f, shop_or_field: e.target.value })}>
             <option value="">—</option>{SHOP_FIELD.map((o) => <option key={o} value={o}>{o === "FW" ? "Field" : "Shop"}</option>)}
           </select></div>
-        <div className="field"><label>Material</label><Combobox value={f.material} options={opt("material")} allowCustom onChange={(v) => setF({ ...f, material: v, material_group: "" })} /></div>
+        <div className={`field ${cls(f.material)}`}><label>Material{rq}</label><Combobox value={f.material} options={opt("material")} allowCustom onChange={(v) => setF({ ...f, material: v, material_group: "" })} /></div>
         <div className="field"><label>Mat. group</label>
           <select value={f.material_group} onChange={(e) => setF({ ...f, material_group: e.target.value })}>
             <option value="">auto</option>{MATERIAL_GROUPS.map((o) => <option key={o} value={o}>{o}</option>)}
           </select></div>
-        <div className="field"><label>Service</label>
+        <div className={`field ${cls(f.service_category)}`}><label>Service{rq}</label>
           <select value={f.service_category} onChange={(e) => setF({ ...f, service_category: e.target.value })}>
             <option value="">—</option>{SERVICE_CATEGORIES.map((o) => <option key={o} value={o}>{o}</option>)}
           </select></div>
-        <div className="field"><label>Flange class</label>
+        <div className={`field ${cls(f.flange_class)}`}><label>Flange class{rq}</label>
           <select value={f.flange_class} onChange={(e) => setF({ ...f, flange_class: e.target.value })}>
             <option value="">—</option>{FLANGE_CLASSES.map((o) => <option key={o} value={o}>#{o}</option>)}
-          </select></div>
-        <div className="field"><label>Code</label>
-          <select value={f.b31_code} onChange={(e) => setF({ ...f, b31_code: e.target.value })}>
-            <option value="">B31.3</option>{B31_CODES.map((o) => <option key={o} value={o}>{o}</option>)}
           </select></div>
         <label className="guided-check"><input type="checkbox" checked={f.aes_service} onChange={(e) => setF({ ...f, aes_service: e.target.checked })} /> AES service</label>
         <label className="guided-check"><input type="checkbox" checked={f.new_to_existing} onChange={(e) => setF({ ...f, new_to_existing: e.target.checked })} /> New-to-existing tie-in (100%)</label>
@@ -766,40 +840,58 @@ function GuidedPopup({
           <div className="field"><label>UT wall — new</label>
             <input type="number" step="0.001" value={f.ut_wall_new} onChange={(e) => setF({ ...f, ut_wall_new: e.target.value })} /></div>
         </>}
-        <div className="field"><label>Schedule</label><Combobox value={f.schedule} options={opt("schedule")} allowCustom onChange={(v) => setF({ ...f, schedule: v })} /></div>
-        {hasBreak && (
-          <div className="field"><label>Line Spec <span className="faint">(break)</span></label>
-            <Combobox value={f.line_spec} options={specOptions} allowCustom onChange={(v) => setF({ ...f, line_spec: v })} /></div>
-        )}
 
         <div className="guided-sec">NDE result</div>
-        <div className="field"><label>NDE %</label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
-        <div className="field"><label>NDE Type</label><Combobox value={f.nde_types} options={opt("nde_type")} allowCustom onChange={(v) => setF({ ...f, nde_types: v })} /></div>
-        <div className="field"><label>Accept / Reject</label>
+        {!driversComplete && <div className="guided-lock-note">Set the Table 4 drivers above (Shop/Field, Joint, Service, Flange, Material) to unlock NDE entry.</div>}
+        <div className="field nde-field"><label>NDE %</label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
+        <div className="field nde-field"><label>NDE Type</label><Combobox value={f.nde_types} options={opt("nde_type")} allowCustom onChange={(v) => setF({ ...f, nde_types: v })} /></div>
+        <div className="field nde-field"><label>Accept / Reject</label>
           <select value={f.nde_result} onChange={(e) => setF({ ...f, nde_result: e.target.value })}>
             {NDE_RESULTS.map((o) => <option key={o} value={o}>{o || "—"}</option>)}
           </select></div>
-        <div className="field"><label>NDE date</label>
+        <div className="field nde-field"><label>NDE date</label>
           <input type="date" value={f.nde_date} onChange={(e) => setF({ ...f, nde_date: e.target.value })} /></div>
 
-        <div className="guided-sec">Heat-treat & pressure test</div>
-        <label className="guided-check"><input type="checkbox" checked={f.pwht_required} onChange={(e) => setF({ ...f, pwht_required: e.target.checked })} /> PWHT required</label>
-        {f.pwht_required && (
-          <div className="field"><label>PWHT temp (°F)</label>
-            <input value={f.pwht_temp} onChange={(e) => setF({ ...f, pwht_temp: e.target.value })} /></div>
-        )}
-        <label className="guided-check"><input type="checkbox" checked={f.pmi_required} onChange={(e) => setF({ ...f, pmi_required: e.target.checked })} /> PMI required</label>
-        <div className="field span2"><label>Hydrotest</label>
-          <select value={f.hydro_status} onChange={(e) => setF({ ...f, hydro_status: e.target.value })}>
-            <option value="">—</option>{HYDRO_STATES.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select></div>
+        <button type="button" className="guided-more-btn" onClick={() => setShowMore((v) => !v)}>
+          {showMore ? "▾" : "▸"} More — code, schedule, heat-treat, hydro
+        </button>
+        {showMore && <>
+          <div className="field"><label>Code</label>
+            <select value={f.b31_code} onChange={(e) => setF({ ...f, b31_code: e.target.value })}>
+              <option value="">B31.3</option>{B31_CODES.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select></div>
+          <div className="field"><label>Schedule</label><Combobox value={f.schedule} options={opt("schedule")} allowCustom onChange={(v) => setF({ ...f, schedule: v })} /></div>
+          {hasBreak && (
+            <div className="field span2"><label>Line Spec <span className="faint">(break)</span></label>
+              <Combobox value={f.line_spec} options={specOptions} allowCustom onChange={(v) => setF({ ...f, line_spec: v })} /></div>
+          )}
+          <div className="field"><label>Groove</label><Combobox value={f.groove_type} options={opt("groove_type")} onChange={(v) => setF({ ...f, groove_type: v })} /></div>
+          <div className="field"><label>Process</label><Combobox value={f.process} options={opt("process")} onChange={(v) => setF({ ...f, process: v })} /></div>
+          <label className="guided-check"><input type="checkbox" checked={f.pwht_required} onChange={(e) => setF({ ...f, pwht_required: e.target.checked })} /> PWHT required</label>
+          {f.pwht_required && (
+            <div className="field"><label>PWHT temp (°F)</label>
+              <input value={f.pwht_temp} onChange={(e) => setF({ ...f, pwht_temp: e.target.value })} /></div>
+          )}
+          <label className="guided-check"><input type="checkbox" checked={f.pmi_required} onChange={(e) => setF({ ...f, pmi_required: e.target.checked })} /> PMI required</label>
+          <div className="field span2"><label>Hydrotest</label>
+            <select value={f.hydro_status} onChange={(e) => setF({ ...f, hydro_status: e.target.value })}>
+              <option value="">—</option>{HYDRO_STATES.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select></div>
+        </>}
       </div>
       <div className="guided-foot">
         <button className="btn btn-sm" onClick={onBack} disabled={index === 0} title="Previous weld">‹ Prev</button>
         <button className="btn btn-sm" onClick={onSkip} title="Leave this weld unchanged and go to the next">Skip</button>
         <div className="spacer" />
-        <button className="btn btn-accent btn-sm" onClick={save}>{index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}</button>
+        {!canSave && <span className="guided-req-missing" title={`Missing: ${missing.map((m) => m.label).join(", ")}`}>Fill required ({missing.length})</span>}
+        <button className="btn btn-accent btn-sm" onClick={save} disabled={!canSave}
+          title={canSave ? "" : `Fill out all required fields: ${missing.map((m) => m.label).join(", ")}`}>
+          {index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}
+        </button>
       </div>
     </div>
   );
 }
+
+// Mark a field wrapper red when a required value is missing.
+function cls(v: string): string { return v.trim() ? "" : "missing"; }

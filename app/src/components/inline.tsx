@@ -186,21 +186,35 @@ export function Combobox({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const filtered = options.filter((o) =>
     o.toLowerCase().includes(q.toLowerCase())
   );
+  // Keyboard: ↑/↓ to highlight, Enter to commit the highlighted (or typed)
+  // value, Esc to close. Enter is stopped from bubbling so it commits the
+  // field rather than triggering the surrounding form's save — press it again
+  // (with the menu closed) to advance.
+  const commit = (v: string) => { onChange(v); setQ(""); setOpen(false); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (!open) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    else if (e.key === "Enter") {
+      const typed = q.trim();
+      const pick = filtered[hi] ?? (allowCustom && typed ? typed : filtered[0]);
+      if (pick != null) { e.preventDefault(); e.stopPropagation(); commit(pick); }
+    } else if (e.key === "Escape") { setOpen(false); }
+  };
   return (
     <div className="combo" ref={ref}>
       <input
         className="combo-input"
         value={open ? q : value}
         placeholder={placeholder}
-        onFocus={() => {
-          setOpen(true);
-          setQ("");
-        }}
-        onChange={(e) => setQ(e.target.value)}
+        onFocus={() => { setOpen(true); setQ(""); setHi(0); }}
+        onChange={(e) => { setQ(e.target.value); setHi(0); }}
+        onKeyDown={onKey}
         onBlur={() => setTimeout(() => setOpen(false), 140)}
       />
       <span className="combo-caret">▾</span>
@@ -209,10 +223,11 @@ export function Combobox({
           {value && (
             <div className="inline-opt clear" onMouseDown={() => { onChange(""); setOpen(false); }}>clear</div>
           )}
-          {filtered.map((o) => (
+          {filtered.map((o, i) => (
             <div
               key={o}
-              className={`inline-opt ${o === value ? "cur" : ""}`}
+              className={`inline-opt ${o === value ? "cur" : ""} ${i === hi ? "hi" : ""}`}
+              onMouseEnter={() => setHi(i)}
               onMouseDown={() => { onChange(o); setOpen(false); }}
             >
               {o}

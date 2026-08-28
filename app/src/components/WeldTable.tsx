@@ -207,6 +207,9 @@ export function WeldTable({
  * single-source-of-truth engine.
  */
 function specWarning(w: Weld): string | null {
+  // Don't assert a requirement before the drivers that determine it are known —
+  // Shop/Field distinguishes 5% from 10%, so a blank one can't be judged.
+  if (!w.shop_or_field || !w.joint_type) return null;
   const exp = w.expected_nde_percent;
   if (!exp) return null;
   const reqPct = Number((exp.match(/\d+/) ?? ["0"])[0]);

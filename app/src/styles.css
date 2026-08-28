@@ -155,6 +155,11 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .btn-primary { background: var(--navy); border-color: var(--navy); color: #fff; }
 .btn-primary:hover { background: var(--navy-800); }
 .btn-accent { background: var(--brand-gradient); border: 0; color: #fff; }
+/* Keep the gradient on hover/disabled — the generic .btn:hover would otherwise
+   paint the background pale while the text stays white, hiding the button. */
+.btn-accent:hover { background: var(--brand-gradient); border: 0; color: #fff; }
+.btn-accent:hover:not(:disabled) { filter: brightness(1.07); }
+.btn-accent:disabled { background: var(--brand-gradient); border: 0; color: #fff; opacity: .45; }
 .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn-danger:hover { background: #b91c1c; }
 .btn-ghost { border-color: transparent; background: transparent; }
@@ -295,20 +300,20 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 
 /* ---------------- Weld-bubble annotator ---------------- */
 .anno { display: flex; flex-direction: column; position: relative; }
-.anno-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+.anno-toolbar { display: flex; align-items: center; gap: 10px; padding: 7px 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px 10px 0 0; flex-wrap: wrap; }
 .anno-toolbar .spacer { flex: 1; }
 .anno-num { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
 .anno-num input { width: 64px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 13px; }
 .anno-pages { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .anno-hint {
-  background: var(--navy); color: #dbe6ff; font-size: 12.5px; font-weight: 600;
-  padding: 8px 16px; letter-spacing: .01em;
+  background: var(--navy); color: #dbe6ff; font-size: 12px; font-weight: 600;
+  padding: 5px 14px; letter-spacing: .01em;
 }
 .anno-hint.active { background: var(--teal); color: #fff; }
 .anno-stage {
   position: relative; overflow: auto; background: #55606f;
   border: 1px solid var(--border); border-top: 0; border-radius: 0 0 10px 10px;
-  max-height: 70vh; padding: 12px; display: flex; justify-content: center;
+  max-height: min(82vh, calc(100vh - 168px)); padding: 12px; display: flex; justify-content: center;
 }
 .anno-empty { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3; background: #fff8e1; border: 1px solid #f0d98a; color: #7a5c00; padding: 8px 14px; border-radius: 8px; font-size: 12.5px; max-width: 560px; }
 .anno-page { position: relative; background: #fff; box-shadow: var(--shadow-lg); flex-shrink: 0; }
@@ -399,6 +404,7 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
   background: rgba(0,132,120,.10); border: 1px solid rgba(0,132,120,.35);
 }
 .guided-req.warn { background: rgba(200,60,40,.10); border-color: rgba(200,60,40,.45); }
+.guided-req.guided-req-idle { background: var(--surface-2); border-color: var(--border); }
 .guided-req-main { display: flex; align-items: baseline; gap: 9px; }
 .guided-req-pct { font-size: 22px; font-weight: 800; color: var(--teal); line-height: 1; }
 .guided-req.warn .guided-req-pct { color: #c8402c; }
@@ -416,6 +422,21 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
   color: var(--text); cursor: pointer; margin: 0;
 }
 .guided-check input { width: auto; margin: 0; }
+/* required-field marker */
+.req-star { color: var(--danger); margin-left: 3px; font-weight: 800; }
+.guided-fields .field.missing input, .guided-fields .field.missing select,
+.guided-fields .field.missing .combo-input { border-color: var(--danger); background: var(--danger-bg); }
+/* a locked section (NDE) until its prerequisites are set */
+.guided-lock-note { grid-column: 1 / -1; font-size: 11.5px; color: var(--warn); background: var(--warn-bg); border: 1px solid #f0d98a; border-radius: 8px; padding: 6px 10px; margin: 2px 0; }
+.guided-fields.section-locked-nde .nde-field { opacity: .45; pointer-events: none; }
+/* collapsible "more" section */
+.guided-more-btn { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; background: transparent; border: 1px dashed var(--border-strong); border-radius: 8px; padding: 7px 10px; font-size: 12px; font-weight: 700; color: var(--text-muted); cursor: pointer; margin-top: 4px; }
+.guided-more-btn:hover { border-color: var(--teal); color: var(--teal); }
+/* footer message when required fields are missing */
+.guided-req-missing { font-size: 11px; color: var(--danger); margin-right: auto; align-self: center; font-weight: 600; }
+/* subtle cue that the field area scrolls */
+.guided-fields { scrollbar-gutter: stable; }
+.guided-scrollcue { grid-column: 1/-1; text-align: center; font-size: 10.5px; color: var(--faint); padding: 2px 0 0; }
 
 /* First-run coach marks */
 .coachmarks { position: absolute; z-index: 8; left: 12px; bottom: 12px; max-width: 320px; }

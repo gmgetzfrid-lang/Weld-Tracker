@@ -123,25 +123,14 @@ export function DrawingWizard({
           <HeaderStep drawing={drawing} set={set} lookups={lookups} pdfFile={pdfFile} setPdfFile={setPdfFile} error={error} />
         )}
         {step === 1 && (
-          <>
-            <Coach title="Map the welds, then Fill attributes — don't go to the table yet">
-              Pick a welder, click a joint then click to drop the bubble — the <b>W-number</b>
-              auto-increments and the welder stays selected, so keep clicking down the line (switch
-              welders any time or press 1–9). Then hit <b>Fill attributes ▶</b>: the map jumps to each
-              weld <em>in order</em>, pulses it so you can see which fitting it is, and pops a card
-              right beside it. Fill it, press <b>Enter</b> (or <b>Next ▶</b>) for the next weld,
-              <b> ‹ Previous</b> to go back. When the last weld is done it takes you to the review table
-              to save. You don't have to remember which bubble is which — it walks you through.
-            </Coach>
-            <WeldAnnotator
-              drawing={drawing}
-              welders={welders}
-              lookups={lookups}
-              sizes={sizes}
-              onChange={() => api.getDrawing(drawing.id).then(setDrawing).catch(() => {})}
-              onComplete={() => setStep(2)}
-            />
-          </>
+          <WeldAnnotator
+            drawing={drawing}
+            welders={welders}
+            lookups={lookups}
+            sizes={sizes}
+            onChange={() => api.getDrawing(drawing.id).then(setDrawing).catch(() => {})}
+            onComplete={() => setStep(2)}
+          />
         )}
         {step === 2 && (
           <ReviewEdit drawing={drawing} welders={welders} lookups={lookups} sizes={sizes} />
