@@ -116,8 +116,8 @@ export function DrawingWizard({
         </span>
       </div>
 
-      <div className="card card-pad">
-        <Stepper steps={STEPS} current={step} />
+      <div className={`card ${step === 1 ? "wiz-flush" : "card-pad"}`}>
+        {step !== 1 && <Stepper steps={STEPS} current={step} />}
 
         {step === 0 && (
           <HeaderStep drawing={drawing} set={set} lookups={lookups} pdfFile={pdfFile} setPdfFile={setPdfFile} error={error} />
@@ -136,7 +136,7 @@ export function DrawingWizard({
           <ReviewEdit drawing={drawing} welders={welders} lookups={lookups} sizes={sizes} />
         )}
 
-        <div className="wizard-foot">
+        <div className={`wizard-foot ${step === 1 ? "wiz-flush-foot" : ""}`}>
           <div>
             {step === 1 && <button className="btn" onClick={() => setStep(0)}>Back to header</button>}
             {step === 2 && <button className="btn" onClick={() => setStep(1)}>Back to map</button>}

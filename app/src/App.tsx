@@ -87,6 +87,7 @@ export function App() {
   const [settings, setSettings] = useState<Settings>({});
   // One app-level "New Weld Entry" chooser and a single hub (Work Orders).
   const [entryOpen, setEntryOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [woIntent, setWoIntent] = useState<WoIntent>(null);
   const openNewEntry = () => setEntryOpen(true);
   const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
@@ -123,60 +124,55 @@ export function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <img src={logo} alt="Kern Energy" />
-        </div>
-        <nav className="sidebar-nav">
-          {groups.map((g) => {
-            const items = NAV.filter(
-              (n) => n.group === g && (!n.admin || can("admin"))
-            );
-            if (items.length === 0) return null;
-            return (
-              <div key={g}>
-                <div className="nav-group-label">{g}</div>
-                {items.map((n) => (
-                  <button
-                    key={n.key}
-                    className={`nav-item ${page === n.key ? "active" : ""}`}
-                    onClick={() => setPage(n.key)}
-                    title={n.desc}
-                  >
-                    <span className="nav-ico">{n.icon}</span>
-                    {n.label}
-                  </button>
-                ))}
+      <div className="rail-slot">
+        <aside className="rail" onMouseLeave={() => setProfileOpen(false)}>
+          <div className="rail-brand" title={settings.app_title || "Weld Tracker"}>
+            <img src={logo} alt="Kern Energy" />
+          </div>
+          <nav className="rail-nav">
+            {groups.map((g) => {
+              const items = NAV.filter((n) => n.group === g && (!n.admin || can("admin")));
+              if (items.length === 0) return null;
+              return (
+                <div key={g} className="rail-group">
+                  <div className="rail-group-label">{g}</div>
+                  {items.map((n) => (
+                    <button
+                      key={n.key}
+                      className={`rail-item ${page === n.key ? "active" : ""}`}
+                      onClick={() => setPage(n.key)}
+                      title={n.desc}
+                    >
+                      <span className="rail-ico">{n.icon}</span>
+                      <span className="rail-label">{n.label}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </nav>
+          <div className="rail-foot">
+            <button className="rail-user" onClick={() => setProfileOpen((v) => !v)} title={user.display_name || user.username}>
+              <span className="rail-avatar">{initials}</span>
+              <span className="rail-label rail-user-name">{user.display_name || user.username}</span>
+            </button>
+            {profileOpen && (
+              <div className="rail-profile">
+                <div className="rail-profile-name">{user.display_name || user.username}</div>
+                <div className="rail-profile-role">{user.role}</div>
+                {can("admin") && (
+                  <button className="rail-profile-btn" onClick={() => { setPage("settings"); setProfileOpen(false); }}>Settings</button>
+                )}
+                <button className="rail-profile-btn danger" onClick={() => logout()}>Sign out</button>
               </div>
-            );
-          })}
-        </nav>
-        <div className="sidebar-foot">
-          {settings.app_title || "Weld Tracker"} · v0.1
-        </div>
-      </aside>
+            )}
+          </div>
+        </aside>
+      </div>
 
       <main className="main">
         <header className="topbar">
-          <div>
-            <h2>{title}</h2>
-            {current?.desc && <div className="topbar-sub">{current.desc}</div>}
-          </div>
-          <div className="spacer" />
-          <div className="user-chip">
-            <div className="user-avatar">{initials}</div>
-            <div>
-              <div style={{ fontWeight: 600, color: "var(--text)" }}>
-                {user.display_name || user.username}
-              </div>
-              <div style={{ fontSize: 11, textTransform: "capitalize" }}>
-                {user.role}
-              </div>
-            </div>
-            <button className="btn btn-sm btn-ghost" onClick={() => logout()}>
-              Sign out
-            </button>
-          </div>
+          <h2 title={current?.desc}>{title}</h2>
         </header>
         <div className="content">
           <PageView

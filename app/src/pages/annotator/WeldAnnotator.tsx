@@ -430,7 +430,8 @@ export function WeldAnnotator({
     };
     stage.addEventListener("wheel", handler, { passive: false });
     return () => stage.removeEventListener("wheel", handler);
-  }, []);
+    // Re-attach once loading finishes and the stage element actually exists.
+  }, [loading]);
 
   // Re-fit when entering/leaving fullscreen (the stage size changes). Esc exits.
   useEffect(() => {
@@ -584,9 +585,9 @@ export function WeldAnnotator({
               <span className="anno-hud-div" />
             </>
           )}
-          <button className="btn btn-sm" title="Zoom out" onClick={() => setScale((s) => Math.max(0.15, s / 1.15))}>−</button>
+          <button className="btn btn-sm" title="Zoom out" onClick={() => setScale((s) => Math.max(0.2, (Math.ceil(s * 10 - 0.01) - 1) / 10))}>−</button>
           <button className="btn btn-sm" title="Fit to width" onClick={fitToWidth}>{Math.round(scale * 100)}%</button>
-          <button className="btn btn-sm" title="Zoom in" onClick={() => setScale((s) => Math.min(6, s * 1.15))}>+</button>
+          <button className="btn btn-sm" title="Zoom in" onClick={() => setScale((s) => Math.min(6, (Math.floor(s * 10 + 0.01) + 1) / 10))}>+</button>
         </div>
 
         {/* hint (bottom-left) */}

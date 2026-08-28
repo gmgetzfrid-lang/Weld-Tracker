@@ -91,8 +91,8 @@ export function SettingsPage() {
             ))}
           </div>
           <p className="hint">
-            The company logo shown on the sign-in screen and sidebar is the Kern
-            Energy mark bundled with the app.
+            The company logo shown on the sign-in screen and navigation rail is
+            the Kern Energy mark bundled with the app.
           </p>
         </div>
       )}
