@@ -80,6 +80,28 @@ export function DrawingWizard({
     }
   };
 
+  // Start a fresh drawing/sheet under the same work order, carrying the shared
+  // header (WO, unit, line spec, material) and bumping the sheet number.
+  const addAnother = () => {
+    const nextSheet = drawing.sheet_no && /^\d+$/.test(drawing.sheet_no.trim())
+      ? String(parseInt(drawing.sheet_no, 10) + 1)
+      : "";
+    setDrawing({
+      ...EMPTY,
+      work_order: drawing.work_order ?? null,
+      unit: drawing.unit ?? null,
+      line_spec: drawing.line_spec ?? null,
+      line_spec_2: drawing.line_spec_2 ?? null,
+      default_material: drawing.default_material ?? null,
+      drawing_no: drawing.drawing_no ?? null, // same drawing, next sheet by default
+      sheet_no: nextSheet || null,
+      revision: "0",
+    });
+    setPdfFile(null);
+    setError(null);
+    setStep(0);
+  };
+
   if (loading) return <Spinner />;
 
   return (
@@ -137,7 +159,12 @@ export function DrawingWizard({
               <button className="btn btn-primary" onClick={() => setStep(2)}>Review &amp; edit →</button>
             )}
             {step === 2 && (
-              <button className="btn btn-accent" onClick={onClose}>Finish ✓</button>
+              <>
+                <button className="btn" onClick={addAnother} title="Save this and start another drawing or sheet on the same work order">
+                  ＋ Add another drawing / sheet
+                </button>
+                <button className="btn btn-accent" onClick={onClose}>Finish ✓</button>
+              </>
             )}
           </div>
         </div>
@@ -172,10 +199,12 @@ function HeaderStep({
 
       <div className="wsection">
         <div className="wsection-head"><span className="wsection-ico">🗂️</span><h4>Work Order</h4></div>
-        <div className="form-grid cols-2">
-          <div className="field"><label>Work Order # *</label>
+        <div className="wrow">
+          <div className="field" style={{ flex: "0 0 220px" }}>
+            <label>Work Order # *</label>
             <input className="big" value={drawing.work_order ?? ""} onChange={(e) => set("work_order", e.target.value)} placeholder="e.g. 302719" /></div>
-          <div className="field"><label>Unit</label>
+          <div className="field" style={{ flex: "0 0 200px" }}>
+            <label>Unit</label>
             <input value={drawing.unit ?? ""} onChange={(e) => set("unit", e.target.value)} placeholder="e.g. 61 - Steam" /></div>
         </div>
       </div>
@@ -199,28 +228,36 @@ function HeaderStep({
               <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} placeholder="0" />
             </div>
           </div>
-          <div className="hint">Reads as <b>{composed || "…"}</b></div>
+          <div className="hint">Reads as <b>{composed || "…"}</b> · more sheets or drawings? Save this one, then <b>＋ Add another</b> at the end — or use <b>Ingest work package</b> on the work order for a compiled book.</div>
         </div>
 
-        <div className="form-grid cols-3">
-          <div className="field"><label>Line Spec <span className="faint">(autocompletes)</span></label>
+        <div className="wrow">
+          <div className="field" style={{ flex: "0 0 210px" }}>
+            <label>Line Spec <span className="faint">(autocompletes)</span></label>
             <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" />
             {!showBreak && (
               <button type="button" className="filldown" style={{ marginTop: 4 }} onClick={() => setShowBreak(true)}>＋ add spec break</button>
             )}
           </div>
           {showBreak && (
-            <div className="field"><label>Line Spec after break <span className="faint">(2nd spec)</span></label>
+            <div className="field" style={{ flex: "0 0 250px" }}>
+              <label>Line Spec after break <span className="faint">(2nd spec)</span></label>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <Combobox value={drawing.line_spec_2 ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec_2", v || null)} placeholder="spec past the break…" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Combobox value={drawing.line_spec_2 ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec_2", v || null)} placeholder="spec past the break…" />
+                </div>
                 <button type="button" className="btn btn-sm btn-ghost" title="Remove spec break" onClick={() => { setShowBreak(false); set("line_spec_2", null); }}>✕</button>
               </div>
             </div>
           )}
-          <div className="field"><label>Default Material <span className="faint">(editable per weld)</span></label>
-            <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
-          <div className="field"><label>Title / Description</label>
-            <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} /></div>
+          <div className="field" style={{ flex: "0 0 150px" }}>
+            <label>Default Material <span className="faint">(per weld)</span></label>
+            <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" />
+          </div>
+        </div>
+        <div className="field span-full" style={{ maxWidth: 540 }}>
+          <label>Title / Description</label>
+          <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} placeholder="e.g. 8&quot; steam header, unit 61" />
         </div>
         {showBreak && (
           <p className="hint" style={{ marginTop: 8 }}>

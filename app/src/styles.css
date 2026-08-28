@@ -181,6 +181,10 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .form-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .form-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .field.span-full { grid-column: 1 / -1; }
+/* A flex row of fields sized to their content (short enum fields sit together,
+   instead of stretching across rigid grid thirds and leaving dead whitespace). */
+.wrow { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: flex-start; }
+.wrow .field { margin-bottom: 10px; }
 
 /* Segmented field group — fuses related inputs (e.g. Drawing # · Sheet · Rev)
    into one control, so a composite identity reads as one thing, not three
