@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
+import { APP_NAME, APP_VERSION, NDE_RULE_SET } from "../version";
 
 export function Spinner() {
   return <div className="spinner" />;
@@ -188,13 +189,31 @@ export function useToast() {
   return useContext(ToastCtx);
 }
 
-/** Download arbitrary rows as a CSV file via a browser blob. */
-export function downloadCsv(filename: string, rows: (string | number)[][]) {
+/**
+ * Download rows as a CSV. When `meta` is given, a provenance block is prepended
+ * so an exported record proves which build and rule set produced it, who
+ * exported it, and under what filters — the audit trail an issued report needs.
+ */
+export function downloadCsv(
+  filename: string,
+  rows: (string | number)[][],
+  meta?: { user?: string; filters?: string },
+) {
   const esc = (v: string | number) => {
     const s = String(v ?? "");
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+  let out = rows;
+  if (meta) {
+    const head: (string | number)[][] = [
+      [`${APP_NAME} v${APP_VERSION} — NDE rule set ${NDE_RULE_SET}`],
+      [`Exported ${new Date().toLocaleString()}${meta.user ? ` by ${meta.user}` : ""}`],
+    ];
+    if (meta.filters) head.push([`Filters: ${meta.filters}`]);
+    head.push([]); // blank separator row
+    out = [...head, ...rows];
+  }
+  const csv = out.map((r) => r.map(esc).join(",")).join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

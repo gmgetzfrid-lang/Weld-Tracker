@@ -22,7 +22,7 @@ export function WeldLog({
   onNewEntry: () => void;
   onOpenWorkOrder: (wo: string) => void;
 }) {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const toast = useToast();
   const [welds, setWelds] = useState<Weld[]>([]);
   const [total, setTotal] = useState(0);
@@ -80,7 +80,13 @@ export function WeldLog({
       w.pwht_temp ?? "", w.brinnel_complete === "Y" ? `Yes ${w.brinnel_value ?? ""}` : "No",
       w.hydro_pressure ? `${w.hydro_pressure} ${w.hydro_time_held ?? ""}` : "", w.status ?? "",
     ]);
-    downloadCsv("weld-log.csv", [header, ...rows]);
+    const filters = [
+      search && `search "${search}"`,
+      joint && `joint ${joint}`,
+      status && `status ${status}`,
+      showVoided ? "incl. voided" : null,
+    ].filter(Boolean).join(", ") || "none";
+    downloadCsv("weld-log.csv", [header, ...rows], { user: user?.display_name || user?.username, filters });
   };
 
   return (
