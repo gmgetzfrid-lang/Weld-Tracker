@@ -110,6 +110,7 @@ impl Store {
             (4, include_str!("migrations/0004_spec_break.sql")),
             (5, include_str!("migrations/0005_welder_certs.sql")),
             (6, include_str!("migrations/0006_drop_welder_legacy.sql")),
+            (7, include_str!("migrations/0007_doc_control.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {

@@ -1,3 +1,4 @@
+use base64::Engine;
 use weldcore::seed::{DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME};
 use weldcore::{Drawing, Store, Weld, WeldFilter, Welder, WelderCert};
 
@@ -312,17 +313,82 @@ fn drawing_bubble_annotation_flow() {
     assert_eq!(moved.bubble_x, Some(0.7));
     assert_eq!(moved.groove_type.as_deref(), Some("Single-V")); // unchanged
 
-    // PDF store + fetch round-trip.
-    s.set_drawing_pdf(did, "iso.pdf", b"%PDF-1.4 hello", 1).unwrap();
-    let (name, b64) = s.get_drawing_pdf(did).unwrap().unwrap();
+    // PDF store + fetch round-trip (attaches to the sheet's effective revision).
+    let pdf_b64 = base64::engine::general_purpose::STANDARD.encode(b"%PDF-1.4 hello");
+    s.set_drawing_pdf_b64(did, "iso.pdf", &pdf_b64, 1, "admin").unwrap();
+    let (name, b64, from, to) = s.get_drawing_pdf(did).unwrap().unwrap();
     assert_eq!(name, "iso.pdf");
     assert!(!b64.is_empty());
+    assert_eq!((from, to), (1, 1));
     assert!(s.get_drawing(did).unwrap().has_pdf);
 
     // Deleting the drawing detaches welds but keeps them.
     s.delete_drawing(did, "admin", "admin").unwrap();
     assert_eq!(s.count_welds(&WeldFilter::default()).unwrap(), 2);
     assert!(s.get_weld(w1.id).unwrap().drawing_id.is_none());
+}
+
+#[test]
+fn drawing_document_control_revisions() {
+    let s = store();
+    let book = base64::engine::general_purpose::STANDARD.encode(b"%PDF-1.4 book");
+
+    // A compiled book (4 pages) under work order WO9.
+    let pkg = s.create_package(Some("WO9"), "package.pdf", &book, 4, "alice").unwrap();
+
+    // Two sheets of the same drawing number sharing that book by page range.
+    let mk = |sheet: &str| Drawing {
+        work_order: Some("WO9".into()),
+        drawing_no: Some("ISO-1042".into()),
+        sheet_no: Some(sheet.into()),
+        revision: Some("0".into()),
+        ..Default::default()
+    };
+    let id1 = s.create_drawing(&mk("1"), "alice").unwrap();
+    let id2 = s.create_drawing(&mk("2"), "alice").unwrap();
+    s.set_effective_source(id1, pkg, 1, 2).unwrap();
+    s.set_effective_source(id2, pkg, 3, 4).unwrap();
+
+    // Composed controlled-document identity and effective status.
+    let g1 = s.get_drawing(id1).unwrap();
+    assert_eq!(g1.doc_name, "ISO-1042 SHT 1 Rev 0");
+    assert_eq!(g1.rev_status.as_deref(), Some("Effective"));
+    assert_eq!(g1.rev_count, 1);
+    assert!(g1.has_pdf);
+    assert_eq!(g1.page_count, 2); // pages 1..2 of the book
+
+    // Each sheet's effective copy is its own page window into the one book.
+    let (_n, _b, from, to) = s.get_drawing_pdf(id1).unwrap().unwrap();
+    assert_eq!((from, to), (1, 2));
+    let (_n2, _b2, f2, t2) = s.get_drawing_pdf(id2).unwrap().unwrap();
+    assert_eq!((f2, t2), (3, 4));
+
+    // Revise sheet 1 to Rev A from a NEW book. Old rev is superseded + retained.
+    let newbook = base64::engine::general_purpose::STANDARD.encode(b"%PDF-1.4 revised");
+    let pkg2 = s.create_package(Some("WO9"), "package-B.pdf", &newbook, 2, "alice").unwrap();
+    s.revise_drawing(id1, "A", Some("Client revision"), Some(pkg2), Some(1), Some(1), "alice")
+        .unwrap();
+
+    let g1b = s.get_drawing(id1).unwrap();
+    assert_eq!(g1b.revision.as_deref(), Some("A"));
+    assert_eq!(g1b.doc_name, "ISO-1042 SHT 1 Rev A");
+    assert_eq!(g1b.rev_count, 2);
+    assert_eq!(g1b.rev_status.as_deref(), Some("Effective"));
+
+    let revs = s.list_drawing_revisions(id1).unwrap();
+    assert_eq!(revs.len(), 2);
+    assert_eq!(revs[0].rev.as_deref(), Some("A")); // newest first, effective
+    assert_eq!(revs[0].status, "Effective");
+    assert_eq!(revs[1].rev.as_deref(), Some("0"));
+    assert_eq!(revs[1].status, "Superseded");
+    assert!(revs[1].superseded_at.is_some());
+
+    // The superseded copy is still viewable from the history (its old window).
+    let (_on, _ob, of, ot) = s.get_revision_pdf(revs[1].id).unwrap().unwrap();
+    assert_eq!((of, ot), (1, 2));
+
+    // Sheet 2 is untouched by sheet 1's revision.
+    assert_eq!(s.get_drawing(id2).unwrap().revision.as_deref(), Some("0"));
 }
 
 #[test]

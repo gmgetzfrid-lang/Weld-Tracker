@@ -285,12 +285,86 @@ pub struct Drawing {
     pub page_count: i64,
     #[serde(default)]
     pub weld_count: i64,
+    /// Sheet number within the drawing number (document control identity is
+    /// drawing_no + sheet_no; the same drawing number can have many sheets).
+    #[serde(default)]
+    pub sheet_no: Option<String>,
+    /// The revision currently Effective for this sheet.
+    #[serde(default)]
+    pub current_revision_id: Option<i64>,
+    /// Status of the effective revision (always "Effective" for the live sheet).
+    #[serde(default)]
+    pub rev_status: Option<String>,
+    /// How many revisions this sheet has on record (>=1).
+    #[serde(default)]
+    pub rev_count: i64,
+    /// Composed controlled-document name, e.g. "ISO-1042 SHT 2 Rev A" (computed).
+    #[serde(default)]
+    pub doc_name: String,
     #[serde(default)]
     pub created_by: Option<String>,
     #[serde(default)]
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,
+}
+
+/// The composed controlled-document name from its parts.
+pub fn doc_name(drawing_no: Option<&str>, sheet_no: Option<&str>, rev: Option<&str>) -> String {
+    let mut s = drawing_no.unwrap_or("(untitled)").trim().to_string();
+    if let Some(sh) = sheet_no.map(str::trim).filter(|x| !x.is_empty()) {
+        s.push_str(&format!(" SHT {sh}"));
+    }
+    if let Some(r) = rev.map(str::trim).filter(|x| !x.is_empty()) {
+        s.push_str(&format!(" Rev {r}"));
+    }
+    s
+}
+
+/// An uploaded PDF package — a single drawing, or a compiled multi-sheet book
+/// that several sheets reference by page range.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentPackage {
+    #[serde(default)]
+    pub id: i64,
+    pub work_order: Option<String>,
+    pub name: Option<String>,
+    #[serde(default)]
+    pub page_count: i64,
+    #[serde(default)]
+    pub has_pdf: bool,
+    #[serde(default)]
+    pub uploaded_by: Option<String>,
+    #[serde(default)]
+    pub uploaded_at: String,
+}
+
+/// One issued revision of a sheet. Exactly one is Effective; the rest are
+/// Superseded and retained for record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrawingRevision {
+    #[serde(default)]
+    pub id: i64,
+    pub drawing_id: i64,
+    pub rev: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    pub package_id: Option<i64>,
+    pub page_from: Option<i64>,
+    pub page_to: Option<i64>,
+    pub reason: Option<String>,
+    pub issued_date: Option<String>,
+    #[serde(default)]
+    pub created_by: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    pub superseded_at: Option<String>,
+    /// True when the referenced package still holds its bytes (viewable).
+    #[serde(default)]
+    pub has_pdf: bool,
+    /// Number of pages in this revision's window (page_to - page_from + 1).
+    #[serde(default)]
+    pub page_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

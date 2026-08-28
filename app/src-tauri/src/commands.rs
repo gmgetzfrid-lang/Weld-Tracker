@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use tauri::State;
 use weldcore::reports::*;
 use weldcore::{
-    CriteriaRow, Drawing, Lookup, PipeRow, Store, User, Weld, WeldFilter, Welder, WelderCert,
-    WelderContinuity, WorkOrderSummary,
+    CriteriaRow, DocumentPackage, Drawing, DrawingRevision, Lookup, PipeRow, Store, User, Weld,
+    WeldFilter, Welder, WelderCert, WelderContinuity, WorkOrderSummary,
 };
 
 pub struct AppState {
@@ -384,16 +384,102 @@ pub fn set_drawing_pdf(
     data_base64: String,
     page_count: i64,
 ) -> R<()> {
-    state.require_editor()?;
+    let actor = state.require_editor()?;
     e(state
         .store
-        .set_drawing_pdf_b64(id, &name, &data_base64, page_count))
+        .set_drawing_pdf_b64(id, &name, &data_base64, page_count, &actor.username))
 }
 
 #[tauri::command]
-pub fn get_drawing_pdf(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
+pub fn get_drawing_pdf(
+    state: State<AppState>,
+    id: i64,
+) -> R<Option<(String, String, i64, i64)>> {
     state.require_login()?;
     e(state.store.get_drawing_pdf(id))
+}
+
+// ---- Document packages & revision control ----
+
+#[tauri::command]
+pub fn create_package(
+    state: State<AppState>,
+    work_order: Option<String>,
+    name: String,
+    data_base64: String,
+    page_count: i64,
+) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state
+        .store
+        .create_package(work_order.as_deref(), &name, &data_base64, page_count, &actor.username))
+}
+
+#[tauri::command]
+pub fn list_packages(state: State<AppState>, work_order: String) -> R<Vec<DocumentPackage>> {
+    state.require_login()?;
+    e(state.store.list_packages(&work_order))
+}
+
+#[tauri::command]
+pub fn get_package_pdf(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
+    state.require_login()?;
+    e(state.store.get_package_pdf(id))
+}
+
+#[tauri::command]
+pub fn get_revision_pdf(
+    state: State<AppState>,
+    rev_id: i64,
+) -> R<Option<(String, String, i64, i64)>> {
+    state.require_login()?;
+    e(state.store.get_revision_pdf(rev_id))
+}
+
+#[tauri::command]
+pub fn set_effective_source(
+    state: State<AppState>,
+    drawing_id: i64,
+    package_id: i64,
+    page_from: i64,
+    page_to: i64,
+) -> R<()> {
+    state.require_editor()?;
+    e(state
+        .store
+        .set_effective_source(drawing_id, package_id, page_from, page_to))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn revise_drawing(
+    state: State<AppState>,
+    drawing_id: i64,
+    new_rev: String,
+    reason: Option<String>,
+    package_id: Option<i64>,
+    page_from: Option<i64>,
+    page_to: Option<i64>,
+) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store.revise_drawing(
+        drawing_id,
+        &new_rev,
+        reason.as_deref(),
+        package_id,
+        page_from,
+        page_to,
+        &actor.username,
+    ))
+}
+
+#[tauri::command]
+pub fn list_drawing_revisions(
+    state: State<AppState>,
+    drawing_id: i64,
+) -> R<Vec<DrawingRevision>> {
+    state.require_login()?;
+    e(state.store.list_drawing_revisions(drawing_id))
 }
 
 #[tauri::command]
