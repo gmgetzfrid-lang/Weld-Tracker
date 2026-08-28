@@ -264,12 +264,15 @@ export function WeldAnnotator({
     setPan({ x: 12, y: 12 });
   }, [pageNum, size.w]);
 
-  // Centre a normalized point in the stage (guided fill jumps here).
-  const centerOn = (nx: number, ny: number) => {
+  // Centre a normalized point in the stage. `rightInset` reserves space on the
+  // right (the guided drawer) so the bubble is centred in the visible area.
+  const centerOn = (nx: number, ny: number, rightInset = 0) => {
     const stage = stageRef.current;
     if (!stage) return;
-    setPan({ x: stage.clientWidth / 2 - nx * size.w, y: stage.clientHeight / 2.3 - ny * size.h });
+    const availW = stage.clientWidth - rightInset;
+    setPan({ x: availW / 2 - nx * size.w, y: stage.clientHeight / 2.15 - ny * size.h });
   };
+  const DRAWER_W = 384;
 
   // Press on the background: begin either a pan (if the pointer moves) or a
   // click action (place / select / legend, on release without moving).
@@ -400,7 +403,7 @@ export function WeldAnnotator({
     const w = ordered[guided];
     if (!w || w.bubble_x == null) return;
     if ((w.bubble_page ?? 1) !== pageNum) setPageNum(w.bubble_page ?? 1);
-    centerOn(w.bubble_x ?? 0.5, w.bubble_y ?? 0.5);
+    centerOn(w.bubble_x ?? 0.5, w.bubble_y ?? 0.5, DRAWER_W);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guided, ordered, size.w, size.h, pageNum]);
 
@@ -450,18 +453,15 @@ export function WeldAnnotator({
   if (error) return <div className="error-box">{error}</div>;
 
   const pageWelds = ordered.filter((w) => (w.bubble_page ?? 1) === pageNum && w.bubble_x != null);
-  const R = 17;
+  // Bubbles are drawn in rendered-pixel space, so their size scales with the
+  // zoom — zooming out shrinks them (no crowding), zooming in enlarges them.
+  const z = scale;
+  const R = 17 * z;
   const activeId = guided !== null ? ordered[guided]?.id : null;
   // The line's spec(s). A spec break gives two — the guided popup then lets you
   // put each weld on the correct side of the break.
   const specOptions = [drawing.line_spec, drawing.line_spec_2].filter(Boolean) as string[];
   const gActive = guided !== null ? ordered[guided] : null;
-  const gcx = (gActive?.bubble_x ?? 0) * size.w;
-  const gcy = (gActive?.bubble_y ?? 0) * size.h;
-
-  const acx = pan.x + gcx, acy = pan.y + gcy; // guided-card anchor, in stage space
-  const stageW = stageRef.current?.clientWidth ?? 900;
-  const gLeftSide = acx > stageW * 0.55;
   const panning = downRef.current?.moved ?? false;
   const placing = editable && tool === "bubble" && stamp && !pending;
 
@@ -506,25 +506,25 @@ export function WeldAnnotator({
                     onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); startDrag(w, "both", e); } }}
                     style={{ cursor: grab ? "move" : "pointer" }}
                   >
-                    <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} />
+                    <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} style={{ strokeWidth: (sel ? 2.4 : 1.7) * z }} />
                     <circle
-                      cx={jx} cy={jy} r={editing ? 7 : 2.5}
+                      cx={jx} cy={jy} r={(editing ? 7 : 2.6) * z}
                       className={`anno-joint ${editing ? "handle" : ""}`}
                       onMouseDown={editing ? (e) => { e.stopPropagation(); startDrag(w, "joint", e); } : undefined}
-                      style={editing ? { cursor: "crosshair" } : undefined}
+                      style={editing ? { cursor: "crosshair", strokeWidth: 2 * z } : undefined}
                     />
-                    <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} />
-                    <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" />
-                    <text x={cx} y={cy - 8} className="anno-txt">{w.stamp_number ?? ""}</text>
-                    <text x={cx} y={cy + 8} className="anno-txt">{w.weld_number ?? ""}</text>
+                    <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} style={{ strokeWidth: (active ? 3 : sel ? 2.6 : 1.9) * z }} />
+                    <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" style={{ strokeWidth: 1.4 * z }} />
+                    <text x={cx} y={cy - R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.stamp_number ?? ""}</text>
+                    <text x={cx} y={cy + R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.weld_number ?? ""}</text>
                   </g>
                 );
               })}
               {pending && cursor && (
                 <>
-                  <line x1={pending.x * size.w} y1={pending.y * size.h} x2={cursor.x * size.w} y2={cursor.y * size.h} className="anno-leader" />
-                  <circle cx={pending.x * size.w} cy={pending.y * size.h} r={3} className="anno-joint" />
-                  <circle cx={cursor.x * size.w} cy={cursor.y * size.h} r={R} className="anno-bubble ghost" />
+                  <line x1={pending.x * size.w} y1={pending.y * size.h} x2={cursor.x * size.w} y2={cursor.y * size.h} className="anno-leader" style={{ strokeWidth: 1.7 * z }} />
+                  <circle cx={pending.x * size.w} cy={pending.y * size.h} r={3 * z} className="anno-joint" />
+                  <circle cx={cursor.x * size.w} cy={cursor.y * size.h} r={R} className="anno-bubble ghost" style={{ strokeWidth: 1.9 * z }} />
                 </>
               )}
             </svg>
@@ -608,8 +608,9 @@ export function WeldAnnotator({
           </div>
         )}
 
-        {/* guided-fill card — positioned in stage space so it never scales */}
+        {/* guided-fill — docked right drawer with guaranteed space */}
         {guided !== null && gActive && (
+          <aside className="anno-drawer" style={{ width: DRAWER_W }} onMouseDown={(e) => e.stopPropagation()}>
           <GuidedPopup
             key={gActive.id}
             weld={gActive}
@@ -620,7 +621,6 @@ export function WeldAnnotator({
             sizes={sizes}
             specOptions={specOptions}
             sticky={stickyRef.current}
-            anchor={{ cx: acx, cy: acy, left: gLeftSide, pageH: size.h }}
             onSaveNext={async (changes) => {
               const w = ordered[guided];
               stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
@@ -641,6 +641,7 @@ export function WeldAnnotator({
             }}
             onExit={() => setGuided(null)}
           />
+          </aside>
         )}
       </div>
     </div>
@@ -732,36 +733,40 @@ function Legend({
   totals: [string, number][]; editable: boolean;
   onMove: (p: Pt) => void; onClose: () => void;
 }) {
-  // Pointer-capture drag: grabbing the header keeps the legend glued to the
-  // cursor even when it moves fast or leaves the box — it moves on the page
-  // exactly like a weld bubble, not like a floating window.
+  // Drag by the header with window listeners — robust under the panned/zoomed
+  // viewport (no CSS scale, so a client-pixel maps 1:1 to a rendered pixel).
   const start = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
-  const onPointerDown = (e: React.PointerEvent) => {
+  const [dragging, setDragging] = useState(false);
+  const sizeRef = useRef(size); sizeRef.current = size;
+  const moveRef = useRef(onMove); moveRef.current = onMove;
+  const onMouseDownHead = (e: React.MouseEvent) => {
     if (!editable) return;
+    e.preventDefault(); e.stopPropagation();
     start.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    setDragging(true);
   };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!start.current) return;
-    const nx = start.current.x + (e.clientX - start.current.px) / (size.w || 1);
-    const ny = start.current.y + (e.clientY - start.current.py) / (size.h || 1);
-    onMove({ x: Math.max(0, Math.min(0.98, nx)), y: Math.max(0, Math.min(0.98, ny)) });
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    start.current = null;
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-  };
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: MouseEvent) => {
+      const s = start.current; if (!s) return;
+      const nx = s.x + (e.clientX - s.px) / (sizeRef.current.w || 1);
+      const ny = s.y + (e.clientY - s.py) / (sizeRef.current.h || 1);
+      moveRef.current({ x: Math.max(0, Math.min(0.98, nx)), y: Math.max(0, Math.min(0.98, ny)) });
+    };
+    const up = () => { start.current = null; setDragging(false); };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, [dragging]);
   return (
     <div className="wm-legend" style={{ left: pos.x * size.w, top: pos.y * size.h }} onMouseDown={(e) => e.stopPropagation()}>
       <div
         className="wm-legend-head"
-        style={{ cursor: editable ? "grab" : "default", touchAction: "none" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        style={{ cursor: editable ? (dragging ? "grabbing" : "grab") : "default", touchAction: "none" }}
+        onMouseDown={onMouseDownHead}
       >
         <span className="wm-grip">⠿</span> WELD MAP LEGEND
-        {editable && <button className="wm-x" onClick={onClose} onPointerDown={(e) => e.stopPropagation()}>✕</button>}
+        {editable && <button className="wm-x" onClick={onClose} onMouseDown={(e) => e.stopPropagation()}>✕</button>}
       </div>
       <div className="wm-legend-key">
         <svg width="42" height="42" viewBox="0 0 42 42">
@@ -784,11 +789,10 @@ function Legend({
 }
 
 function GuidedPopup({
-  weld, index, total, welders, lookups, sizes, specOptions, sticky, anchor, onSaveNext, onBack, onSkip, onExit,
+  weld, index, total, welders, lookups, sizes, specOptions, sticky, onSaveNext, onBack, onSkip, onExit,
 }: {
   weld: Weld; index: number; total: number; welders: Welder[]; lookups: Lookups; sizes: number[];
   specOptions: string[]; sticky: Partial<Weld>;
-  anchor: { cx: number; cy: number; left: boolean; pageH: number };
   onSaveNext: (c: Partial<Weld>) => void; onBack: () => void; onSkip: () => void; onExit: () => void;
 }) {
   // Seed each field from the weld's own value, falling back to the carried-
@@ -892,16 +896,11 @@ function GuidedPopup({
     else save();
   };
 
-  const W = 372;
-  const left = anchor.left ? Math.max(8, anchor.cx - W - 34) : anchor.cx + 34;
-
   return (
     <div
       ref={rootRef}
-      className={`guided-pop ${anchor.left ? "to-left" : "to-right"}`}
-      style={{ left, top: "50%", transform: "translateY(-50%)", width: W }}
+      className="guided-inner"
       onKeyDown={onKeyDown}
-      onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="guided-head">
         <span className="guided-weld">{weld.weld_number}</span>

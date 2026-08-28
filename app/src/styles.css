@@ -730,3 +730,22 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 /* Wizard map step: flush card so the annotator gets the room */
 .wiz-flush { padding: 0; overflow: hidden; }
 .wiz-flush .wizard-foot.wiz-flush-foot { margin: 0; padding: 8px 12px; border-top: 1px solid var(--border); }
+
+/* Guided fill as a docked right-side drawer (guaranteed space, no covering) */
+.anno-drawer {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 9;
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(15,23,42,.16); display: flex;
+  animation: drawerIn .16s ease-out;
+}
+@keyframes drawerIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.guided-inner { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 12px 14px; }
+/* compact so the whole card fits the drawer height without scrolling */
+.guided-inner .guided-fields { gap: 6px 9px; padding-right: 4px; }
+.guided-inner .field label { font-size: 10.5px; margin-bottom: 2px; }
+.guided-inner .field input, .guided-inner .field select, .guided-inner .combo-input { padding: 5px 8px; font-size: 12.5px; }
+.guided-inner .guided-req { padding: 7px 10px; margin-bottom: 8px; }
+.guided-inner .guided-req-pct { font-size: 19px; }
+.guided-inner .guided-sec { margin: 5px 0 -3px; padding-top: 5px; }
+.guided-inner .guided-check { font-size: 11.5px; }
+.guided-inner .guided-foot { margin-top: 10px; }
