@@ -214,9 +214,10 @@ pub struct WelderNdeCompliance {
     pub active: bool,
     pub specs: Vec<NdeSpecStat>,
     pub total_welds: i64,
-    pub total_examined: i64,
+    pub total_examined: i64,   // welds meeting their spec's requirement
+    pub total_inspected: i64,  // welds with a recorded NDE result (reject-rate base)
     pub total_rejected: i64,
-    pub reject_rate: f64, // rejected / examined
+    pub reject_rate: f64, // rejected / inspected
     pub compliant: bool,  // every spec at or above requirement
     pub worst_gap: i64,   // largest single-spec shortfall (0 when all clear)
 }
@@ -647,10 +648,14 @@ impl Store {
             rows.collect::<rusqlite::Result<Vec<_>>>()?
         };
 
-        // Accumulate per (stamp, spec-index).
+        // Accumulate per (stamp, spec-index). `inspected_by_stamp` counts welds
+        // that were actually examined (a recorded result), the honest
+        // denominator for reject rate.
         let mut acc: std::collections::BTreeMap<String, [NdeSpecStat; 5]> =
             std::collections::BTreeMap::new();
-        for (stamp, nde_percent, nde_types, nde_result, joint_type, nde_date, rt_date) in &raw {
+        let mut inspected_by_stamp: std::collections::BTreeMap<String, i64> =
+            std::collections::BTreeMap::new();
+        for (stamp, nde_percent, nde_types, nde_result, joint_type, _nde_date, rt_date) in &raw {
             let Some(spec_idx) = canonical_spec_index(nde_percent.as_deref()) else {
                 continue; // no recognised spec on this weld
             };
@@ -666,17 +671,22 @@ impl Store {
             let s = &mut entry[spec_idx];
             s.population += 1;
             let is_api570 = spec_idx == 4;
-            let examined = if is_api570 {
+            // "Inspected" means an NDE was actually performed and dispositioned —
+            // a recorded result (or a legacy RT date). Planned NDE types or a
+            // stray date alone do NOT count, so we never overstate coverage and
+            // hide a welder that has fallen below spec.
+            let inspected = was_examined(nde_result.as_deref(), rt_date.as_deref());
+            if inspected {
+                *inspected_by_stamp.entry(stamp.clone()).or_default() += 1;
+            }
+            // A weld meets its spec by being inspected (percentage specs) or by
+            // carrying its two required NDE forms (API 570).
+            let met = if is_api570 {
                 api570_satisfied(joint_type.as_deref(), nde_types.as_deref())
             } else {
-                nde_evidence(
-                    nde_result.as_deref(),
-                    nde_types.as_deref(),
-                    nde_date.as_deref(),
-                    rt_date.as_deref(),
-                )
+                inspected
             };
-            if examined {
+            if met {
                 s.examined += 1;
             }
             if nde_result.as_deref().is_some_and(|r| r.eq_ignore_ascii_case("Rejected")) {
@@ -725,6 +735,7 @@ impl Store {
                 continue;
             }
             let (name, active) = name_of(&stamp);
+            let inspected = *inspected_by_stamp.get(&stamp).unwrap_or(&0);
             out.push(WelderNdeCompliance {
                 stamp,
                 name,
@@ -732,8 +743,11 @@ impl Store {
                 specs,
                 total_welds: tw,
                 total_examined: te,
+                total_inspected: inspected,
                 total_rejected: tr,
-                reject_rate: ratio(tr, te),
+                // rejected out of welds actually inspected — rejected is always a
+                // subset of inspected, so this can never exceed 100%.
+                reject_rate: ratio(tr, inspected),
                 compliant: all_ok,
                 worst_gap: worst,
             });
@@ -791,14 +805,13 @@ fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
 
 /// Whether a percentage-spec weld has actually had NDE performed — any of a
 /// recorded result, an NDE type, an NDE date, or a legacy RT date.
-fn nde_evidence(
-    nde_result: Option<&str>,
-    nde_types: Option<&str>,
-    nde_date: Option<&str>,
-    rt_date: Option<&str>,
-) -> bool {
+/// Whether a weld's NDE was actually performed and dispositioned — a recorded
+/// result, or a legacy RT date. A planned NDE type or a bare date does NOT
+/// count, so coverage is never overstated and a welder below spec is never
+/// hidden.
+fn was_examined(nde_result: Option<&str>, rt_date: Option<&str>) -> bool {
     let has = |o: Option<&str>| o.map(|s| !s.trim().is_empty()).unwrap_or(false);
-    has(nde_result) || has(nde_types) || has(nde_date) || has(rt_date)
+    has(nde_result) || has(rt_date)
 }
 
 /// Whether an API-570 in-lieu-of-hydro weld carries its required two forms of

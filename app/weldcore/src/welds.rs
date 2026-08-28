@@ -3,6 +3,27 @@
 use crate::{weld_inches, Error, Result, Store, Weld, WeldFilter};
 use rusqlite::{params, params_from_iter, Row, ToSql};
 
+/// The facility's default NDE coverage for a weld, from its shop/field status
+/// and whether it is a new-to-old tie-in. A tie-in is 100% regardless of
+/// shop/field; otherwise shop welds are 5% and field welds 10%. Returns None
+/// when neither rule applies (so the spec is left for the user to set).
+pub(crate) fn default_spec_for(
+    old_to_new: Option<&str>,
+    shop_or_field: Option<&str>,
+) -> Option<&'static str> {
+    if old_to_new.map(|s| s.eq_ignore_ascii_case("Y")).unwrap_or(false) {
+        return Some("100%"); // new-to-old tie-in
+    }
+    let sf = shop_or_field.unwrap_or("").to_uppercase();
+    if sf == "SHOP" {
+        Some("5%")
+    } else if sf == "FW" || sf.contains("FIELD") {
+        Some("10%")
+    } else {
+        None
+    }
+}
+
 const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
     material, schedule, size, thickness, weld_inches, joint_type, old_to_new,
@@ -136,6 +157,20 @@ impl Store {
                 if let Some(t) = self.lookup_thickness(size, sched)? {
                     w.thickness = Some(t);
                 }
+            }
+        }
+        // Facility rule: apply the required NDE coverage automatically when it
+        // wasn't set — shop welds 5%, field welds 10%, new-to-old tie-ins 100%.
+        // A tie-in is 100% regardless of shop/field. An explicit NDE % is never
+        // overridden.
+        let nde_blank = w
+            .nde_percent
+            .as_deref()
+            .map(|s| s.trim().is_empty())
+            .unwrap_or(true);
+        if nde_blank {
+            if let Some(p) = default_spec_for(w.old_to_new.as_deref(), w.shop_or_field.as_deref()) {
+                w.nde_percent = Some(p.to_string());
             }
         }
         // NDE % drives the coverage-spec flags the level reports group on.

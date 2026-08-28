@@ -258,6 +258,7 @@ export interface WelderNdeCompliance {
   specs: NdeSpecStat[];
   total_welds: number;
   total_examined: number;
+  total_inspected: number;
   total_rejected: number;
   reject_rate: number;
   compliant: boolean;

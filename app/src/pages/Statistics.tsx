@@ -39,7 +39,9 @@ export function Statistics() {
   const fleetExamined = rep.by_spec.reduce((a, s) => a + s.examined, 0);
   const fleetPopulation = rep.by_spec.reduce((a, s) => a + s.population, 0);
   const totalRejected = rep.welders.reduce((a, w) => a + w.total_rejected, 0);
-  const fleetRejectRate = fleetExamined ? totalRejected / fleetExamined : 0;
+  // reject rate is over welds actually inspected, not coverage-met welds.
+  const fleetInspected = rep.welders.reduce((a, w) => a + w.total_inspected, 0);
+  const fleetRejectRate = fleetInspected ? totalRejected / fleetInspected : 0;
   const belowSpec = rep.welders.filter((w) => !w.compliant);
 
   if (rep.welders.length === 0) {
@@ -59,7 +61,7 @@ export function Statistics() {
     const header = ["Welder", "Stamp", "Active"];
     for (const s of specNames)
       header.push(`${s} examined`, `${s} of`, `${s} required`, `${s} owed`);
-    header.push("Total welds", "Examined", "Rejected", "Reject rate", "Compliant");
+    header.push("Total welds", "Examined", "Inspected", "Rejected", "Reject rate", "Compliant");
     const rows: (string | number)[][] = [header];
     for (const w of rep.welders) {
       const byspec = new Map(w.specs.map((s) => [s.spec, s]));
@@ -72,6 +74,7 @@ export function Statistics() {
       row.push(
         w.total_welds,
         w.total_examined,
+        w.total_inspected,
         w.total_rejected,
         (w.reject_rate * 100).toFixed(1) + "%",
         w.compliant ? "Y" : "N"
@@ -84,7 +87,7 @@ export function Statistics() {
   // performance / reject charts — busiest welders first, top 15.
   const byCount = [...rep.welders].sort((a, b) => b.total_welds - a.total_welds).slice(0, 15);
   const byReject = [...rep.welders]
-    .filter((w) => w.total_examined > 0)
+    .filter((w) => w.total_inspected > 0)
     .sort((a, b) => b.reject_rate - a.reject_rate)
     .slice(0, 15);
   const maxReject = Math.max(0.0001, ...byReject.map((w) => w.reject_rate));
@@ -117,7 +120,7 @@ export function Statistics() {
         <StatCard
           label="Fleet Reject Rate"
           value={pct(fleetRejectRate)}
-          sub={`${num(totalRejected)} rejected of ${num(fleetExamined)} examined`}
+          sub={`${num(totalRejected)} rejected of ${num(fleetInspected)} inspected`}
         />
       </div>
 
@@ -278,7 +281,7 @@ function WelderRow({
   threshold: number;
 }) {
   const byspec = new Map(w.specs.map((s) => [s.spec, s]));
-  const over = w.total_examined > 0 && w.reject_rate > threshold;
+  const over = w.total_inspected > 0 && w.reject_rate > threshold;
   return (
     <tr>
       <td style={{ fontWeight: 600 }}>
@@ -303,7 +306,7 @@ function WelderRow({
       })}
       <td className="num">{num(w.total_welds)}</td>
       <td className="num" style={{ color: over ? "var(--danger)" : undefined }}>
-        {w.total_examined ? pct(w.reject_rate) : "—"}
+        {w.total_inspected ? pct(w.reject_rate) : "—"}
       </td>
       <td>
         {w.compliant ? (

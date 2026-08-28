@@ -69,7 +69,7 @@ CREATE TABLE welds (
     schedule         TEXT,
     size             REAL,          -- nominal pipe size
     thickness        REAL,          -- wall thickness (looked up from pipe_schedule)
-    weld_inches      REAL,          -- size * PI
+    weld_inches      REAL,          -- diameter inches = nominal size (NPS)
     joint_type       TEXT,          -- BW | SW | O-Let | Fillet | Other
     old_to_new       TEXT,          -- Y/N tie-in indicator
     weld_number      TEXT,

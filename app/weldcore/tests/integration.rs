@@ -456,4 +456,84 @@ fn nde_compliance_percentage_and_api570() {
     assert_eq!(rep.noncompliant_count, 2);
     // most-behind welder is surfaced first.
     assert_eq!(rep.welders[0].stamp, "K1");
+    // K1 has two inspected welds (the RT'd 5% + the accepted API 570), no rejects.
+    assert_eq!(k1.total_inspected, 2);
+    assert_eq!(k1.total_rejected, 0);
+    assert_eq!(k1.reject_rate, 0.0);
+}
+
+#[test]
+fn nde_reject_rate_uses_inspected_denominator() {
+    let s = store();
+    s.create_welder(&mk_welder("R1", "Rex")).unwrap();
+    // two fully-formed, accepted API 570 butt welds
+    for i in 0..2 {
+        let mut w = nde_weld("R1", &format!("RA{i}"), "API 570", "BW");
+        w.nde_types = Some("PT Root & Final, RT".into());
+        w.nde_result = Some("Accepted".into());
+        w.nde_date = Some("2026-04-01".into());
+        s.create_weld(&w, "admin").unwrap();
+    }
+    // one rejected but missing RT — inspected, yet not two-form satisfied
+    let mut bad = nde_weld("R1", "RBAD", "API 570", "BW");
+    bad.nde_types = Some("PT Root & Final".into());
+    bad.nde_result = Some("Rejected".into());
+    bad.nde_date = Some("2026-04-02".into());
+    s.create_weld(&bad, "admin").unwrap();
+    // one not yet inspected at all
+    s.create_weld(&nde_weld("R1", "RNONE", "API 570", "BW"), "admin").unwrap();
+
+    let rep = s.report_nde_compliance().unwrap();
+    let r1 = rep.welders.iter().find(|w| w.stamp == "R1").unwrap();
+    let api = r1.specs.iter().find(|x| x.spec == "API 570").unwrap();
+    assert_eq!(api.population, 4);
+    assert_eq!(api.examined, 2, "only the two fully-formed welds meet the spec");
+    assert_eq!(r1.total_inspected, 3, "the rejected weld is inspected even though unformed");
+    assert_eq!(r1.total_rejected, 1);
+    // 1 rejected of 3 inspected — never exceeds 100%.
+    assert!((r1.reject_rate - 1.0 / 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn auto_nde_spec_from_shop_field_and_tie_in() {
+    let s = store();
+    // shop weld with a blank NDE % is auto-assigned 5%
+    let mut shop = weld("200", "BW", "K1", "2026-03-01");
+    shop.weld_number = Some("S1".into());
+    shop.spec_5 = false;
+    shop.nde_percent = None;
+    shop.shop_or_field = Some("SHOP".into());
+    let sid = s.create_weld(&shop, "admin").unwrap();
+    let g = s.get_weld(sid).unwrap();
+    assert_eq!(g.nde_percent.as_deref(), Some("5%"));
+    assert!(g.spec_5 && !g.spec_10);
+
+    // field weld -> 10%
+    let mut field = weld("200", "BW", "K1", "2026-03-02");
+    field.weld_number = Some("F1".into());
+    field.spec_5 = false;
+    field.nde_percent = None;
+    field.shop_or_field = Some("FW".into());
+    let fid = s.create_weld(&field, "admin").unwrap();
+    assert_eq!(s.get_weld(fid).unwrap().nde_percent.as_deref(), Some("10%"));
+
+    // new-to-old tie-in -> 100% regardless of shop/field
+    let mut tie = weld("200", "BW", "K1", "2026-03-03");
+    tie.weld_number = Some("T1".into());
+    tie.spec_5 = false;
+    tie.nde_percent = None;
+    tie.old_to_new = Some("Y".into());
+    tie.shop_or_field = Some("SHOP".into());
+    let tid = s.create_weld(&tie, "admin").unwrap();
+    let gt = s.get_weld(tid).unwrap();
+    assert_eq!(gt.nde_percent.as_deref(), Some("100%"));
+    assert!(gt.spec_100);
+
+    // an explicitly chosen NDE % is never overridden by the rule
+    let mut explicit = weld("200", "BW", "K1", "2026-03-04");
+    explicit.weld_number = Some("E1".into());
+    explicit.nde_percent = Some("20%".into());
+    explicit.shop_or_field = Some("SHOP".into());
+    let eid = s.create_weld(&explicit, "admin").unwrap();
+    assert_eq!(s.get_weld(eid).unwrap().nde_percent.as_deref(), Some("20%"));
 }
