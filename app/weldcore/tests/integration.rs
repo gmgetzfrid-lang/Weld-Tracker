@@ -48,14 +48,14 @@ fn first_login_password_change_flow() {
     let s = store();
     // wrong current password rejected
     assert!(s
-        .change_password("admin", "nope", "newsecret")
+        .change_password("admin", "nope", "N3w-Secret-Pass")
         .is_err());
-    s.change_password("admin", DEFAULT_ADMIN_PASSWORD, "newsecret")
+    s.change_password("admin", DEFAULT_ADMIN_PASSWORD, "N3w-Secret-Pass")
         .unwrap();
-    let u = s.login("admin", "newsecret").unwrap();
+    let u = s.login("admin", "N3w-Secret-Pass").unwrap();
     assert!(!u.must_change_password);
     // too-short password rejected
-    assert!(s.change_password("admin", "newsecret", "123").is_err());
+    assert!(s.change_password("admin", "N3w-Secret-Pass", "123").is_err());
 }
 
 #[test]
@@ -63,18 +63,18 @@ fn user_management_and_permissions() {
     let s = store();
     // viewer cannot create users
     assert!(s
-        .create_user("eve", "viewer", "bob", "Bob", "editor", "secret1", true)
+        .create_user("eve", "viewer", "bob", "Bob", "editor", "Bob-Secret-Pass1", true)
         .is_err());
     let bob = s
-        .create_user("admin", "admin", "bob", "Bob", "editor", "secret1", true)
+        .create_user("admin", "admin", "bob", "Bob", "editor", "Bob-Secret-Pass1", true)
         .unwrap();
     assert_eq!(bob.role, "editor");
     // duplicate username rejected
     assert!(s
-        .create_user("admin", "admin", "bob", "Bob2", "viewer", "secret1", true)
+        .create_user("admin", "admin", "bob", "Bob2", "viewer", "Bob-Secret-Pass1", true)
         .is_err());
     // bob must change password on first login
-    let logged = s.login("bob", "secret1").unwrap();
+    let logged = s.login("bob", "Bob-Secret-Pass1").unwrap();
     assert!(logged.must_change_password);
     // cannot disable the last admin
     let admin = s.login("admin", DEFAULT_ADMIN_PASSWORD).unwrap();
@@ -82,11 +82,11 @@ fn user_management_and_permissions() {
     // role + active changes are audited and work
     s.set_user_role("admin", "admin", bob.id, "viewer").unwrap();
     s.set_user_active("admin", "admin", bob.id, false).unwrap();
-    assert!(s.login("bob", "secret1").is_err()); // disabled
+    assert!(s.login("bob", "Bob-Secret-Pass1").is_err()); // disabled
     s.set_user_active("admin", "admin", bob.id, true).unwrap();
     // admin reset forces change
-    s.admin_reset_password("admin", "admin", bob.id, "reset123").unwrap();
-    assert!(s.login("bob", "reset123").unwrap().must_change_password);
+    s.admin_reset_password("admin", "admin", bob.id, "Reset-Pass-1234").unwrap();
+    assert!(s.login("bob", "Reset-Pass-1234").unwrap().must_change_password);
 }
 
 #[test]

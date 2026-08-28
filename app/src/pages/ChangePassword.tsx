@@ -23,7 +23,7 @@ export function ChangePassword({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (next.length < 6) return setError("New password must be at least 6 characters.");
+    if (next.length < 12) return setError("New password must be at least 12 characters.");
     if (next !== confirm) return setError("New passwords do not match.");
     setBusy(true);
     try {

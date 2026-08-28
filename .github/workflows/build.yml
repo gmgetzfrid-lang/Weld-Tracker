@@ -16,7 +16,41 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Fast, OS-independent gate on the pure-Rust domain crate. Runs first; the
+  # Windows bundle build depends on it, so a logic regression fails CI in ~1
+  # minute instead of after a full Tauri build.
+  weldcore-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/weldcore
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/target
+          key: ${{ runner.os }}-weldcore-${{ hashFiles('app/Cargo.lock', 'app/**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-weldcore-
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test
+
   build-windows:
+    needs: weldcore-checks
     runs-on: windows-latest
     defaults:
       run:
@@ -44,7 +78,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri app (NSIS per-user installer)
         run: npm run tauri build -- --bundles nsis
@@ -52,9 +86,20 @@ jobs:
       - name: Collect artifacts
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist-out
-          cp target/release/bundle/nsis/*-setup.exe dist-out/ || true
-          cp target/release/weld-tracker.exe dist-out/Sentrix-portable.exe || true
+
+          # NSIS per-user installer — exactly one -setup.exe is expected.
+          setup=$(ls target/release/bundle/nsis/*-setup.exe | head -n1)
+          cp "$setup" dist-out/
+
+          # Portable exe: Tauri names the main binary after productName
+          # ("Sentrix"); fall back to the Cargo package name for older configs.
+          if   [ -f target/release/Sentrix.exe ];      then portable=target/release/Sentrix.exe
+          elif [ -f target/release/weld-tracker.exe ]; then portable=target/release/weld-tracker.exe
+          else echo "::error::no portable exe found in target/release"; ls -la target/release; exit 1
+          fi
+          cp "$portable" dist-out/Sentrix-portable.exe
           # Ship a portable marker so the portable exe keeps its database in a
           # data\ folder beside it — drop the exe + this marker on a network
           # share and everyone who runs it shares the same data.

@@ -274,11 +274,17 @@ fn require_admin(role: &str) -> Result<()> {
     }
 }
 
+/// The minimum length for any password the app accepts. A shared QC record
+/// system on a network drive is only as trustworthy as its weakest login, so
+/// this is a floor, enforced everywhere a password is set (self-service change,
+/// admin create, admin reset).
+pub const MIN_PASSWORD_LEN: usize = 12;
+
 fn validate_password(pw: &str) -> Result<()> {
-    if pw.chars().count() < 6 {
-        return Err(Error::Invalid(
-            "password must be at least 6 characters".into(),
-        ));
+    if pw.chars().count() < MIN_PASSWORD_LEN {
+        return Err(Error::Invalid(format!(
+            "password must be at least {MIN_PASSWORD_LEN} characters"
+        )));
     }
     Ok(())
 }

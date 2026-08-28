@@ -76,6 +76,18 @@ impl Store {
         }
         conn.busy_timeout(std::time::Duration::from_secs(15))?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        // Fail fast on a corrupt file (a half-written copy on a network share,
+        // a truncated download) rather than migrating and reading garbage. On a
+        // healthy database quick_check returns the single row "ok".
+        let integrity: String = conn
+            .query_row("PRAGMA quick_check(1)", [], |r| r.get(0))
+            .unwrap_or_else(|_| "unreadable".to_string());
+        if integrity != "ok" {
+            return Err(Error::Invalid(format!(
+                "database integrity check failed ({integrity}); the file may be \
+                 corrupt or was not fully copied. Restore from a backup."
+            )));
+        }
         let store = Store {
             conn: Mutex::new(conn),
         };
