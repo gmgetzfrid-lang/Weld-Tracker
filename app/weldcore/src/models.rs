@@ -294,6 +294,20 @@ pub struct Weld {
     /// requirements (NPS ≥ 24 spot RT, thick-wall UT, weld-o-let root VT, …).
     #[serde(default)]
     pub expected_nde_note: Option<String>,
+    /// Snapshot: the rule set (procedure + revision) the requirement was
+    /// computed against, e.g. "EP-5-5-1-R0.4". Frozen at write time so a future
+    /// rule change never silently re-scores a historical weld.
+    #[serde(default)]
+    pub nde_rule_set: Option<String>,
+    /// Snapshot: true when every driver needed to decide the requirement was
+    /// present and recognized. False ⇒ the % above is a placeholder, not an
+    /// authoritative spec — the UI must flag it and block sign-off.
+    #[serde(default)]
+    pub expected_nde_resolved: bool,
+    /// Snapshot: what is missing / unrecognized when `expected_nde_resolved` is
+    /// false (semicolon-joined), so the entry form can name each blocker.
+    #[serde(default)]
+    pub expected_nde_blockers: Option<String>,
 }
 
 /// One file in a work order's quality package (weld map, NDE report, UT, MTR,

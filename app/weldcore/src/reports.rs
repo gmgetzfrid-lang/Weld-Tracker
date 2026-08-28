@@ -982,7 +982,7 @@ impl Store {
                 .filter(|s| !s.trim().is_empty())
                 .or_else(|| w.nde_date.clone().filter(|s| !s.trim().is_empty()));
             if let Some(d) = d {
-                if a.last_rt.as_deref().map_or(true, |cur| d.as_str() > cur) {
+                if a.last_rt.as_deref().is_none_or(|cur| d.as_str() > cur) {
                     a.last_rt = Some(d);
                 }
             }

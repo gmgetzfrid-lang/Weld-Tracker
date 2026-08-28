@@ -71,7 +71,7 @@ impl Store {
             let mut stmt = conn.prepare(&format!(
                 "{CERT_SELECT} WHERE welder_id = ?1 ORDER BY alias COLLATE NOCASE"
             ))?;
-            let rows = stmt.query_map(params![welder_id], |r| Ok(cert_base_from_row(r)?))?;
+            let rows = stmt.query_map(params![welder_id], cert_base_from_row)?;
             let mut v = Vec::new();
             for c in rows {
                 let c = c?;

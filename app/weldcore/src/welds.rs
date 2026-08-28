@@ -73,6 +73,8 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     b31_code, service_category, material_group, flange_class, aes_service, new_to_existing,
     ut_wall_existing, ut_wall_new, governing_wall, pwht_required, pmi_required, hydro_status,
     b31_temp_f, b31_pressure_psig, required_nde_method,
+    nde_rule_set, expected_nde_percent, expected_nde_method, expected_nde_note,
+    expected_nde_resolved, expected_nde_blockers,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
 
@@ -90,6 +92,8 @@ const WRITE_COLS: &[&str] = &[
     "b31_code", "service_category", "material_group", "flange_class", "aes_service", "new_to_existing",
     "ut_wall_existing", "ut_wall_new", "governing_wall", "pwht_required", "pmi_required", "hydro_status",
     "b31_temp_f", "b31_pressure_psig", "required_nde_method",
+    "nde_rule_set", "expected_nde_percent", "expected_nde_method", "expected_nde_note",
+    "expected_nde_resolved", "expected_nde_blockers",
     "drawing_id", "groove_type", "process", "bubble_page", "bubble_x", "bubble_y", "joint_x", "joint_y",
 ];
 
@@ -127,6 +131,9 @@ fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
         Box::new(w.hydro_status.clone()),
         Box::new(w.b31_temp_f), Box::new(w.b31_pressure_psig),
         Box::new(w.required_nde_method.clone()),
+        Box::new(w.nde_rule_set.clone()), Box::new(w.expected_nde_percent.clone()),
+        Box::new(w.expected_nde_method.clone()), Box::new(w.expected_nde_note.clone()),
+        Box::new(w.expected_nde_resolved as i64), Box::new(w.expected_nde_blockers.clone()),
         Box::new(w.drawing_id), Box::new(w.groove_type.clone()), Box::new(w.process.clone()),
         Box::new(w.bubble_page), Box::new(w.bubble_x), Box::new(w.bubble_y),
         Box::new(w.joint_x), Box::new(w.joint_y),
@@ -212,12 +219,33 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         created_by: r.get("created_by")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
-        // Computed below from the full EP 5-5-1 Table 4 engine.
-        expected_nde_percent: None,
-        expected_nde_method: None,
-        expected_nde_note: None,
+        // The frozen Table 4 snapshot, persisted at write time (see apply_derived).
+        expected_nde_percent: r.get("expected_nde_percent")?,
+        expected_nde_method: r.get("expected_nde_method")?,
+        expected_nde_note: r.get("expected_nde_note")?,
+        nde_rule_set: r.get("nde_rule_set")?,
+        expected_nde_resolved: r
+            .get::<_, Option<i64>>("expected_nde_resolved")?
+            .map(|v| v != 0)
+            .unwrap_or(false),
+        expected_nde_blockers: r.get("expected_nde_blockers")?,
     };
-    let req = nde::table4(&nde_inputs_for(&w));
+    // Legacy rows saved before migration 0009 have no snapshot — compute it live
+    // so the readout is never blank. (New writes always persist the snapshot.)
+    if w.expected_nde_percent.is_none() {
+        apply_nde_snapshot(&mut w);
+    }
+    Ok(w)
+}
+
+/// Compute the EP 5-5-1 Table 4 requirement for a weld and write the frozen
+/// snapshot fields onto it. Called at write time (so the outcome is persisted
+/// against the rule set in force) and as a read-time fallback for pre-snapshot
+/// rows. The actual `nde_percent` is never touched — only the *expected*
+/// requirement is derived here.
+fn apply_nde_snapshot(w: &mut Weld) {
+    let req = nde::table4(&nde_inputs_for(w));
+    w.required_nde_method = Some(req.method.clone());
     w.expected_nde_percent = Some(format!("{}%", req.required_percent));
     w.expected_nde_method = Some(req.method.clone());
     let mut note = req.note.clone();
@@ -226,7 +254,13 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         note.push_str(s);
     }
     w.expected_nde_note = Some(note);
-    Ok(w)
+    w.nde_rule_set = Some(req.rule_set.clone());
+    w.expected_nde_resolved = req.resolved;
+    w.expected_nde_blockers = if req.blockers.is_empty() {
+        None
+    } else {
+        Some(req.blockers.join("; "))
+    };
 }
 
 impl Store {
@@ -279,13 +313,12 @@ impl Store {
             w.governing_wall = w.thickness;
         }
 
-        // EP 5-5-1 Table 4: compute the required NDE coverage and method. The
-        // required percentage is exposed read-only via `expected_nde_percent`
-        // (computed in weld_from_row); the actual `nde_percent` is left exactly
-        // as entered — blank until the user records it — so the form never
-        // shows a value nobody chose.
-        let req = nde::table4(&nde_inputs_for(w));
-        w.required_nde_method = Some(req.method.clone());
+        // EP 5-5-1 Table 4: compute the required NDE coverage and freeze the
+        // snapshot (percent, method, note, rule set, resolved flag, blockers)
+        // onto the row so a future rule change never silently re-scores it. The
+        // actual `nde_percent` is left exactly as entered — blank until the user
+        // records it — so the form never shows a value nobody chose.
+        apply_nde_snapshot(w);
         // NDE % drives the coverage-spec flags the level reports group on.
         if let Some(p) = w.nde_percent.as_deref() {
             let d: String = p.chars().filter(|c| c.is_ascii_digit()).collect();

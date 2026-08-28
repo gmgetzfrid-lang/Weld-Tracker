@@ -456,6 +456,10 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .guided-req-note { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 .guided-req-sup { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
 .guided-req-mismatch { font-size: 11px; font-weight: 700; color: #c8402c; margin-top: 4px; }
+.guided-req.unresolved { background: rgba(200,60,40,.10); border-color: rgba(200,60,40,.5); }
+.guided-req.unresolved .guided-req-pct { color: #c8402c; }
+.guided-req.unresolved .guided-req-method { color: #c8402c; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+.guided-req-blocker { font-size: 11px; font-weight: 600; color: #c8402c; margin-top: 2px; }
 /* section divider inside the guided field grid */
 .guided-sec {
   grid-column: 1 / -1; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;

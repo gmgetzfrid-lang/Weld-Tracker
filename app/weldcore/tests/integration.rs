@@ -795,3 +795,110 @@ fn delete_work_order_owner_or_admin() {
     assert_eq!(w2, 1);
     assert_eq!(s.count_welds(&wo901()).unwrap(), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Migration 0009: data-integrity guardrails + frozen NDE snapshot.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn weld_cannot_be_both_accepted_and_rejected() {
+    let s = store();
+    let mut w = weld("100", "BW", "K1", "2026-01-15");
+    w.rt_accepted = Some("Y".into());
+    w.rt_rejected = Some("Y".into());
+    assert!(
+        s.create_weld(&w, "admin").is_err(),
+        "a weld accepted AND rejected must be rejected by the DB"
+    );
+}
+
+#[test]
+fn weld_size_and_thickness_must_be_positive() {
+    let s = store();
+    let mut neg_size = weld("100", "BW", "K1", "2026-01-15");
+    neg_size.size = Some(-3.0);
+    neg_size.schedule = None; // avoid the pipe-table lookup on a bad size
+    assert!(s.create_weld(&neg_size, "admin").is_err());
+
+    let mut neg_thick = weld("100", "BW", "K1", "2026-01-15");
+    neg_thick.size = None;
+    neg_thick.schedule = None;
+    neg_thick.thickness = Some(-0.1);
+    assert!(s.create_weld(&neg_thick, "admin").is_err());
+}
+
+#[test]
+fn nde_percent_over_100_is_rejected() {
+    let s = store();
+    let mut w = weld("100", "BW", "K1", "2026-01-15");
+    w.nde_percent = Some("150%".into());
+    assert!(
+        s.create_weld(&w, "admin").is_err(),
+        "an NDE coverage over 100% must be rejected by the DB"
+    );
+    // exactly 100% is fine.
+    let mut ok = weld("100", "BW", "K1", "2026-01-15");
+    ok.nde_percent = Some("100%".into());
+    assert!(s.create_weld(&ok, "admin").is_ok());
+}
+
+#[test]
+fn weld_number_unique_within_drawing() {
+    let s = store();
+    let d = Drawing {
+        work_order: Some("WO1".into()),
+        drawing_no: Some("ISO-1".into()),
+        ..Default::default()
+    };
+    let did = s.create_drawing(&d, "admin").unwrap();
+    s.add_bubble_weld(did, Some("K1".into()), "W1", 1, 0.5, 0.4, 0.5, 0.5, "admin")
+        .unwrap();
+    // A second weld reusing "W1" on the same drawing is a duplicate.
+    let dup = Weld {
+        drawing_id: Some(did),
+        weld_number: Some("W1".into()),
+        ..Default::default()
+    };
+    assert!(
+        s.create_weld(&dup, "admin").is_err(),
+        "duplicate weld number within one drawing must be rejected"
+    );
+}
+
+#[test]
+fn nde_requirement_snapshot_is_frozen_on_the_row() {
+    let s = store();
+    // A fully specified carbon-steel Class-300 shop butt: Table 4 = 5% RT.
+    let mut w = weld("100", "BW", "K1", "2026-01-15");
+    w.service_category = Some("Normal".into());
+    w.material_group = Some("Carbon Steel".into());
+    w.flange_class = Some("300".into());
+    w.shop_or_field = Some("SHOP".into());
+    let id = s.create_weld(&w, "admin").unwrap();
+    let saved = s.get_weld(id).unwrap();
+    assert_eq!(saved.expected_nde_percent.as_deref(), Some("5%"));
+    assert_eq!(saved.expected_nde_method.as_deref(), Some("RT"));
+    assert_eq!(saved.nde_rule_set.as_deref(), Some("EP-5-5-1-R0.4"));
+    assert!(saved.expected_nde_resolved);
+    assert!(saved.expected_nde_blockers.is_none());
+}
+
+#[test]
+fn unresolved_requirement_is_flagged_not_silently_carbon_steel() {
+    let s = store();
+    // No service, no material, no class → the requirement must fail closed.
+    let mut w = weld("100", "BW", "K1", "2026-01-15");
+    w.service_category = None;
+    w.material = None;
+    w.material_group = None;
+    w.flange_class = None;
+    w.shop_or_field = Some("SHOP".into());
+    let id = s.create_weld(&w, "admin").unwrap();
+    let saved = s.get_weld(id).unwrap();
+    assert!(
+        !saved.expected_nde_resolved,
+        "missing drivers must not silently resolve to carbon steel"
+    );
+    let blockers = saved.expected_nde_blockers.unwrap_or_default();
+    assert!(blockers.contains("service") || blockers.contains("material"));
+}

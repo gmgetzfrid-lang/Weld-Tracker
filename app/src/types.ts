@@ -145,6 +145,12 @@ export interface Weld {
   expected_nde_method?: string | null;
   /** Read-only: the governing Table 4 row plus any supplemental requirements. */
   expected_nde_note?: string | null;
+  /** Snapshot: the rule set (procedure + revision) the requirement was frozen against. */
+  nde_rule_set?: string | null;
+  /** Snapshot: true when every Table 4 driver was resolved; false = fail-closed. */
+  expected_nde_resolved?: boolean;
+  /** Snapshot: semicolon-joined missing / unrecognized drivers when unresolved. */
+  expected_nde_blockers?: string | null;
 }
 
 /** The computed EP 5-5-1 Table 4 requirement (live readout during entry). */
@@ -156,6 +162,14 @@ export interface NdeRequirement {
   root_and_final: boolean;
   note: string;
   supplemental: string[];
+  /** True only when every driver needed to decide the requirement is present
+   *  and recognized. When false, the percentage is a fail-safe placeholder —
+   *  the UI must flag it and block sign-off, never present it as the spec. */
+  resolved: boolean;
+  /** What is missing / unrecognized when `resolved` is false. */
+  blockers: string[];
+  /** The rule set (procedure + revision) this was computed against. */
+  rule_set: string;
 }
 
 /** One file in a work order's quality package. */

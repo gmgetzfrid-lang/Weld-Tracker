@@ -73,6 +73,10 @@ pub struct NdeInputs<'a> {
     pub b31_pressure_psig: Option<f64>,
 }
 
+/// The rule set (procedure + revision) this engine implements. Snapshotted onto
+/// every weld so a future rule change never silently re-scores historical welds.
+pub const RULE_SET: &str = "EP-5-5-1-R0.4";
+
 /// The computed Table 4 outcome for a weld.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NdeRequirement {
@@ -90,6 +94,14 @@ pub struct NdeRequirement {
     pub note: String,
     /// Supplemental requirements triggered on top of the base coverage.
     pub supplemental: Vec<String>,
+    /// True only when every input needed to decide the requirement is present
+    /// and recognized. When false, the percentage is a fail-safe placeholder,
+    /// NOT an authoritative requirement — callers must not accept it.
+    pub resolved: bool,
+    /// What is missing / unrecognized when `resolved` is false (fail closed).
+    pub blockers: Vec<String>,
+    /// The rule set this was computed against.
+    pub rule_set: String,
 }
 
 /// The four Table 4 coverage cells for one service/material/class row.
@@ -158,8 +170,72 @@ pub fn classify_material(raw: Option<&str>) -> Option<MatGroup> {
     None
 }
 
-fn material_group(inp: &NdeInputs) -> MatGroup {
-    classify_material(inp.material_group).unwrap_or(MatGroup::CarbonSteel)
+/// The material group for this weld, or None when the material can't be
+/// classified. Callers fail closed on None — never assume a group.
+fn material_group(inp: &NdeInputs) -> Option<MatGroup> {
+    classify_material(inp.material_group)
+}
+
+/// Everything missing or unrecognized that stops the requirement being decided.
+/// Empty ⇒ the requirement is authoritative. This is the fail-closed gate: an
+/// unclassifiable material or a missing driver never silently becomes the
+/// least-demanding row.
+fn resolvability_blockers(inp: &NdeInputs) -> Vec<String> {
+    let mut b: Vec<String> = Vec::new();
+    if classify_joint(inp.joint_type) == Joint::Other {
+        b.push("joint type".into());
+    }
+    let sf = norm(inp.shop_or_field);
+    if sf != "SHOP" && sf != "FW" && !sf.contains("FIELD") {
+        b.push("shop/field".into());
+    }
+    // A tie-in is 100% regardless of everything else — no further inputs needed.
+    if inp.new_to_existing {
+        return b;
+    }
+    let svc = norm(inp.service_category);
+    // Fixed-outcome services need no material/class.
+    if svc.contains("SEVERE")
+        || svc.contains("FIRED")
+        || svc.contains("COIL")
+        || svc.contains("HEATER")
+        || svc.contains("CATEGORY M")
+        || svc == "M"
+        || svc.contains("CATEGORY D")
+        || svc == "D"
+    {
+        return b;
+    }
+    let code = norm(inp.b31_code);
+    if code == "B31.4" || code == "B314" {
+        return b;
+    }
+    if code == "B31.1" || code == "B311" {
+        if inp.b31_temp_f.is_none() || inp.b31_pressure_psig.is_none() {
+            b.push("B31.1 temperature/pressure".into());
+        }
+        return b;
+    }
+    // B31.3 Normal fluid service: require an explicit service category.
+    if svc.is_empty() {
+        b.push("service category".into());
+    }
+    // Class 1500+ is 100% for any material — class alone resolves it.
+    if flange_class_num(inp).map(|c| c >= 1500).unwrap_or(false) {
+        return b;
+    }
+    match material_group(inp) {
+        // These material families are class-independent (fixed / PT-MT 100).
+        Some(MatGroup::LowAlloyP5BP5C | MatGroup::Titanium | MatGroup::LowAlloyP4P5A) => {}
+        // Carbon steel and stainless/nickel need the flange class to pick the row.
+        Some(_) => {
+            if flange_class_num(inp).is_none() {
+                b.push("flange class".into());
+            }
+        }
+        None => b.push("material group".into()),
+    }
+    b
 }
 
 /// The canonical picklist label for a material group.
@@ -212,7 +288,9 @@ fn all(v: i64, note: &'static str) -> Row {
 /// The ASME B31.3 Normal-Fluid-Service block of Table 4 (the common path).
 fn b31_3_normal_row(inp: &NdeInputs) -> Row {
     let class = flange_class_num(inp);
-    let mat = material_group(inp);
+    // Placeholder for the row shape when unclassifiable; safety is carried by
+    // the `resolved` flag, which is false in that case.
+    let mat = material_group(inp).unwrap_or(MatGroup::CarbonSteel);
 
     // Class 1500 and greater, all materials → 100%.
     if class.map(|c| c >= 1500).unwrap_or(false) {
@@ -277,7 +355,7 @@ fn b31_1_row(inp: &NdeInputs) -> Row {
     if t.map(|t| t > 750.0).unwrap_or(false) {
         return all(100, "ASME B31.1, temperature > 750°F, all pressures");
     }
-    if t.map(|t| t >= 350.0 && t <= 750.0).unwrap_or(false)
+    if t.map(|t| (350.0..=750.0).contains(&t)).unwrap_or(false)
         && p.map(|p| p > 1025.0).unwrap_or(false)
     {
         return all(100, "ASME B31.1, 350-750°F and pressure > 1025 psig");
@@ -391,16 +469,25 @@ pub fn table4(inp: &NdeInputs) -> NdeRequirement {
             }
         }
     }
-    // Supplemental: thick-wall UT (18.3.3).
+    // Supplemental: thick-wall UT (18.3.3). Only when the material is known.
     if let Some(w) = inp.governing_wall {
-        let mat = material_group(inp);
-        let low_alloy = matches!(mat, MatGroup::LowAlloyP4P5A | MatGroup::LowAlloyP5BP5C);
-        if mat == MatGroup::CarbonSteel && w > 1.25 {
-            supplemental.push("Carbon steel wall > 1¼\": add 20% UT (18.3.3)".to_string());
-        } else if low_alloy && w > 0.75 {
-            supplemental.push("Low-alloy wall > ¾\": add 20% UT (18.3.3)".to_string());
+        if let Some(mat) = material_group(inp) {
+            let low_alloy =
+                matches!(mat, MatGroup::LowAlloyP4P5A | MatGroup::LowAlloyP5BP5C);
+            if mat == MatGroup::CarbonSteel && w > 1.25 {
+                supplemental
+                    .push("Carbon steel wall > 1¼\": add 20% UT (18.3.3)".to_string());
+            } else if low_alloy && w > 0.75 {
+                supplemental.push("Low-alloy wall > ¾\": add 20% UT (18.3.3)".to_string());
+            }
         }
     }
+
+    // Fail-closed gate: if any driver needed to decide the requirement is
+    // missing or unrecognized, the percentages above are a placeholder, not an
+    // authoritative requirement. Callers must not accept an unresolved result.
+    let blockers = resolvability_blockers(inp);
+    let resolved = blockers.is_empty();
 
     NdeRequirement {
         rt_percent,
@@ -410,6 +497,9 @@ pub fn table4(inp: &NdeInputs) -> NdeRequirement {
         root_and_final,
         note,
         supplemental,
+        resolved,
+        blockers,
+        rule_set: RULE_SET.to_string(),
     }
 }
 
@@ -742,21 +832,102 @@ mod tests {
     }
 
     #[test]
-    fn missing_drivers_default_to_cs_class300_5_10() {
-        // With nothing set, fall back to the most common real row (CS, Class 300
-        // and less, not AES): shop 5%, field 10% — matching the legacy default.
-        let shop = table4(&NdeInputs {
+    fn missing_drivers_are_unresolved_not_silent_carbon_steel() {
+        // With no service or material set, the requirement must NOT silently
+        // become the least-demanding carbon-steel row. It fails closed: the
+        // result is unresolved and names what is missing, so a caller can never
+        // accept a fabricated 5%/10% as an authoritative spec.
+        let r = table4(&NdeInputs {
             shop_or_field: Some("SHOP"),
             joint_type: Some("BW"),
             ..inp()
         });
-        let field = table4(&NdeInputs {
-            shop_or_field: Some("FW"),
+        assert!(!r.resolved, "missing drivers must be unresolved");
+        assert!(r.blockers.iter().any(|b| b.contains("service")));
+        assert!(r.blockers.iter().any(|b| b.contains("material")));
+        assert_eq!(r.rule_set, RULE_SET);
+    }
+
+    #[test]
+    fn fully_specified_row_is_resolved() {
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            material_group: Some("Carbon Steel"),
+            flange_class: Some("300"),
+            shop_or_field: Some("SHOP"),
             joint_type: Some("BW"),
             ..inp()
         });
-        assert_eq!(shop.required_percent, 5);
-        assert_eq!(field.required_percent, 10);
+        assert!(r.resolved, "a fully specified row must resolve");
+        assert!(r.blockers.is_empty());
+    }
+
+    #[test]
+    fn unknown_material_is_unresolved() {
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            material_group: Some("Unobtainium 9000"),
+            flange_class: Some("300"),
+            shop_or_field: Some("SHOP"),
+            joint_type: Some("BW"),
+            ..inp()
+        });
+        assert!(!r.resolved);
+        assert!(r.blockers.iter().any(|b| b.contains("material")));
+    }
+
+    #[test]
+    fn missing_flange_class_for_cs_is_unresolved() {
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            material_group: Some("Carbon Steel"),
+            shop_or_field: Some("SHOP"),
+            joint_type: Some("BW"),
+            ..inp()
+        });
+        assert!(!r.resolved);
+        assert!(r.blockers.iter().any(|b| b.contains("flange class")));
+    }
+
+    #[test]
+    fn missing_shop_field_is_unresolved() {
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            material_group: Some("Carbon Steel"),
+            flange_class: Some("300"),
+            joint_type: Some("BW"),
+            ..inp()
+        });
+        assert!(!r.resolved);
+        assert!(r.blockers.iter().any(|b| b.contains("shop/field")));
+    }
+
+    #[test]
+    fn tie_in_resolves_with_minimal_inputs() {
+        // A tie-in is 100% regardless of material/service, so it resolves as
+        // long as joint type and shop/field are known.
+        let r = table4(&NdeInputs {
+            shop_or_field: Some("SHOP"),
+            joint_type: Some("BW"),
+            new_to_existing: true,
+            ..inp()
+        });
+        assert!(r.resolved, "tie-in needs no material/service");
+        assert_eq!(r.required_percent, 100);
+    }
+
+    #[test]
+    fn class_1500_resolves_without_material() {
+        // Class 1500+ is 100% for any material, so class alone resolves it.
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            flange_class: Some("1500"),
+            shop_or_field: Some("SHOP"),
+            joint_type: Some("BW"),
+            ..inp()
+        });
+        assert!(r.resolved);
+        assert_eq!(r.required_percent, 100);
     }
 
     #[test]

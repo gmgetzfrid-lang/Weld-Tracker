@@ -5,6 +5,13 @@
 //! tables and `GETPIVOTDATA` formulas. It has no dependency on Tauri so it can
 //! be unit-tested on its own.
 
+// Several store methods (add_bubble_weld, upload package, wo_files insert) take
+// the full set of a record's columns as positional arguments, and a handful of
+// query helpers return the row as a wide tuple. Both are deliberate, readable
+// data-layer shapes; splitting them into structs for the linter would add
+// indirection without making the SQL any clearer.
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 pub mod auth;
 pub mod certs;
 pub mod drawings;
@@ -114,6 +121,7 @@ impl Store {
             (6, include_str!("migrations/0006_drop_welder_legacy.sql")),
             (7, include_str!("migrations/0007_doc_control.sql")),
             (8, include_str!("migrations/0008_nde_table4.sql")),
+            (9, include_str!("migrations/0009_integrity_snapshot.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {

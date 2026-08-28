@@ -907,8 +907,6 @@ function GuidedPopup({
     { k: "nde_percent", label: "NDE %" },
   ];
   const missing = REQUIRED.filter((r) => !String(f[r.k] ?? "").trim());
-  const canSave = missing.length === 0;
-  const save = () => { if (canSave) onSaveNext(changes()); };
 
   // The requirement is only asserted once we know which column (joint) and
   // which pair (shop vs field) apply — otherwise a default would be misleading.
@@ -928,7 +926,15 @@ function GuidedPopup({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f]);
   const enteredPct = f.nde_percent.replace(/[^0-9]/g, "");
-  const mismatch = req && enteredPct && Number(enteredPct) < req.required_percent;
+  // The requirement is authoritative only when the engine resolved every
+  // driver. Fail closed: an unresolved requirement is never treated as a spec.
+  const reqResolved = !!req && req.resolved;
+  const mismatch = reqResolved && enteredPct && Number(enteredPct) < req!.required_percent;
+  // Once the drivers are in, the requirement must resolve before the weld can be
+  // saved — a weld whose required NDE % can't be determined can't be signed off.
+  const reqBlocked = driversReady && !reqResolved;
+  const canSave = missing.length === 0 && !reqBlocked;
+  const save = () => { if (canSave) onSaveNext(changes()); };
 
   const opt = (k: string) => lookups[k] ?? [];
   const hasBreak = specOptions.length > 1;
@@ -963,7 +969,20 @@ function GuidedPopup({
         <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill">✕</button>
       </div>
 
-      {driversReady && req ? (
+      {driversReady && req && !req.resolved ? (
+        <div className="guided-req unresolved">
+          <div className="guided-req-main">
+            <span className="guided-req-pct">—</span>
+            <span className="guided-req-method">requirement unresolved</span>
+          </div>
+          <div className="guided-req-note">
+            The required NDE % can't be determined yet. Set / correct:
+          </div>
+          {req.blockers.map((b, i) => (
+            <div key={i} className="guided-req-blocker">• {b}</div>
+          ))}
+        </div>
+      ) : driversReady && req ? (
         <div className={`guided-req ${mismatch ? "warn" : ""}`}>
           <div className="guided-req-main">
             <span className="guided-req-pct">{req.required_percent}%</span>
@@ -1028,8 +1047,8 @@ function GuidedPopup({
         <div className="guided-sec">NDE result <span className="faint">(record after examination)</span></div>
         {!driversComplete && <div className="guided-lock-note">Set the Table 4 drivers above (Shop/Field, Joint, Service, Flange, Material) to unlock NDE entry.</div>}
         <div className={`field nde-field ${cls(f.nde_percent)}`}><label>NDE %{rq}
-          {driversReady && req && f.nde_percent.replace(/[^0-9]/g, "") !== String(req.required_percent) &&
-            <button type="button" className="use-req" onClick={() => setF({ ...f, nde_percent: `${req.required_percent}%` })}>use {req.required_percent}%</button>}
+          {reqResolved && f.nde_percent.replace(/[^0-9]/g, "") !== String(req!.required_percent) &&
+            <button type="button" className="use-req" onClick={() => setF({ ...f, nde_percent: `${req!.required_percent}%` })}>use {req!.required_percent}%</button>}
         </label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
         <div className="field nde-field"><label>Accept / Reject</label>
           <select value={f.nde_result} onChange={(e) => setF({ ...f, nde_result: e.target.value })}>
@@ -1071,9 +1090,22 @@ function GuidedPopup({
         <button className="btn btn-sm" onClick={onBack} disabled={index === 0} title="Previous weld">‹ Prev</button>
         <button className="btn btn-sm" onClick={onSkip} title="Leave this weld unchanged and go to the next">Skip</button>
         <div className="spacer" />
-        {!canSave && <span className="guided-req-missing" title={`Missing: ${missing.map((m) => m.label).join(", ")}`}>Fill required ({missing.length})</span>}
+        {missing.length > 0 && (
+          <span className="guided-req-missing" title={`Missing: ${missing.map((m) => m.label).join(", ")}`}>Fill required ({missing.length})</span>
+        )}
+        {missing.length === 0 && reqBlocked && (
+          <span className="guided-req-missing" title={req ? `Unresolved: ${req.blockers.join(", ")}` : "Determining requirement…"}>
+            {req ? "NDE requirement unresolved" : "Determining…"}
+          </span>
+        )}
         <button className="btn btn-accent btn-sm" onClick={save} disabled={!canSave}
-          title={canSave ? "" : `Fill out all required fields: ${missing.map((m) => m.label).join(", ")}`}>
+          title={
+            missing.length > 0
+              ? `Fill out all required fields: ${missing.map((m) => m.label).join(", ")}`
+              : reqBlocked
+              ? `Resolve the NDE requirement first: ${req ? req.blockers.join(", ") : "computing…"}`
+              : ""
+          }>
           {index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}
         </button>
       </div>
