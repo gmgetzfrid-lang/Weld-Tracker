@@ -182,11 +182,10 @@ function HeaderStep({
 
   return (
     <>
-      <Coach title="Start with the work order, then the isometric">
-        Everything ties back to the <b>work order number</b>. The work order and line spec cascade to
-        the welds you place. Size, schedule, material and NDE are set per weld while you fill and
-        review — they vary along the line.
-      </Coach>
+      <p className="hint" style={{ margin: "0 0 12px" }}>
+        Start with the <b>work order</b> and the isometric. Size, schedule, material and NDE are set
+        per weld while you fill &amp; review — they vary along the line.
+      </p>
       <ErrorBox message={error} />
 
       <div className="wsection">

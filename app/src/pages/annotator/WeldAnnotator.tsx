@@ -58,6 +58,7 @@ type DragState = {
   sx: number; sy: number;   // where the drag started (normalised)
   bx: number; by: number;   // bubble at drag start
   jx: number; jy: number;   // joint at drag start
+  moved: boolean;           // did the pointer actually move (vs a click)
 };
 
 export function WeldAnnotator({
@@ -96,16 +97,22 @@ export function WeldAnnotator({
   // This sheet's controlled-copy window inside its package (1-based, absolute).
   const [pageFrom, setPageFrom] = useState(1);
   const [pageTo, setPageTo] = useState(1);
+  // Zoom split for instant response: `zoom` is the live displayed scale (driven
+  // by the wheel/buttons via a CSS transform, so it's instant); `scale` is the
+  // resolution the PDF canvas is actually rasterised at, which catches up to
+  // `zoom` after a short debounce (crisp settle). `base` is the page's size at
+  // scale 1. The viewport is CSS-scaled by zoom/scale so the raster shows at the
+  // live zoom with no re-render on every wheel tick.
+  const [zoom, setZoom] = useState(1);
   const [scale, setScale] = useState(1);
+  const [renderedScale, setRenderedScale] = useState(1);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  // Transform-based viewport: the page is translated by `pan` (px) inside a
-  // non-scrolling stage, and `scale` is the render zoom. This replaces the
-  // three fighting scrollbars with one grab-to-pan / ctrl-scroll-to-zoom model.
+  const baseRef = useRef({ w: 0, h: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [fullscreen, setFullscreen] = useState(false);
   const panRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
   const downRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const scaleRef = useRef(1);
+  const zoomRef = useRef(1);
   const panStateRef = useRef({ x: 0, y: 0 });
 
   const [welds, setWelds] = useState<Weld[]>([]);
@@ -115,6 +122,7 @@ export function WeldAnnotator({
   const [pending, setPending] = useState<Pt | null>(null);
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [selId, setSelId] = useState<number | null>(null);
+  const [legendSel, setLegendSel] = useState(false);
 
   const [legendOn, setLegendOn] = useState(true);
   const [legendPos, setLegendPos] = useState<Pt>({ x: 0.72, y: 0.04 });
@@ -174,9 +182,12 @@ export function WeldAnnotator({
           setHasPdf(true);
           const page = await doc.getPage(from);
           const vp = page.getViewport({ scale: 1 });
-          const cw = (stageRef.current?.clientWidth ?? 900) - 24;
-          setScale(Math.max(0.2, Math.min(3, cw / vp.width)));
-          setPan({ x: 16, y: 16 });
+          baseRef.current = { w: vp.width, h: vp.height };
+          // Start at 100% (zoom = 1), centred at the top of the page.
+          setZoom(1);
+          setScale(1);
+          const cw = (stageRef.current?.clientWidth ?? 900);
+          setPan({ x: Math.max(16, (cw - vp.width) / 2), y: 16 });
         }
       } catch (e) {
         setError(errMsg(e));
@@ -201,6 +212,10 @@ export function WeldAnnotator({
       const ctx = canvas.getContext("2d")!;
       canvas.width = vp.width; canvas.height = vp.height;
       setSize({ w: vp.width, h: vp.height });
+      // Record the scale this raster was drawn at, so the CSS zoom transform
+      // (zoom / renderedScale) always matches the on-screen canvas — no flicker
+      // during the debounced re-render.
+      setRenderedScale(scale);
       try { renderTaskRef.current?.cancel(); } catch { /* ignore */ }
       const task = page.render({ canvasContext: ctx, viewport: vp });
       renderTaskRef.current = task;
@@ -216,7 +231,11 @@ export function WeldAnnotator({
     if (loading || hasPdf) return;
     if (size.w > 0 && size.h > 0) return;
     const cw = Math.max(700, (stageRef.current?.clientWidth ?? 900) - 24);
-    setSize({ w: cw, h: Math.round(cw * 1.3) });
+    const g = { w: cw, h: Math.round(cw * 1.3) };
+    baseRef.current = g;
+    setSize(g);
+    setZoom(1);
+    setScale(1);
   }, [loading, hasPdf, size.w, size.h]);
 
   const ordered = useMemo(
@@ -224,53 +243,64 @@ export function WeldAnnotator({
     [welds]
   );
 
-  // number-key welder shortcuts + Enter/Esc to end a run
+  // number-key welder shortcuts, Esc to cancel, Delete to remove the selection
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (guided !== null) return;
-      if ((e.key === "Enter" || e.key === "Escape")) { setPending(null); setCursor(null); }
-      if (/^[1-9]$/.test(e.key) && document.activeElement?.tagName !== "INPUT") {
+      const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName ?? "");
+      if (e.key === "Escape") { setPending(null); setCursor(null); setSelId(null); setLegendSel(false); }
+      if ((e.key === "Delete" || e.key === "Backspace") && !typing && editable) {
+        if (selId != null) { e.preventDefault(); delWeld(selId); }
+        else if (legendSel) { e.preventDefault(); setLegendOn(false); setLegendSel(false); persistLegend(legendPos, false); }
+      }
+      if (/^[1-9]$/.test(e.key) && !typing) {
         const w = welders[Number(e.key) - 1];
         if (w) setStamp(w.stamp);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [welders, guided]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [welders, guided, selId, legendSel, editable, legendPos]);
 
   const norm = (e: { clientX: number; clientY: number }): Pt => {
     const r = svgRef.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
 
-  // Fit the page to the stage width and reset the pan. Used on load, page
-  // change, fullscreen toggle, and the Fit button.
-  const fitToWidth = useCallback(async () => {
-    const doc = docRef.current;
+  // Fit the page width to the stage.
+  const fitToWidth = useCallback(() => {
     const stage = stageRef.current;
-    if (!stage) return;
-    const avail = stage.clientWidth - 24;
-    let base = 1;
-    if (doc) {
-      try {
-        const vp = (await doc.getPage(pageNum)).getViewport({ scale: 1 });
-        base = avail / vp.width;
-      } catch { /* ignore */ }
-    } else if (size.w > 0) {
-      base = avail / size.w;
-    }
-    const s = Math.max(0.15, Math.min(4, base));
-    setScale(s);
+    const bw = baseRef.current.w;
+    if (!stage || bw <= 0) return;
+    const z = Math.max(0.15, Math.min(6, (stage.clientWidth - 24) / bw));
+    setZoom(z);
     setPan({ x: 12, y: 12 });
-  }, [pageNum, size.w]);
+  }, []);
+
+  // Reset to exactly 100% (native page pixels).
+  const resetZoom = () => {
+    const stage = stageRef.current;
+    const bw = baseRef.current.w;
+    setZoom(1);
+    setPan({ x: stage ? Math.max(16, (stage.clientWidth - bw) / 2) : 16, y: 16 });
+  };
+
+  // Crisp settle: after the live (CSS-scaled) zoom stops changing, re-rasterise
+  // the PDF at the new zoom so it's sharp. The wheel/buttons stay instant.
+  useEffect(() => {
+    const t = setTimeout(() => setScale(zoom), 130);
+    return () => clearTimeout(t);
+  }, [zoom]);
 
   // Centre a normalized point in the stage. `rightInset` reserves space on the
   // right (the guided drawer) so the bubble is centred in the visible area.
   const centerOn = (nx: number, ny: number, rightInset = 0) => {
     const stage = stageRef.current;
     if (!stage) return;
+    const { w: bw, h: bh } = baseRef.current;
     const availW = stage.clientWidth - rightInset;
-    setPan({ x: availW / 2 - nx * size.w, y: stage.clientHeight / 2.15 - ny * size.h });
+    setPan({ x: availW / 2 - nx * bw * zoom, y: stage.clientHeight / 2.15 - ny * bh * zoom });
   };
   const DRAWER_W = 384;
 
@@ -296,14 +326,17 @@ export function WeldAnnotator({
 
   const onStageClick = async (e: React.MouseEvent) => {
     if (!editable || guided !== null) return;
-    const p = norm(e);
-    if (tool === "legend") { setLegendPos(p); setLegendOn(true); persistLegend(p, true); return; }
-    if (tool === "select") { setSelId(null); return; }
-    if (tool === "pan") return;
-    // bubble tool
-    if (!stamp) { toast.push("err", "Pick a welder first"); return; }
-    if (!pending) { setSelId(null); setPending(p); setCursor(p); return; }
-    await dropBubble(pending, p);
+    // Bubble tool: an empty click places a joint, then the bubble.
+    if (tool === "bubble") {
+      if (!stamp) { toast.push("err", "Pick a welder first"); return; }
+      const p = norm(e);
+      if (!pending) { setSelId(null); setLegendSel(false); setPending(p); setCursor(p); }
+      else await dropBubble(pending, p);
+      return;
+    }
+    // Select/hand tool: an empty click clears the selection.
+    setSelId(null);
+    setLegendSel(false);
   };
 
   // Begin dragging a selected weld — the whole thing ("both") or just the joint.
@@ -314,6 +347,7 @@ export function WeldAnnotator({
       id: w.id, mode, sx: p.x, sy: p.y,
       bx: w.bubble_x ?? 0, by: w.bubble_y ?? 0,
       jx: w.joint_x ?? w.bubble_x ?? 0, jy: w.joint_y ?? w.bubble_y ?? 0,
+      moved: false,
     };
   };
 
@@ -333,6 +367,7 @@ export function WeldAnnotator({
     const d = dragRef.current;
     if (d) {
       const p = norm(e);
+      if (Math.hypot(p.x - d.sx, p.y - d.sy) > 0.001) d.moved = true;
       const clamp = (v: number) => Math.max(0, Math.min(1, v));
       setWelds((prev) => prev.map((w) => {
         if (w.id !== d.id) return w;
@@ -345,7 +380,7 @@ export function WeldAnnotator({
   const endDrag = async () => {
     const d = dragRef.current;
     dragRef.current = null;
-    if (!d) return;
+    if (!d || !d.moved) return; // a click that only selected — nothing to persist
     const w = welds.find((x) => x.id === d.id);
     if (w && w.bubble_x != null && w.bubble_y != null) {
       try { await api.setWeldBubble(d.id, pageNum, w.bubble_x, w.bubble_y, w.joint_x ?? w.bubble_x, w.joint_y ?? w.bubble_y); } catch { /* ignore */ }
@@ -408,26 +443,30 @@ export function WeldAnnotator({
   }, [guided, ordered, size.w, size.h, pageNum]);
 
   // Keep refs current for the native wheel handler (which must be non-passive
-  // to preventDefault the browser's ctrl-zoom / page-scroll).
-  scaleRef.current = scale;
+  // to preventDefault the browser's ctrl-zoom / page-scroll). Zoom changes only
+  // `zoom` (a CSS transform) so it's instant; the raster catches up on settle.
+  zoomRef.current = zoom;
   panStateRef.current = pan;
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     const handler = (e: WheelEvent) => {
+      // Let overlays (the fill drawer, HUD panels, dropdown menus) scroll
+      // themselves — the wheel only pans/zooms the PDF over the bare canvas.
+      const t = e.target as Element;
+      if (t.closest?.(".anno-drawer, .anno-hud, .anno-selbar, .combo-menu")) return;
       e.preventDefault();
+      const p = panStateRef.current;
       if (e.ctrlKey || e.metaKey) {
         const rect = stage.getBoundingClientRect();
         const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-        const cur = scaleRef.current;
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const cur = zoomRef.current;
         const next = Math.max(0.15, Math.min(6, cur * factor));
         const r = next / cur;
-        const p = panStateRef.current;
         setPan({ x: mx - (mx - p.x) * r, y: my - (my - p.y) * r });
-        setScale(next);
+        setZoom(next);
       } else {
-        const p = panStateRef.current;
         setPan({ x: p.x - e.deltaX, y: p.y - e.deltaY });
       }
     };
@@ -436,8 +475,11 @@ export function WeldAnnotator({
     // Re-attach once loading finishes and the stage element actually exists.
   }, [loading]);
 
-  // Re-fit when entering/leaving fullscreen (the stage size changes). Esc exits.
+  // Re-fit only when *toggling* fullscreen (not on first mount, which would
+  // override the 100% start). A ref guards the initial run.
+  const fsMounted = useRef(false);
   useEffect(() => {
+    if (!fsMounted.current) { fsMounted.current = true; return; }
     const t = setTimeout(() => { fitToWidth(); }, 60);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -455,7 +497,10 @@ export function WeldAnnotator({
   const pageWelds = ordered.filter((w) => (w.bubble_page ?? 1) === pageNum && w.bubble_x != null);
   // Bubbles are drawn in rendered-pixel space, so their size scales with the
   // zoom — zooming out shrinks them (no crowding), zooming in enlarges them.
-  const z = scale;
+  // Bubbles live in the rendered-canvas pixel space, so size them by the scale
+  // the canvas was actually drawn at; the CSS zoom transform then scales them
+  // together with the drawing.
+  const z = renderedScale;
   const R = 17 * z;
   const activeId = guided !== null ? ordered[guided]?.id : null;
   // The line's spec(s). A spec break gives two — the guided popup then lets you
@@ -467,9 +512,8 @@ export function WeldAnnotator({
 
   const hint = !editable ? "Read-only — drag to pan, Ctrl+scroll to zoom." :
     guided !== null ? `Guided fill — weld ${guided + 1} of ${ordered.length}. Enter for the next field, Save & next on the last.` :
-    tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a joint to place a weld · drag to pan · Ctrl+scroll to zoom.") :
-    tool === "select" ? "Click a bubble to edit — drag it to move, drag its joint dot to re-aim the leader." :
-    "Click to place the legend · drag to pan.";
+    tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a joint to place a weld · drag empty space to pan · Ctrl+scroll to zoom.") :
+    "Click a bubble or the legend to select · drag it to move · Delete removes it · drag empty space to pan.";
 
   const selWeld = selId != null && guided === null ? welds.find((x) => x.id === selId) : null;
 
@@ -489,7 +533,7 @@ export function WeldAnnotator({
         {!hasPdf && <div className="anno-empty">No PDF attached — place bubbles on the blank grid, or attach the isometric in the previous step.</div>}
 
         {/* the page — translated (pan) and rendered at `scale` (zoom) */}
-        <div className="anno-viewport" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+        <div className="anno-viewport" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${renderedScale > 0 ? zoom / renderedScale : 1})` }}>
           <div className="anno-page" style={{ width: size.w || 800, height: size.h || 600 }}>
             <canvas ref={canvasRef} />
             <svg ref={svgRef} className="anno-svg" width={size.w || 800} height={size.h || 600}>
@@ -498,12 +542,13 @@ export function WeldAnnotator({
                 const jx = (w.joint_x ?? w.bubble_x ?? 0) * size.w, jy = (w.joint_y ?? w.bubble_y ?? 0) * size.h;
                 const sel = w.id === selId, active = w.id === activeId;
                 const editing = sel && editable;
-                const grab = editable && (sel || tool === "select");
-                const selectable = tool === "select" || (tool === "bubble" && !pending);
+                // Modeless (Bluebeam-style): any bubble is directly selectable
+                // and draggable regardless of the active tool, unless a new
+                // bubble is mid-placement.
+                const grab = editable && !pending;
                 return (
                   <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""}`}
-                    onClick={(e) => { if (selectable) { e.stopPropagation(); setSelId(w.id); } }}
-                    onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); startDrag(w, "both", e); } }}
+                    onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); setLegendSel(false); startDrag(w, "both", e); } }}
                     style={{ cursor: grab ? "move" : "pointer" }}
                   >
                     <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} style={{ strokeWidth: (sel ? 2.4 : 1.7) * z }} />
@@ -533,10 +578,13 @@ export function WeldAnnotator({
               <Legend
                 pos={legendPos}
                 size={size}
+                cssScale={renderedScale > 0 ? zoom / renderedScale : 1}
+                selected={legendSel}
                 totals={totals}
                 editable={editable}
+                onSelect={() => { setLegendSel(true); setSelId(null); }}
                 onMove={(p) => { setLegendPos(p); persistLegend(p, true); }}
-                onClose={() => { setLegendOn(false); persistLegend(legendPos, false); }}
+                onClose={() => { setLegendOn(false); setLegendSel(false); persistLegend(legendPos, false); }}
               />
             )}
           </div>
@@ -547,9 +595,8 @@ export function WeldAnnotator({
           <div className="anno-hud tl" onMouseDown={(e) => e.stopPropagation()}>
             <div className="toolchest">
               {([
-                ["bubble", "◎", "Place weld bubbles"],
-                ["select", "▧", "Select / move"],
-                ["legend", "🏷", "Legend stamp"],
+                ["bubble", "◎", "Place weld bubbles (click a joint, then the bubble)"],
+                ["select", "🖑", "Select / pan (bubbles & legend are always drag-to-move)"],
               ] as [Tool, string, string][]).map(([t, ico, label]) => (
                 <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label} onClick={() => setTool(t)} disabled={!editable}>{ico}</button>
               ))}
@@ -585,9 +632,10 @@ export function WeldAnnotator({
               <span className="anno-hud-div" />
             </>
           )}
-          <button className="btn btn-sm" title="Zoom out" onClick={() => setScale((s) => Math.max(0.2, (Math.ceil(s * 10 - 0.01) - 1) / 10))}>−</button>
-          <button className="btn btn-sm" title="Fit to width" onClick={fitToWidth}>{Math.round(scale * 100)}%</button>
-          <button className="btn btn-sm" title="Zoom in" onClick={() => setScale((s) => Math.min(6, (Math.floor(s * 10 + 0.01) + 1) / 10))}>+</button>
+          <button className="btn btn-sm" title="Zoom out" onClick={() => setZoom((s) => Math.max(0.2, (Math.ceil(s * 10 - 0.01) - 1) / 10))}>−</button>
+          <button className="btn btn-sm" title="Reset to 100% (click) — Fit to width via ⤢" onClick={resetZoom} onDoubleClick={fitToWidth}>{Math.round(zoom * 100)}%</button>
+          <button className="btn btn-sm" title="Fit to width" onClick={fitToWidth}>⤢</button>
+          <button className="btn btn-sm" title="Zoom in" onClick={() => setZoom((s) => Math.min(6, (Math.floor(s * 10 + 0.01) + 1) / 10))}>+</button>
         </div>
 
         {/* hint (bottom-left) */}
@@ -727,21 +775,25 @@ function CoachMarks({ onDone }: { onDone: () => void }) {
 }
 
 function Legend({
-  pos, size, totals, editable, onMove, onClose,
+  pos, size, cssScale, selected, totals, editable, onMove, onSelect, onClose,
 }: {
-  pos: Pt; size: { w: number; h: number };
+  pos: Pt; size: { w: number; h: number }; cssScale: number; selected: boolean;
   totals: [string, number][]; editable: boolean;
-  onMove: (p: Pt) => void; onClose: () => void;
+  onMove: (p: Pt) => void; onSelect: () => void; onClose: () => void;
 }) {
-  // Drag by the header with window listeners — robust under the panned/zoomed
-  // viewport (no CSS scale, so a client-pixel maps 1:1 to a rendered pixel).
+  // Grab anywhere on the legend to move it (like a weld bubble). Window
+  // listeners keep it glued to the cursor; the delta is divided by the
+  // displayed size (rendered px × the CSS zoom) so it tracks 1:1 on screen.
   const start = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const sizeRef = useRef(size); sizeRef.current = size;
+  const dispRef = useRef({ w: 1, h: 1 });
+  dispRef.current = { w: (size.w || 1) * cssScale, h: (size.h || 1) * cssScale };
   const moveRef = useRef(onMove); moveRef.current = onMove;
-  const onMouseDownHead = (e: React.MouseEvent) => {
+  const onDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect();
     if (!editable) return;
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
     start.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
     setDragging(true);
   };
@@ -749,8 +801,8 @@ function Legend({
     if (!dragging) return;
     const move = (e: MouseEvent) => {
       const s = start.current; if (!s) return;
-      const nx = s.x + (e.clientX - s.px) / (sizeRef.current.w || 1);
-      const ny = s.y + (e.clientY - s.py) / (sizeRef.current.h || 1);
+      const nx = s.x + (e.clientX - s.px) / dispRef.current.w;
+      const ny = s.y + (e.clientY - s.py) / dispRef.current.h;
       moveRef.current({ x: Math.max(0, Math.min(0.98, nx)), y: Math.max(0, Math.min(0.98, ny)) });
     };
     const up = () => { start.current = null; setDragging(false); };
@@ -759,14 +811,14 @@ function Legend({
     return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
   }, [dragging]);
   return (
-    <div className="wm-legend" style={{ left: pos.x * size.w, top: pos.y * size.h }} onMouseDown={(e) => e.stopPropagation()}>
-      <div
-        className="wm-legend-head"
-        style={{ cursor: editable ? (dragging ? "grabbing" : "grab") : "default", touchAction: "none" }}
-        onMouseDown={onMouseDownHead}
-      >
+    <div
+      className={`wm-legend ${selected ? "sel" : ""}`}
+      style={{ left: pos.x * size.w, top: pos.y * size.h, cursor: editable ? (dragging ? "grabbing" : "move") : "default", touchAction: "none" }}
+      onMouseDown={onDown}
+    >
+      <div className="wm-legend-head">
         <span className="wm-grip">⠿</span> WELD MAP LEGEND
-        {editable && <button className="wm-x" onClick={onClose} onMouseDown={(e) => e.stopPropagation()}>✕</button>}
+        {editable && <button className="wm-x" title="Hide legend" onClick={onClose} onMouseDown={(e) => e.stopPropagation()}>✕</button>}
       </div>
       <div className="wm-legend-key">
         <svg width="42" height="42" viewBox="0 0 42 42">
@@ -852,6 +904,7 @@ function GuidedPopup({
     { k: "size", label: "Size" }, { k: "joint_type", label: "Joint type" },
     { k: "shop_or_field", label: "Shop/Field" }, { k: "service_category", label: "Service" },
     { k: "flange_class", label: "Flange class" }, { k: "material", label: "Material" },
+    { k: "nde_percent", label: "NDE %" },
   ];
   const missing = REQUIRED.filter((r) => !String(f[r.k] ?? "").trim());
   const canSave = missing.length === 0;
@@ -974,7 +1027,7 @@ function GuidedPopup({
 
         <div className="guided-sec">NDE result <span className="faint">(record after examination)</span></div>
         {!driversComplete && <div className="guided-lock-note">Set the Table 4 drivers above (Shop/Field, Joint, Service, Flange, Material) to unlock NDE entry.</div>}
-        <div className="field nde-field"><label>NDE %
+        <div className={`field nde-field ${cls(f.nde_percent)}`}><label>NDE %{rq}
           {driversReady && req && f.nde_percent.replace(/[^0-9]/g, "") !== String(req.required_percent) &&
             <button type="button" className="use-req" onClick={() => setF({ ...f, nde_percent: `${req.required_percent}%` })}>use {req.required_percent}%</button>}
         </label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>

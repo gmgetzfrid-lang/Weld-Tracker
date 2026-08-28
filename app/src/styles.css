@@ -297,7 +297,13 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .coach .coach-ico { font-size: 18px; line-height: 1.2; }
 .coach b { color: var(--navy); }
 
-.wizard-foot { display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.wizard-foot {
+  display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+  /* pin the primary action to the bottom of the viewport so it's never hidden
+     below the fold on a tall form */
+  position: sticky; bottom: -20px; background: var(--surface); padding-bottom: 6px; z-index: 2;
+}
 
 /* Wizard sections */
 .wsection { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; background: var(--surface); }
@@ -398,6 +404,7 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 /* An on-drawing stamp (not a floating window): thin navy border, drawn onto the
    sheet like the bubbles, drag it by the title strip. */
 .wm-legend { position: absolute; z-index: 6; min-width: 180px; background: rgba(255,255,255,.97); border: 1.5px solid var(--navy); border-radius: 5px; box-shadow: 0 2px 6px rgba(10,31,107,.22); font-size: 12px; overflow: hidden; }
+.wm-legend.sel { outline: 2.5px solid var(--brand-blue, #1E90FF); outline-offset: 2px; box-shadow: 0 2px 10px rgba(30,144,255,.4); }
 .wm-legend-head { background: transparent; color: var(--navy); font-weight: 800; font-size: 10px; letter-spacing: .09em; padding: 5px 8px; display: flex; align-items: center; gap: 6px; border-bottom: 1px dashed var(--border-strong); }
 .wm-grip { opacity: .55; letter-spacing: -1px; }
 .wm-legend-head .wm-x { margin-left: auto; }
