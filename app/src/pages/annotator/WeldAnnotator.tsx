@@ -8,6 +8,15 @@ import { base64ToBytes, loadPdf, type PdfDoc } from "../../pdf";
 
 interface Pt { x: number; y: number }
 type Tool = "bubble" | "select" | "pan" | "legend";
+// A drag in progress on a selected weld: "both" translates the bubble + leader
+// together (move the whole thing); "joint" moves only the joint end of the
+// leader (re-extend / re-aim the line).
+type DragState = {
+  id: number; mode: "both" | "joint";
+  sx: number; sy: number;   // where the drag started (normalised)
+  bx: number; by: number;   // bubble at drag start
+  jx: number; jy: number;   // joint at drag start
+};
 
 export function WeldAnnotator({
   drawing,
@@ -31,7 +40,7 @@ export function WeldAnnotator({
   const svgRef = useRef<SVGSVGElement>(null);
   const docRef = useRef<PdfDoc | null>(null);
   const renderTaskRef = useRef<any>(null);
-  const dragRef = useRef<number | null>(null);
+  const dragRef = useRef<DragState | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,24 +201,42 @@ export function WeldAnnotator({
     if (tool === "pan") return;
     // bubble tool
     if (!stamp) { toast.push("err", "Pick a welder first"); return; }
-    if (!pending) { setPending(p); setCursor(p); return; }
+    if (!pending) { setSelId(null); setPending(p); setCursor(p); return; }
     await dropBubble(pending, p);
+  };
+
+  // Begin dragging a selected weld — the whole thing ("both") or just the joint.
+  const startDrag = (w: Weld, mode: "both" | "joint", e: React.MouseEvent) => {
+    if (!editable) return;
+    const p = norm(e);
+    dragRef.current = {
+      id: w.id, mode, sx: p.x, sy: p.y,
+      bx: w.bubble_x ?? 0, by: w.bubble_y ?? 0,
+      jx: w.joint_x ?? w.bubble_x ?? 0, jy: w.joint_y ?? w.bubble_y ?? 0,
+    };
   };
 
   const onMove = (e: React.MouseEvent) => {
     if (pending) setCursor(norm(e));
-    if (dragRef.current != null) {
+    const d = dragRef.current;
+    if (d) {
       const p = norm(e);
-      setWelds((prev) => prev.map((w) => (w.id === dragRef.current ? { ...w, bubble_x: p.x, bubble_y: p.y } : w)));
+      const clamp = (v: number) => Math.max(0, Math.min(1, v));
+      setWelds((prev) => prev.map((w) => {
+        if (w.id !== d.id) return w;
+        if (d.mode === "joint") return { ...w, joint_x: clamp(p.x), joint_y: clamp(p.y) };
+        const dx = p.x - d.sx, dy = p.y - d.sy;
+        return { ...w, bubble_x: clamp(d.bx + dx), bubble_y: clamp(d.by + dy), joint_x: clamp(d.jx + dx), joint_y: clamp(d.jy + dy) };
+      }));
     }
   };
   const endDrag = async () => {
-    const id = dragRef.current;
+    const d = dragRef.current;
     dragRef.current = null;
-    if (id == null) return;
-    const w = welds.find((x) => x.id === id);
+    if (!d) return;
+    const w = welds.find((x) => x.id === d.id);
     if (w && w.bubble_x != null && w.bubble_y != null) {
-      try { await api.setWeldBubble(id, pageNum, w.bubble_x, w.bubble_y, w.joint_x ?? w.bubble_x, w.joint_y ?? w.bubble_y); } catch { /* ignore */ }
+      try { await api.setWeldBubble(d.id, pageNum, w.bubble_x, w.bubble_y, w.joint_x ?? w.bubble_x, w.joint_y ?? w.bubble_y); } catch { /* ignore */ }
     }
   };
 
@@ -220,6 +247,26 @@ export function WeldAnnotator({
   };
   const delWeld = async (id: number) => {
     try { await api.deleteWeld(id); setSelId(null); await refreshWelds(); } catch (e) { toast.push("err", errMsg(e)); }
+  };
+
+  // Manual renumber with a collision check — no two welds on the drawing may
+  // share a number. Returns true on success. Comparison is case-insensitive.
+  const renumber = async (id: number, raw: string): Promise<boolean> => {
+    const w = welds.find((x) => x.id === id);
+    if (!w) return false;
+    const v = raw.trim();
+    if (!v) { toast.push("err", "A weld number is required"); return false; }
+    if (v === (w.weld_number ?? "")) return true;
+    if (welds.some((x) => x.id !== id && (x.weld_number ?? "").trim().toLowerCase() === v.toLowerCase())) {
+      toast.push("err", `Weld “${v}” already exists on this drawing`);
+      return false;
+    }
+    try {
+      await api.updateWeld({ ...w, weld_number: v });
+      await refreshWelds();
+      toast.push("ok", `Renumbered to ${v}`);
+      return true;
+    } catch (e) { toast.push("err", errMsg(e)); return false; }
   };
 
   // welder totals for the legend
@@ -258,7 +305,7 @@ export function WeldAnnotator({
   const hint = !editable ? "Read-only." :
     guided !== null ? `Guided fill — weld ${guided + 1} of ${ordered.length}. Fill the card, press Enter for the next.` :
     tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a weld joint on the map.") :
-    tool === "select" ? "Click a bubble to select; drag to move." :
+    tool === "select" ? "Click a bubble to edit — drag it to move the whole thing, drag its joint dot to re-extend the line; renumber or delete below." :
     tool === "legend" ? "Click to place the legend stamp." : "Drag to pan.";
 
   return (
@@ -319,14 +366,26 @@ export function WeldAnnotator({
               const cx = (w.bubble_x ?? 0) * size.w, cy = (w.bubble_y ?? 0) * size.h;
               const jx = (w.joint_x ?? w.bubble_x ?? 0) * size.w, jy = (w.joint_y ?? w.bubble_y ?? 0) * size.h;
               const sel = w.id === selId, active = w.id === activeId;
+              const editing = sel && editable;
+              // A weld is grabbable when it's selected, or when the Select tool
+              // is active. Clicking a bubble (even with the Bubble tool, as long
+              // as you're not mid-placement) selects it for editing.
+              const grab = editable && (sel || tool === "select");
+              const selectable = tool === "select" || (tool === "bubble" && !pending);
               return (
-                <g key={w.id} className={active ? "wm-g active" : "wm-g"}
-                  onClick={(e) => { if (tool === "select") { e.stopPropagation(); setSelId(w.id); } }}
-                  onMouseDown={(e) => { if (tool === "select") { e.stopPropagation(); dragRef.current = w.id; setSelId(w.id); } }}
-                  style={{ cursor: tool === "select" ? "move" : "pointer" }}
+                <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""}`}
+                  onClick={(e) => { if (selectable) { e.stopPropagation(); setSelId(w.id); } }}
+                  onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); startDrag(w, "both", e); } }}
+                  style={{ cursor: grab ? "move" : "pointer" }}
                 >
-                  <line x1={jx} y1={jy} x2={cx} y2={cy} className="anno-leader" />
-                  <circle cx={jx} cy={jy} r={2.5} className="anno-joint" />
+                  <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} />
+                  {/* joint handle — drag to re-extend / re-aim the leader */}
+                  <circle
+                    cx={jx} cy={jy} r={editing ? 7 : 2.5}
+                    className={`anno-joint ${editing ? "handle" : ""}`}
+                    onMouseDown={editing ? (e) => { e.stopPropagation(); startDrag(w, "joint", e); } : undefined}
+                    style={editing ? { cursor: "crosshair" } : undefined}
+                  />
                   <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} />
                   <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" />
                   <text x={cx} y={cy - 4} className="anno-txt">{w.stamp_number ?? ""}</text>
@@ -387,22 +446,71 @@ export function WeldAnnotator({
         <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}>Show legend</button>
       )}
 
-      {selId != null && guided === null && (
-        <div className="anno-selbar">
-          {(() => { const w = welds.find((x) => x.id === selId); return (
-            <>
-              <strong>Weld {w?.weld_number}</strong><span className="muted">welder {w?.stamp_number ?? "—"}</span>
-              <div className="spacer" />
-              {editable && <>
-                <button className="btn btn-sm" onClick={() => reassign(selId)} disabled={!stamp}>Reassign to {stamp || "…"}</button>
-                <button className="btn btn-sm btn-danger" onClick={() => delWeld(selId)}>Delete</button>
-              </>}
-              <button className="btn btn-sm btn-ghost" onClick={() => setSelId(null)}>Close</button>
-            </>
-          ); })()}
-        </div>
-      )}
+      {selId != null && guided === null && (() => {
+        const w = welds.find((x) => x.id === selId);
+        if (!w) return null;
+        return (
+          <SelBar
+            weld={w}
+            editable={editable}
+            stamp={stamp}
+            onRenumber={renumber}
+            onReassign={() => reassign(w.id)}
+            onDelete={() => delWeld(w.id)}
+            onClose={() => setSelId(null)}
+          />
+        );
+      })()}
 
+    </div>
+  );
+}
+
+function SelBar({
+  weld, editable, stamp, onRenumber, onReassign, onDelete, onClose,
+}: {
+  weld: Weld;
+  editable: boolean;
+  stamp: string;
+  onRenumber: (id: number, v: string) => Promise<boolean>;
+  onReassign: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const [num, setNum] = useState(weld.weld_number ?? "");
+  useEffect(() => { setNum(weld.weld_number ?? ""); }, [weld.id, weld.weld_number]);
+
+  const commit = async () => {
+    if (num.trim() === (weld.weld_number ?? "")) return;
+    const ok = await onRenumber(weld.id, num);
+    if (!ok) setNum(weld.weld_number ?? ""); // duplicate / invalid → revert the input
+  };
+
+  return (
+    <div className="anno-selbar">
+      <span className="muted" style={{ fontSize: 12 }}>Weld&nbsp;#</span>
+      <input
+        className="sel-num"
+        value={num}
+        disabled={!editable}
+        onChange={(e) => setNum(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") { setNum(weld.weld_number ?? ""); (e.target as HTMLInputElement).blur(); }
+        }}
+        onBlur={commit}
+        title="Renumber this weld (must be unique on the drawing)"
+      />
+      <span className="muted" style={{ fontSize: 12 }}>welder {weld.stamp_number ?? "—"}</span>
+      {editable && <span className="anno-sel-tip">drag the bubble to move · drag the joint dot to re-extend</span>}
+      <div className="spacer" />
+      {editable && (
+        <>
+          <button className="btn btn-sm" onClick={onReassign} disabled={!stamp}>Reassign to {stamp || "…"}</button>
+          <button className="btn btn-sm btn-danger" onClick={onDelete}>Delete</button>
+        </>
+      )}
+      <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
     </div>
   );
 }

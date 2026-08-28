@@ -328,6 +328,14 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .anno-txt { font-size: 11px; font-weight: 700; text-anchor: middle; fill: #16233b; dominant-baseline: middle; user-select: none; }
 .anno-selbar { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .anno-selbar .spacer { flex: 1; }
+.anno-selbar .sel-num { width: 86px; padding: 5px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 13.5px; font-weight: 700; font-family: var(--mono, ui-monospace, monospace); color: var(--navy); background: var(--surface); }
+.anno-selbar .sel-num:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,64,143,.14); }
+.anno-sel-tip { font-size: 11.5px; color: var(--text-faint); }
+/* When a weld is selected for editing, its leader glows and the joint end
+   becomes a grab handle so you can re-extend the line. */
+.anno-leader.sel { stroke: var(--navy); stroke-width: 2.2; }
+.anno-joint.handle { fill: var(--navy); stroke: #fff; stroke-width: 2; }
+.wm-g.editing .anno-txt { fill: var(--navy); }
 
 /* Tool chest */
 .toolchest { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
