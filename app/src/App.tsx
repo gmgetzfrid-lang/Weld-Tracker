@@ -9,6 +9,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
 import { Roster } from "./pages/Roster";
+import { Performance } from "./pages/Performance";
 import { Statistics } from "./pages/Statistics";
 import { WelderStats } from "./pages/WelderStats";
 import { WelderReport } from "./pages/WelderReport";
@@ -28,6 +29,7 @@ type PageKey =
   | "weldlog"
   | "workorders"
   | "roster"
+  | "performance"
   | "statistics"
   | "welderstats"
   | "welderreport"
@@ -56,6 +58,7 @@ const NAV: NavDef[] = [
   { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The hub: log new welds from an isometric, search, and open a work order's records. Start here." },
   { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory." },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
+  { key: "performance", label: "Performance Report", icon: "📄", group: "Reports", desc: "The distribution report: each welder's performance and proof they stayed at or above their assigned NDE spec, for a month, year, or all time. Generate a PDF for management, supervisors or the welders." },
   { key: "statistics", label: "NDE Statistics", icon: "📊", group: "Reports", desc: "Per-welder NDE compliance (5/10/20/100% + API 570), performance and reject-rate analysis. Catch anyone falling below spec." },
   { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports", desc: "Per-welder counts and reject rates by NDE examination level." },
   { key: "welderreport", label: "Welder Report", icon: "◔", group: "Reports", desc: "A single welder's full breakdown by joint type." },
@@ -187,6 +190,8 @@ function PageView({
       return <WeldLog />;
     case "roster":
       return <Roster />;
+    case "performance":
+      return <Performance />;
     case "statistics":
       return <Statistics />;
     case "welderstats":

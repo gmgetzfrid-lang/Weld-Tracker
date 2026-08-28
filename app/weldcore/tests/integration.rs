@@ -458,6 +458,60 @@ fn nde_compliance_percentage_and_api570() {
 }
 
 #[test]
+fn performance_report_period_and_in_spec() {
+    let s = store();
+    s.create_welder(&mk_welder("K1", "Alex")).unwrap();
+    s.create_welder(&mk_welder("K2", "Blair")).unwrap();
+
+    // K1: 10 welds at 5% in Feb, exactly one RT'd+accepted -> needs 1, has 1 = in spec.
+    for i in 0..10 {
+        let mut w = nde_weld("K1", &format!("K1F{i}"), "5%", "BW");
+        w.size = Some(6.0);
+        if i == 0 {
+            w.nde_types = Some("RT".into());
+            w.nde_result = Some("Accepted".into());
+            w.rt_date = Some("2026-02-10".into());
+        }
+        s.create_weld(&w, "admin").unwrap();
+    }
+    // K2: 10 welds at 5% in Feb, none examined -> below spec.
+    for i in 0..10 {
+        let mut w = nde_weld("K2", &format!("K2F{i}"), "5%", "BW");
+        w.size = Some(6.0);
+        s.create_weld(&w, "admin").unwrap();
+    }
+    // K1: one extra 5% weld welded in MARCH (outside a February window).
+    let mut mar = nde_weld("K1", "K1MAR", "5%", "BW");
+    mar.date_welded = Some("2026-03-10".into());
+    s.create_weld(&mar, "admin").unwrap();
+
+    // All time: K1 has 11 welds, K2 has 10; K2 is below spec, K1 is in spec.
+    let all = s.report_performance(None, None).unwrap();
+    let k1 = all.rows.iter().find(|r| r.stamp == "K1").unwrap();
+    let k2 = all.rows.iter().find(|r| r.stamp == "K2").unwrap();
+    assert_eq!(k1.weld_count, 11);
+    assert!(k1.in_spec, "K1 met its 5% requirement");
+    assert_eq!(k2.weld_count, 10);
+    assert!(!k2.in_spec, "K2 examined none of its 5% welds");
+    assert_eq!(all.welders_below_spec, 1);
+    assert_eq!(all.welders_in_spec, 1);
+    // Below-spec welder is surfaced first for the watchlist.
+    assert_eq!(all.rows[0].stamp, "K2");
+
+    // February window excludes the March weld.
+    let feb = s
+        .report_performance(Some("2026-02-01".into()), Some("2026-02-28".into()))
+        .unwrap();
+    let k1f = feb.rows.iter().find(|r| r.stamp == "K1").unwrap();
+    assert_eq!(k1f.weld_count, 10, "March weld excluded from February window");
+    assert_eq!(feb.total_welds, 20);
+    // Per-work-order roll-up covers WO1.
+    let wo = feb.work_orders.iter().find(|w| w.work_order == "WO1").unwrap();
+    assert_eq!(wo.weld_count, 20);
+    assert_eq!(wo.inspected, 1);
+}
+
+#[test]
 fn nde_reject_rate_uses_inspected_denominator() {
     let s = store();
     s.create_welder(&mk_welder("R1", "Rex")).unwrap();

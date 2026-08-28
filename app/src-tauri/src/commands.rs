@@ -586,3 +586,13 @@ pub fn report_nde_compliance(state: State<AppState>) -> R<NdeComplianceReport> {
     state.require_login()?;
     e(state.store.report_nde_compliance())
 }
+
+#[tauri::command]
+pub fn report_performance(
+    state: State<AppState>,
+    from: Option<String>,
+    to: Option<String>,
+) -> R<PerformanceReport> {
+    state.require_login()?;
+    e(state.store.report_performance(from, to))
+}

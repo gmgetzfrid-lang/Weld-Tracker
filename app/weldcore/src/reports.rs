@@ -234,6 +234,61 @@ pub struct NdeComplianceReport {
     pub spec_mismatch_count: i64,
 }
 
+/// One welder's line in the performance report: throughput plus whether they
+/// stayed at or above every NDE spec they welded to, over the report window.
+#[derive(Debug, Clone, Serialize)]
+pub struct PerformanceRow {
+    pub stamp: String,
+    pub name: String,
+    pub active: bool,
+    pub weld_count: i64,      // countable welds in the window
+    pub weld_inches: f64,     // sum of diameter inches
+    pub inspected: i64,       // welds with a recorded NDE result (RT/PT)
+    pub rt_pct: f64,          // inspected / weld_count (0..1)
+    pub rejects: i64,
+    pub reject_rate: f64,     // rejects / inspected (0..1)
+    pub specs: Vec<NdeSpecStat>,   // per assigned spec: required vs actual coverage
+    pub assigned_specs: String,    // e.g. "5%, 100%"
+    pub min_actual_pct: f64,       // lowest actual coverage across specs (0..100)
+    pub in_spec: bool,             // at or above requirement on every spec
+    pub worst_gap: i64,            // largest single-spec shortfall (0 when clear)
+    pub last_rt: Option<String>,   // most recent examination date
+    pub processes: Option<String>, // qualified process(es) from certs
+}
+
+/// Per-work-order throughput roll-up for the report window.
+#[derive(Debug, Clone, Serialize)]
+pub struct PerfWorkOrder {
+    pub work_order: String,
+    pub weld_count: i64,
+    pub weld_inches: f64,
+    pub inspected: i64,
+    pub rt_pct: f64,
+    pub rejects: i64,
+    pub reject_rate: f64,
+}
+
+/// The full performance & NDE-compliance report — the data behind the
+/// distribution PDF.
+#[derive(Debug, Serialize)]
+pub struct PerformanceReport {
+    pub period_label: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub generated_on: String,
+    pub total_welds: i64,
+    pub total_inches: f64,
+    pub total_inspected: i64,
+    pub fleet_rt_pct: f64,
+    pub total_rejects: i64,
+    pub fleet_reject_rate: f64,
+    pub welders_in_spec: i64,
+    pub welders_below_spec: i64,
+    pub by_spec: Vec<NdeSpecStat>,
+    pub rows: Vec<PerformanceRow>,
+    pub work_orders: Vec<PerfWorkOrder>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ClientReportRow {
     pub stamp: String,
@@ -807,6 +862,284 @@ impl Store {
             welder_count,
             noncompliant_count,
             spec_mismatch_count,
+        })
+    }
+
+    /// Consolidated performance & NDE-compliance report over an optional date
+    /// window [from, to] (inclusive 'YYYY-MM-DD'; None = open-ended). This is the
+    /// data behind the distribution PDF: per welder, their throughput and whether
+    /// they held at or above every NDE spec they welded to, plus a fleet summary
+    /// and a per-work-order roll-up.
+    pub fn report_performance(
+        &self,
+        from: Option<String>,
+        to: Option<String>,
+    ) -> Result<PerformanceReport> {
+        const SPECS: &[(&str, f64)] = &[
+            ("5%", 5.0), ("10%", 10.0), ("20%", 20.0), ("100%", 100.0), ("API 570", 100.0),
+        ];
+        let empty_specs = || {
+            [
+                NdeSpecStat::empty(SPECS[0].0, SPECS[0].1),
+                NdeSpecStat::empty(SPECS[1].0, SPECS[1].1),
+                NdeSpecStat::empty(SPECS[2].0, SPECS[2].1),
+                NdeSpecStat::empty(SPECS[3].0, SPECS[3].1),
+                NdeSpecStat::empty(SPECS[4].0, SPECS[4].1),
+            ]
+        };
+
+        // Date-window predicate.
+        let mut where_extra = String::new();
+        let mut args: Vec<Value> = Vec::new();
+        if let Some(f) = &from {
+            where_extra.push_str(" AND date_welded >= ?");
+            args.push(Value::Text(f.clone()));
+        }
+        if let Some(t) = &to {
+            where_extra.push_str(" AND date_welded <= ?");
+            args.push(Value::Text(t.clone()));
+        }
+
+        struct Raw {
+            stamp: String,
+            nde_percent: Option<String>,
+            nde_types: Option<String>,
+            nde_result: Option<String>,
+            joint_type: Option<String>,
+            rt_date: Option<String>,
+            nde_date: Option<String>,
+            weld_inches: f64,
+            work_order: Option<String>,
+        }
+        let raw: Vec<Raw> = {
+            let conn = self.conn.lock().unwrap();
+            let sql = format!(
+                "SELECT stamp_number, nde_percent, nde_types, nde_result, joint_type,
+                        rt_date, nde_date, COALESCE(weld_inches, 0), work_order
+                 FROM welds
+                 WHERE count_omission = 0 AND stamp_number IS NOT NULL AND stamp_number <> ''{where_extra}"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+                Ok(Raw {
+                    stamp: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    nde_percent: r.get(1)?,
+                    nde_types: r.get(2)?,
+                    nde_result: r.get(3)?,
+                    joint_type: r.get(4)?,
+                    rt_date: r.get(5)?,
+                    nde_date: r.get(6)?,
+                    weld_inches: r.get(7)?,
+                    work_order: r.get(8)?,
+                })
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+
+        struct Acc {
+            specs: [NdeSpecStat; 5],
+            weld_count: i64,
+            weld_inches: f64,
+            inspected: i64,
+            rejects: i64,
+            last_rt: Option<String>,
+        }
+        struct WoAcc {
+            weld_count: i64,
+            weld_inches: f64,
+            inspected: i64,
+            rejects: i64,
+        }
+        let mut per: std::collections::BTreeMap<String, Acc> = std::collections::BTreeMap::new();
+        let mut wos: std::collections::BTreeMap<String, WoAcc> = std::collections::BTreeMap::new();
+
+        for w in &raw {
+            let a = per.entry(w.stamp.clone()).or_insert_with(|| Acc {
+                specs: empty_specs(),
+                weld_count: 0,
+                weld_inches: 0.0,
+                inspected: 0,
+                rejects: 0,
+                last_rt: None,
+            });
+            a.weld_count += 1;
+            a.weld_inches += w.weld_inches;
+            let inspected = was_examined(w.nde_result.as_deref(), w.rt_date.as_deref());
+            if inspected {
+                a.inspected += 1;
+            }
+            let rejected = w
+                .nde_result
+                .as_deref()
+                .is_some_and(|r| r.eq_ignore_ascii_case("Rejected"));
+            if rejected {
+                a.rejects += 1;
+            }
+            // latest examination date (rt_date, else nde_date)
+            let d = w
+                .rt_date
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| w.nde_date.clone().filter(|s| !s.trim().is_empty()));
+            if let Some(d) = d {
+                if a.last_rt.as_deref().map_or(true, |cur| d.as_str() > cur) {
+                    a.last_rt = Some(d);
+                }
+            }
+            if let Some(idx) = canonical_spec_index(w.nde_percent.as_deref()) {
+                let s = &mut a.specs[idx];
+                s.population += 1;
+                let met = if idx == 4 {
+                    api570_satisfied(w.joint_type.as_deref(), w.nde_types.as_deref())
+                } else {
+                    inspected
+                };
+                if met {
+                    s.examined += 1;
+                }
+                if rejected {
+                    s.rejected += 1;
+                }
+            }
+            if let Some(name) = w.work_order.as_deref().filter(|s| !s.trim().is_empty()) {
+                let wa = wos.entry(name.to_string()).or_insert(WoAcc {
+                    weld_count: 0,
+                    weld_inches: 0.0,
+                    inspected: 0,
+                    rejects: 0,
+                });
+                wa.weld_count += 1;
+                wa.weld_inches += w.weld_inches;
+                if inspected {
+                    wa.inspected += 1;
+                }
+                if rejected {
+                    wa.rejects += 1;
+                }
+            }
+        }
+
+        let welders = self.list_welders(true, "name")?;
+        let mut fleet: Vec<NdeSpecStat> =
+            SPECS.iter().map(|(s, p)| NdeSpecStat::empty(s, *p)).collect();
+        let mut rows: Vec<PerformanceRow> = Vec::new();
+        let (mut tot_w, mut tot_in, mut tot_insp, mut tot_rej) = (0i64, 0.0f64, 0i64, 0i64);
+
+        for (stamp, a) in per {
+            let mut specs: Vec<NdeSpecStat> = Vec::new();
+            let mut in_spec = true;
+            let mut worst = 0i64;
+            let mut min_actual = 100.0f64;
+            for (i, s) in a.specs.into_iter().enumerate() {
+                if s.population == 0 {
+                    continue;
+                }
+                let s = s.finish_welder(i == 4);
+                in_spec &= s.compliant;
+                worst = worst.max(s.shortfall);
+                min_actual = min_actual.min(s.actual_pct);
+                fleet[i].population += s.population;
+                fleet[i].examined += s.examined;
+                fleet[i].required += s.required;
+                fleet[i].shortfall += s.shortfall;
+                fleet[i].rejected += s.rejected;
+                specs.push(s);
+            }
+            let assigned_specs = specs
+                .iter()
+                .map(|s| s.spec.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let welder = welders.iter().find(|w| w.stamp.eq_ignore_ascii_case(&stamp));
+            let (name, active) = welder
+                .map(|w| (w.name.clone(), w.active))
+                .unwrap_or_else(|| (String::new(), false));
+            let processes = welder.and_then(|w| self.welder_cert_processes(w.id).ok().flatten());
+            tot_w += a.weld_count;
+            tot_in += a.weld_inches;
+            tot_insp += a.inspected;
+            tot_rej += a.rejects;
+            rows.push(PerformanceRow {
+                stamp,
+                name,
+                active,
+                weld_count: a.weld_count,
+                weld_inches: a.weld_inches,
+                inspected: a.inspected,
+                rt_pct: ratio(a.inspected, a.weld_count),
+                rejects: a.rejects,
+                reject_rate: ratio(a.rejects, a.inspected),
+                specs,
+                assigned_specs,
+                min_actual_pct: min_actual,
+                in_spec,
+                worst_gap: worst,
+                last_rt: a.last_rt,
+                processes,
+            });
+        }
+
+        for f in &mut fleet {
+            f.compliant = f.shortfall == 0;
+            f.actual_pct = if f.population == 0 {
+                0.0
+            } else {
+                f.examined as f64 / f.population as f64 * 100.0
+            };
+        }
+        fleet.retain(|f| f.population > 0);
+
+        let welders_below_spec = rows.iter().filter(|r| !r.in_spec).count() as i64;
+        let welders_in_spec = rows.iter().filter(|r| r.in_spec).count() as i64;
+
+        // Below-spec welders first (largest shortfall), then alphabetical.
+        rows.sort_by(|a, b| {
+            b.worst_gap
+                .cmp(&a.worst_gap)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        let mut work_orders: Vec<PerfWorkOrder> = wos
+            .into_iter()
+            .map(|(k, v)| PerfWorkOrder {
+                work_order: k,
+                weld_count: v.weld_count,
+                weld_inches: v.weld_inches,
+                inspected: v.inspected,
+                rt_pct: ratio(v.inspected, v.weld_count),
+                rejects: v.rejects,
+                reject_rate: ratio(v.rejects, v.inspected),
+            })
+            .collect();
+        work_orders.sort_by(|a, b| a.work_order.cmp(&b.work_order));
+
+        let generated_on: String = {
+            let conn = self.conn.lock().unwrap();
+            conn.query_row("SELECT date('now')", [], |r| r.get(0))?
+        };
+        let period_label = match (&from, &to) {
+            (Some(f), Some(t)) => format!("{f} to {t}"),
+            (Some(f), None) => format!("from {f}"),
+            (None, Some(t)) => format!("through {t}"),
+            (None, None) => "All time".to_string(),
+        };
+
+        Ok(PerformanceReport {
+            period_label,
+            from,
+            to,
+            generated_on,
+            total_welds: tot_w,
+            total_inches: tot_in,
+            total_inspected: tot_insp,
+            fleet_rt_pct: ratio(tot_insp, tot_w),
+            total_rejects: tot_rej,
+            fleet_reject_rate: ratio(tot_rej, tot_insp),
+            welders_in_spec,
+            welders_below_spec,
+            by_spec: fleet,
+            rows,
+            work_orders,
         })
     }
 }

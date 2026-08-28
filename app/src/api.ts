@@ -8,6 +8,7 @@ import type {
   Lookups,
   MonthlyReport,
   NdeComplianceReport,
+  PerformanceReport,
   PipeRow,
   Settings,
   SummaryReport,
@@ -197,6 +198,8 @@ export const api = {
   reportQm: () => invoke<WelderStatRow[]>("report_qm"),
   reportNdeCompliance: () =>
     invoke<NdeComplianceReport>("report_nde_compliance"),
+  reportPerformance: (from: string | null, to: string | null) =>
+    invoke<PerformanceReport>("report_performance", { from, to }),
 };
 
 /** Reject-rate warning threshold (as a 0..1 fraction) from settings. */

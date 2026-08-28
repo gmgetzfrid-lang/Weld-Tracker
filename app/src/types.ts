@@ -311,5 +311,52 @@ export interface NdeComplianceReport {
   spec_mismatch_count: number;
 }
 
+export interface PerformanceRow {
+  stamp: string;
+  name: string;
+  active: boolean;
+  weld_count: number;
+  weld_inches: number;
+  inspected: number;
+  rt_pct: number; // 0..1
+  rejects: number;
+  reject_rate: number; // 0..1
+  specs: NdeSpecStat[];
+  assigned_specs: string;
+  min_actual_pct: number; // 0..100
+  in_spec: boolean;
+  worst_gap: number;
+  last_rt?: string | null;
+  processes?: string | null;
+}
+
+export interface PerfWorkOrder {
+  work_order: string;
+  weld_count: number;
+  weld_inches: number;
+  inspected: number;
+  rt_pct: number;
+  rejects: number;
+  reject_rate: number;
+}
+
+export interface PerformanceReport {
+  period_label: string;
+  from?: string | null;
+  to?: string | null;
+  generated_on: string;
+  total_welds: number;
+  total_inches: number;
+  total_inspected: number;
+  fleet_rt_pct: number;
+  total_rejects: number;
+  fleet_reject_rate: number;
+  welders_in_spec: number;
+  welders_below_spec: number;
+  by_spec: NdeSpecStat[];
+  rows: PerformanceRow[];
+  work_orders: PerfWorkOrder[];
+}
+
 export type Lookups = Record<string, string[]>;
 export type Settings = Record<string, string>;
