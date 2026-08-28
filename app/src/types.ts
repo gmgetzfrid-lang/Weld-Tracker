@@ -97,6 +97,7 @@ export interface Drawing {
   drawing_no?: string | null;
   unit?: string | null;
   line_spec?: string | null;
+  line_spec_2?: string | null;
   revision?: string | null;
   title?: string | null;
   spec_5: boolean;
@@ -106,7 +107,6 @@ export interface Drawing {
   spec_50: boolean;
   spec_100: boolean;
   default_material?: string | null;
-  default_schedule?: string | null;
   pdf_name?: string | null;
   has_pdf: boolean;
   page_count: number;

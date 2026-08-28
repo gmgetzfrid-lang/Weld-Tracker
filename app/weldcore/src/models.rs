@@ -188,6 +188,9 @@ pub struct Drawing {
     pub unit: Option<String>,
     #[serde(default)]
     pub line_spec: Option<String>,
+    /// Second line spec, for a line with a spec break partway along its run.
+    #[serde(default)]
+    pub line_spec_2: Option<String>,
     #[serde(default)]
     pub revision: Option<String>,
     #[serde(default)]
@@ -204,10 +207,10 @@ pub struct Drawing {
     pub spec_50: bool,
     #[serde(default)]
     pub spec_100: bool,
+    /// Starting material for welds placed on this drawing; editable per weld
+    /// (a spec break can change it partway along the line).
     #[serde(default)]
     pub default_material: Option<String>,
-    #[serde(default)]
-    pub default_schedule: Option<String>,
     #[serde(default)]
     pub pdf_name: Option<String>,
     /// True when a PDF is stored (the bytes themselves are fetched separately).

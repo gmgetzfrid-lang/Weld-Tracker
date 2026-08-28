@@ -260,12 +260,16 @@ fn drawing_bubble_annotation_flow() {
         drawing_no: Some("ISO-1".into()),
         unit: Some("61".into()),
         line_spec: Some("KAAA1".into()),
+        line_spec_2: Some("KAAA2".into()), // spec break partway along the line
         spec_5: true,
         default_material: Some("CS".into()),
-        default_schedule: Some("STD/40s".into()),
         ..Default::default()
     };
     let did = s.create_drawing(&d, "admin").unwrap();
+    // Both line specs round-trip; the second is the spec-break spec.
+    let saved = s.get_drawing(did).unwrap();
+    assert_eq!(saved.line_spec.as_deref(), Some("KAAA1"));
+    assert_eq!(saved.line_spec_2.as_deref(), Some("KAAA2"));
 
     // Numbering starts at 1 and increments; weld numbers are W-prefixed.
     assert_eq!(s.next_weld_number(did).unwrap(), 1);
@@ -275,6 +279,9 @@ fn drawing_bubble_annotation_flow() {
     assert_eq!(w1.weld_number.as_deref(), Some("W1"));
     assert_eq!(w1.unit.as_deref(), Some("61")); // header inherited
     assert!(w1.spec_5); // NDE requirement inherited
+    assert_eq!(w1.material.as_deref(), Some("CS")); // default material inherited
+    assert_eq!(w1.line_spec.as_deref(), Some("KAAA1")); // primary spec inherited
+    assert!(w1.schedule.is_none()); // schedule is per-weld, not defaulted
     assert_eq!(w1.stamp_number.as_deref(), Some("K1"));
     assert_eq!(w1.status, "Required");
     // next_weld_number parses the "W" prefix

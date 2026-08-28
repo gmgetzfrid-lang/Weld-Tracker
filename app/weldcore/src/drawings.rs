@@ -16,6 +16,7 @@ fn drawing_from_row(r: &Row) -> rusqlite::Result<Drawing> {
         drawing_no: r.get("drawing_no")?,
         unit: r.get("unit")?,
         line_spec: r.get("line_spec")?,
+        line_spec_2: r.get("line_spec_2")?,
         revision: r.get("revision")?,
         title: r.get("title")?,
         spec_5: r.get::<_, i64>("spec_5")? != 0,
@@ -25,7 +26,6 @@ fn drawing_from_row(r: &Row) -> rusqlite::Result<Drawing> {
         spec_50: r.get::<_, i64>("spec_50")? != 0,
         spec_100: r.get::<_, i64>("spec_100")? != 0,
         default_material: r.get("default_material")?,
-        default_schedule: r.get("default_schedule")?,
         pdf_name: r.get("pdf_name")?,
         has_pdf: r.get::<_, i64>("has_pdf")? != 0,
         page_count: r.get("page_count")?,
@@ -36,9 +36,9 @@ fn drawing_from_row(r: &Row) -> rusqlite::Result<Drawing> {
     })
 }
 
-const DRAWING_SELECT: &str = "SELECT id, work_order, drawing_no, unit, line_spec, revision,
-    title, spec_5, spec_10, spec_20, spec_25, spec_50, spec_100, default_material,
-    default_schedule, pdf_name, (pdf_data IS NOT NULL) AS has_pdf, page_count,
+const DRAWING_SELECT: &str = "SELECT id, work_order, drawing_no, unit, line_spec, line_spec_2,
+    revision, title, spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
+    default_material, pdf_name, (pdf_data IS NOT NULL) AS has_pdf, page_count,
     (SELECT COUNT(*) FROM welds w WHERE w.drawing_id = drawings.id) AS weld_count,
     created_by, created_at, updated_at
     FROM drawings";
@@ -99,14 +99,14 @@ impl Store {
     pub fn create_drawing(&self, d: &Drawing, actor: &str) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO drawings (work_order, drawing_no, unit, line_spec, revision, title,
-                spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
-                default_material, default_schedule, created_by)
+            "INSERT INTO drawings (work_order, drawing_no, unit, line_spec, line_spec_2, revision,
+                title, spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
+                default_material, created_by)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             params![
-                d.work_order, d.drawing_no, d.unit, d.line_spec, d.revision, d.title,
-                d.spec_5 as i64, d.spec_10 as i64, d.spec_20 as i64, d.spec_25 as i64,
-                d.spec_50 as i64, d.spec_100 as i64, d.default_material, d.default_schedule, actor
+                d.work_order, d.drawing_no, d.unit, d.line_spec, d.line_spec_2, d.revision,
+                d.title, d.spec_5 as i64, d.spec_10 as i64, d.spec_20 as i64, d.spec_25 as i64,
+                d.spec_50 as i64, d.spec_100 as i64, d.default_material, actor
             ],
         )?;
         let id = conn.last_insert_rowid();
@@ -119,14 +119,14 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let n = conn.execute(
             "UPDATE drawings SET work_order=?1, drawing_no=?2, unit=?3, line_spec=?4,
-                revision=?5, title=?6, spec_5=?7, spec_10=?8, spec_20=?9, spec_25=?10,
-                spec_50=?11, spec_100=?12, default_material=?13, default_schedule=?14,
+                line_spec_2=?5, revision=?6, title=?7, spec_5=?8, spec_10=?9, spec_20=?10,
+                spec_25=?11, spec_50=?12, spec_100=?13, default_material=?14,
                 updated_at=datetime('now')
              WHERE id=?15",
             params![
-                d.work_order, d.drawing_no, d.unit, d.line_spec, d.revision, d.title,
-                d.spec_5 as i64, d.spec_10 as i64, d.spec_20 as i64, d.spec_25 as i64,
-                d.spec_50 as i64, d.spec_100 as i64, d.default_material, d.default_schedule, d.id
+                d.work_order, d.drawing_no, d.unit, d.line_spec, d.line_spec_2, d.revision,
+                d.title, d.spec_5 as i64, d.spec_10 as i64, d.spec_20 as i64, d.spec_25 as i64,
+                d.spec_50 as i64, d.spec_100 as i64, d.default_material, d.id
             ],
         )?;
         if n == 0 {
@@ -268,6 +268,9 @@ impl Store {
             unit: d.unit.clone(),
             drawing_no: d.drawing_no.clone(),
             work_order: d.work_order.clone(),
+            // Inherit the primary line spec and default material as a starting
+            // point; schedule and (past a spec break) the alternate spec are set
+            // per weld during Fill details, since they vary along the line.
             line_spec: d.line_spec.clone(),
             spec_5: d.spec_5,
             spec_10: d.spec_10,
@@ -276,7 +279,6 @@ impl Store {
             spec_50: d.spec_50,
             spec_100: d.spec_100,
             material: d.default_material.clone(),
-            schedule: d.default_schedule.clone(),
             weld_number: Some(weld_number.to_string()),
             stamp_number: stamp,
             status: "Required".to_string(),

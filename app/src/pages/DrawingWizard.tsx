@@ -188,6 +188,7 @@ function HeaderStep({
 }) {
   const [lineSpecs, setLineSpecs] = useState<string[]>([]);
   useEffect(() => { api.distinctWeldValues("line_spec").then(setLineSpecs).catch(() => {}); }, []);
+  const [showBreak, setShowBreak] = useState(!!drawing.line_spec_2);
 
   const NDE = ["5%", "10%", "20%", "100%"];
   const specKey = (p: string) => `spec_${p.replace("%", "")}` as keyof Drawing;
@@ -201,8 +202,10 @@ function HeaderStep({
   return (
     <>
       <Coach title="Start with the work order, then the isometric">
-        Everything ties back to the <b>work order number</b>. Fill these once and
-        they cascade to <b>every weld</b> you place — you never retype them.
+        Everything ties back to the <b>work order number</b>. The work order, line
+        spec and NDE coverage cascade to <b>every weld</b> you place. Size, schedule
+        and (past a spec break) the alternate spec are set per weld during{" "}
+        <b>Fill details</b>, since they vary along the line.
       </Coach>
       <ErrorBox message={error} />
 
@@ -223,15 +226,31 @@ function HeaderStep({
             <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} /></div>
           <div className="field"><label>Revision</label>
             <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} /></div>
-          <div className="field"><label>Line Spec <span className="faint">(autocompletes)</span></label>
-            <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" /></div>
-          <div className="field"><label>Default Material</label>
-            <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
-          <div className="field"><label>Default Schedule</label>
-            <Combobox value={drawing.default_schedule ?? ""} options={lookups.schedule ?? []} allowCustom onChange={(v) => set("default_schedule", v || null)} placeholder="e.g. STD/40s" /></div>
           <div className="field"><label>Title / Description</label>
             <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} /></div>
+          <div className="field"><label>Line Spec <span className="faint">(autocompletes)</span></label>
+            <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" />
+            {!showBreak && (
+              <button type="button" className="filldown" style={{ marginTop: 4 }} onClick={() => setShowBreak(true)}>＋ add spec break</button>
+            )}
+          </div>
+          <div className="field"><label>Default Material <span className="faint">(editable per weld)</span></label>
+            <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
+          {showBreak && (
+            <div className="field"><label>Line Spec after break <span className="faint">(2nd spec)</span></label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <Combobox value={drawing.line_spec_2 ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec_2", v || null)} placeholder="spec past the break…" />
+                <button type="button" className="btn btn-sm btn-ghost" title="Remove spec break" onClick={() => { setShowBreak(false); set("line_spec_2", null); }}>✕</button>
+              </div>
+            </div>
+          )}
         </div>
+        {showBreak && (
+          <p className="hint" style={{ marginTop: 8 }}>
+            A <b>spec break</b> means the line changes spec partway. Welds start on the primary spec — set each
+            weld to the correct side of the break (and its own schedule &amp; material) during <b>Fill details</b>.
+          </p>
+        )}
       </div>
 
       <div className="wsection">
@@ -351,6 +370,8 @@ function AttributesStep({
 
   const stamps = welders.map((w) => w.stamp);
   const missing = (w: Weld) => !w.size || !w.joint_type;
+  const specOptions = [drawing.line_spec, drawing.line_spec_2].filter(Boolean) as string[];
+  const hasBreak = specOptions.length > 1;
 
   return (
     <>
@@ -368,6 +389,7 @@ function AttributesStep({
               <tr>
                 <th>Weld #</th><th>Welder</th><th className="num">Size</th><th>Joint</th>
                 <th>Groove</th><th>Process</th><th>Sched</th><th>Material</th>
+                {hasBreak && <th>Line Spec</th>}
                 <th className="num">Thk</th><th></th><th></th>
               </tr>
             </thead>
@@ -381,13 +403,14 @@ function AttributesStep({
                   <td><InlineSelect value={w.groove_type} options={lookups.groove_type ?? []} onCommit={(v) => save(w, { groove_type: v })} /></td>
                   <td><InlineSelect value={w.process} options={lookups.process ?? []} onCommit={(v) => save(w, { process: v })} /></td>
                   <td><InlineSelect value={w.schedule} options={lookups.schedule ?? []} onCommit={(v) => save(w, { schedule: v })} /></td>
-                  <td><InlineSelect value={w.material} options={lookups.material ?? []} onCommit={(v) => save(w, { material: v })} /></td>
+                  <td><InlineSelect value={w.material} options={lookups.material ?? []} allowCustom onCommit={(v) => save(w, { material: v })} /></td>
+                  {hasBreak && <td><InlineSelect value={w.line_spec} options={specOptions} allowCustom onCommit={(v) => save(w, { line_spec: v })} /></td>}
                   <td className="num">{w.thickness ?? "—"}</td>
                   <td>{missing(w) && <span className="badge badge-red">needs size/joint</span>}</td>
                   <td><button className="filldown" title="Copy this row's values to all welds below" onClick={() => fillDown(i)}>⭳ fill down</button></td>
                 </tr>
               ))}
-              {welds.length === 0 && <tr><td colSpan={11} className="table-empty">No bubbles placed yet — go back to Place Welds.</td></tr>}
+              {welds.length === 0 && <tr><td colSpan={hasBreak ? 12 : 11} className="table-empty">No bubbles placed yet — go back to Place Welds.</td></tr>}
             </tbody>
           </table>
         </div>

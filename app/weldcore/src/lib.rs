@@ -106,6 +106,7 @@ impl Store {
             (1, include_str!("migrations/0001_init.sql")),
             (2, include_str!("migrations/0002_drawings.sql")),
             (3, include_str!("migrations/0003_nde.sql")),
+            (4, include_str!("migrations/0004_spec_break.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {

@@ -228,6 +228,13 @@ export function WeldAnnotator({
   const pageWelds = ordered.filter((w) => (w.bubble_page ?? 1) === pageNum && w.bubble_x != null);
   const R = 17;
   const activeId = guided !== null ? ordered[guided]?.id : null;
+  // The line's spec(s). A spec break gives two — the guided popup then lets you
+  // put each weld on the correct side of the break.
+  const specOptions = [drawing.line_spec, drawing.line_spec_2].filter(Boolean) as string[];
+  const gActive = guided !== null ? ordered[guided] : null;
+  const gcx = (gActive?.bubble_x ?? 0) * size.w;
+  const gcy = (gActive?.bubble_y ?? 0) * size.h;
+  const gLeftSide = gcx > size.w * 0.55; // pop to the left when the bubble sits on the right
 
   const hint = !editable ? "Read-only." :
     guided !== null ? `Guided fill — weld ${guided + 1} of ${ordered.length}. Fill the card, press Enter for the next.` :
@@ -294,7 +301,7 @@ export function WeldAnnotator({
               const jx = (w.joint_x ?? w.bubble_x ?? 0) * size.w, jy = (w.joint_y ?? w.bubble_y ?? 0) * size.h;
               const sel = w.id === selId, active = w.id === activeId;
               return (
-                <g key={w.id}
+                <g key={w.id} className={active ? "wm-g active" : "wm-g"}
                   onClick={(e) => { if (tool === "select") { e.stopPropagation(); setSelId(w.id); } }}
                   onMouseDown={(e) => { if (tool === "select") { e.stopPropagation(); dragRef.current = w.id; setSelId(w.id); } }}
                   style={{ cursor: tool === "select" ? "move" : "pointer" }}
@@ -328,6 +335,32 @@ export function WeldAnnotator({
               onClose={() => { setLegendOn(false); persistLegend(legendPos, false); }}
             />
           )}
+
+          {/* Guided-fill popup, docked right beside the active weld bubble */}
+          {guided !== null && gActive && (
+            <GuidedPopup
+              key={gActive.id}
+              weld={gActive}
+              index={guided}
+              total={ordered.length}
+              lookups={lookups}
+              sizes={sizes}
+              specOptions={specOptions}
+              anchor={{ cx: gcx, cy: gcy, left: gLeftSide, pageH: size.h }}
+              onSaveNext={async (changes) => {
+                const w = ordered[guided];
+                try {
+                  await api.updateWeld({ ...w, ...changes });
+                  await refreshWelds();
+                } catch (e) { toast.push("err", errMsg(e)); }
+                if (guided + 1 >= ordered.length) { setGuided(null); toast.push("ok", "All welds filled"); }
+                else setGuided(guided + 1);
+              }}
+              onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
+              onSkip={() => { if (guided + 1 >= ordered.length) setGuided(null); else setGuided(guided + 1); }}
+              onExit={() => setGuided(null)}
+            />
+          )}
         </div>
       </div>
 
@@ -351,27 +384,6 @@ export function WeldAnnotator({
         </div>
       )}
 
-      {guided !== null && ordered[guided] && (
-        <GuidedCard
-          weld={ordered[guided]}
-          index={guided}
-          total={ordered.length}
-          lookups={lookups}
-          sizes={sizes}
-          onSaveNext={async (changes) => {
-            const w = ordered[guided];
-            try {
-              await api.updateWeld({ ...w, ...changes });
-              await refreshWelds();
-            } catch (e) { toast.push("err", errMsg(e)); }
-            if (guided + 1 >= ordered.length) { setGuided(null); toast.push("ok", "All welds filled"); }
-            else setGuided(guided + 1);
-          }}
-          onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
-          onSkip={() => { if (guided + 1 >= ordered.length) setGuided(null); else setGuided(guided + 1); }}
-          onExit={() => setGuided(null)}
-        />
-      )}
     </div>
   );
 }
@@ -412,21 +424,37 @@ function Legend({
   totals: [string, number][]; editable: boolean;
   onMove: (p: Pt) => void; onClose: () => void;
 }) {
-  const drag = useRef(false);
+  // Pointer-capture drag: grabbing the header keeps the legend glued to the
+  // cursor even when it moves fast or leaves the box — it moves on the page
+  // exactly like a weld bubble, not like a floating window.
+  const start = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!editable) return;
+    start.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!start.current) return;
+    const nx = start.current.x + (e.clientX - start.current.px) / (size.w || 1);
+    const ny = start.current.y + (e.clientY - start.current.py) / (size.h || 1);
+    onMove({ x: Math.max(0, Math.min(0.98, nx)), y: Math.max(0, Math.min(0.98, ny)) });
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    start.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
   return (
-    <div
-      className="wm-legend"
-      style={{ left: pos.x * size.w, top: pos.y * size.h }}
-      onMouseDown={(e) => { if (editable && (e.target as HTMLElement).className.includes("wm-legend-head")) drag.current = true; }}
-      onMouseMove={(e) => {
-        if (!drag.current) return;
-        const parent = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
-        onMove({ x: (e.clientX - parent.left) / parent.width, y: (e.clientY - parent.top) / parent.height });
-      }}
-      onMouseUp={() => (drag.current = false)}
-      onMouseLeave={() => (drag.current = false)}
-    >
-      <div className="wm-legend-head">WELD MAP LEGEND {editable && <button className="wm-x" onClick={onClose}>✕</button>}</div>
+    <div className="wm-legend" style={{ left: pos.x * size.w, top: pos.y * size.h }}>
+      <div
+        className="wm-legend-head"
+        style={{ cursor: editable ? "grab" : "default", touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        <span className="wm-grip">⠿</span> WELD MAP LEGEND
+        {editable && <button className="wm-x" onClick={onClose} onPointerDown={(e) => e.stopPropagation()}>✕</button>}
+      </div>
       <div className="wm-legend-key">
         <svg width="42" height="42" viewBox="0 0 42 42">
           <circle cx="21" cy="21" r="16" className="anno-bubble" />
@@ -447,48 +475,64 @@ function Legend({
   );
 }
 
-function GuidedCard({
-  weld, index, total, lookups, sizes, onSaveNext, onBack, onSkip, onExit,
+function GuidedPopup({
+  weld, index, total, lookups, sizes, specOptions, anchor, onSaveNext, onBack, onSkip, onExit,
 }: {
   weld: Weld; index: number; total: number; lookups: Lookups; sizes: number[];
+  specOptions: string[];
+  anchor: { cx: number; cy: number; left: boolean; pageH: number };
   onSaveNext: (c: Partial<Weld>) => void; onBack: () => void; onSkip: () => void; onExit: () => void;
 }) {
-  const [f, setF] = useState({
-    size: weld.size?.toString() ?? "", joint_type: weld.joint_type ?? "", groove_type: weld.groove_type ?? "",
-    process: weld.process ?? "", schedule: weld.schedule ?? "", nde_percent: weld.nde_percent ?? "",
+  const mk = (w: Weld) => ({
+    size: w.size?.toString() ?? "", joint_type: w.joint_type ?? "", groove_type: w.groove_type ?? "",
+    process: w.process ?? "", schedule: w.schedule ?? "", material: w.material ?? "",
+    line_spec: w.line_spec ?? "", nde_percent: w.nde_percent ?? "",
   });
-  useEffect(() => {
-    setF({
-      size: weld.size?.toString() ?? "", joint_type: weld.joint_type ?? "", groove_type: weld.groove_type ?? "",
-      process: weld.process ?? "", schedule: weld.schedule ?? "", nde_percent: weld.nde_percent ?? "",
-    });
-  }, [weld.id]);
+  const [f, setF] = useState(mk(weld));
+  useEffect(() => { setF(mk(weld)); }, [weld.id]);
   const save = () => onSaveNext({
     size: f.size ? Number(f.size) : null, joint_type: f.joint_type || null, groove_type: f.groove_type || null,
-    process: f.process || null, schedule: f.schedule || null, nde_percent: f.nde_percent || null,
+    process: f.process || null, schedule: f.schedule || null, material: f.material || null,
+    line_spec: f.line_spec || null, nde_percent: f.nde_percent || null,
   });
   const opt = (k: string) => lookups[k] ?? [];
+  const hasBreak = specOptions.length > 1;
+
+  const W = 312;
+  const left = anchor.left ? Math.max(8, anchor.cx - W - 34) : anchor.cx + 34;
+  const top = Math.max(8, anchor.cy - 54);
+
   return (
-    <div className="guided-card" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "INPUT") save(); }}>
+    <div
+      className={`guided-pop ${anchor.left ? "to-left" : "to-right"}`}
+      style={{ left, top, width: W }}
+      onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "INPUT") save(); }}
+    >
       <div className="guided-head">
-        <div><span className="guided-weld">{weld.weld_number}</span> <span className="muted">welder {weld.stamp_number ?? "—"}</span></div>
-        <div className="guided-prog">Weld {index + 1} of {total}</div>
+        <span className="guided-weld">{weld.weld_number}</span>
+        <span className="muted">welder {weld.stamp_number ?? "—"}</span>
         <div className="spacer" />
-        <button className="btn btn-sm btn-ghost" onClick={onExit}>Exit</button>
+        <span className="guided-prog">{index + 1}/{total}</span>
+        <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill">✕</button>
       </div>
       <div className="guided-fields">
         <div className="field"><label>Size (NPS)</label><Combobox value={f.size} options={sizes.map(String)} allowCustom onChange={(v) => setF({ ...f, size: v })} /></div>
         <div className="field"><label>Joint Type</label><Combobox value={f.joint_type} options={opt("joint_type")} onChange={(v) => setF({ ...f, joint_type: v })} /></div>
-        <div className="field"><label>Groove Type</label><Combobox value={f.groove_type} options={opt("groove_type")} onChange={(v) => setF({ ...f, groove_type: v })} /></div>
+        <div className="field"><label>Schedule</label><Combobox value={f.schedule} options={opt("schedule")} allowCustom onChange={(v) => setF({ ...f, schedule: v })} /></div>
+        <div className="field"><label>Material</label><Combobox value={f.material} options={opt("material")} allowCustom onChange={(v) => setF({ ...f, material: v })} /></div>
+        {hasBreak && (
+          <div className="field span2"><label>Line Spec <span className="faint">(spec break)</span></label>
+            <Combobox value={f.line_spec} options={specOptions} allowCustom onChange={(v) => setF({ ...f, line_spec: v })} /></div>
+        )}
+        <div className="field"><label>Groove</label><Combobox value={f.groove_type} options={opt("groove_type")} onChange={(v) => setF({ ...f, groove_type: v })} /></div>
         <div className="field"><label>Process</label><Combobox value={f.process} options={opt("process")} onChange={(v) => setF({ ...f, process: v })} /></div>
-        <div className="field"><label>Schedule</label><Combobox value={f.schedule} options={opt("schedule")} onChange={(v) => setF({ ...f, schedule: v })} /></div>
         <div className="field"><label>NDE %</label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
       </div>
       <div className="guided-foot">
-        <button className="btn btn-sm" onClick={onBack} disabled={index === 0}>‹ Back</button>
+        <button className="btn btn-sm" onClick={onBack} disabled={index === 0}>‹</button>
         <button className="btn btn-sm" onClick={onSkip}>Skip</button>
         <div className="spacer" />
-        <button className="btn btn-accent" onClick={save}>{index + 1 >= total ? "Save & finish ✓" : "Save & next ▶"}</button>
+        <button className="btn btn-accent btn-sm" onClick={save}>{index + 1 >= total ? "Save & finish ✓" : "Save & next ▶"}</button>
       </div>
     </div>
   );
