@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errMsg } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WorkOrderSummary } from "../types";
-import { ErrorBox, Spinner, num } from "../components/ui";
+import { ErrorBox, Spinner, num, useToast } from "../components/ui";
 import { DrawingWizard } from "./DrawingWizard";
 import { WorkOrderRecord } from "./WorkOrderRecord";
 import { NewEntryChooser } from "../components/NewEntryChooser";
@@ -14,6 +14,7 @@ type View =
 
 export function WorkOrders() {
   const { can } = useAuth();
+  const toast = useToast();
   const [view, setView] = useState<View>({ kind: "list" });
   const [rows, setRows] = useState<WorkOrderSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +25,18 @@ export function WorkOrders() {
   const [chooser, setChooser] = useState(false);
 
   const load = () => api.listWorkOrders().then(setRows).catch((e) => setError(errMsg(e)));
+
+  const delWorkOrder = async (r: WorkOrderSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Delete work order ${r.work_order} and ALL of it — ${r.drawing_count} drawing(s) and ${r.weld_count} weld(s)? This cannot be undone.`)) return;
+    try {
+      const [welds, draws] = await api.deleteWorkOrder(r.work_order);
+      toast.push("ok", `Deleted ${r.work_order}: ${welds} weld(s), ${draws} drawing(s)`);
+      load();
+    } catch (err) {
+      toast.push("err", errMsg(err));
+    }
+  };
   useEffect(() => {
     load();
     api.listWelders(true, "name").then(setWelders).catch(() => {});
@@ -108,7 +121,7 @@ export function WorkOrders() {
               <tr>
                 <th>Work Order #</th><th>Unit</th>
                 <th className="num">Isometrics</th><th className="num">Welds</th>
-                <th>Last Activity</th><th></th>
+                <th>Last Activity</th><th></th>{can("admin") && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -120,6 +133,11 @@ export function WorkOrders() {
                   <td className="num">{num(r.weld_count)}</td>
                   <td className="faint">{r.last_activity ?? "—"}</td>
                   <td><span className="btn btn-sm">Open records ›</span></td>
+                  {can("admin") && (
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <button className="btn btn-sm btn-danger" title="Delete this work order and everything in it (admin)" onClick={(e) => delWorkOrder(r, e)}>🗑</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -63,6 +63,15 @@ export function WorkOrderRecord({
     try { await api.deleteDrawing(d.id); load(); } catch (e) { toast.push("err", errMsg(e)); }
   };
 
+  const delWorkOrder = async () => {
+    if (!confirm(`Delete work order ${workOrder} and ALL of it — ${drawings.length} drawing(s) and ${welds.length} weld(s)? This cannot be undone.`)) return;
+    try {
+      const [w, d] = await api.deleteWorkOrder(workOrder);
+      toast.push("ok", `Deleted ${workOrder}: ${w} weld(s), ${d} drawing(s)`);
+      onBack();
+    } catch (e) { toast.push("err", errMsg(e)); }
+  };
+
   return (
     <div>
       <div className="wo-header">
@@ -76,6 +85,9 @@ export function WorkOrderRecord({
         <div className="spacer" />
         {editable && (
           <button className="btn btn-accent" onClick={() => onOpenDrawing(null)}>＋ Add Drawing &amp; Welds</button>
+        )}
+        {can("admin") && (
+          <button className="btn btn-sm btn-danger" title="Delete this entire work order (admin only)" onClick={delWorkOrder}>🗑 Delete work order</button>
         )}
       </div>
 

@@ -151,6 +151,28 @@ impl Store {
         Ok(())
     }
 
+    /// Delete an ENTIRE work order — every weld and drawing under it. This is
+    /// destructive across users' records, so it is admin-only; a non-admin who
+    /// wants to remove their own welds deletes them individually. Returns the
+    /// (welds, drawings) removed.
+    pub fn delete_work_order(&self, work_order: &str, actor: &str, role: &str) -> Result<(i64, i64)> {
+        if role != "admin" {
+            return Err(Error::PermissionDenied);
+        }
+        let conn = self.conn.lock().unwrap();
+        let welds = conn.execute(
+            "DELETE FROM welds WHERE work_order = ?1 COLLATE NOCASE",
+            params![work_order],
+        )? as i64;
+        let draws = conn.execute(
+            "DELETE FROM drawings WHERE work_order = ?1 COLLATE NOCASE",
+            params![work_order],
+        )? as i64;
+        drop(conn);
+        self.audit(actor, "delete", "work_order", work_order, &format!("{welds} welds, {draws} drawings"));
+        Ok((welds, draws))
+    }
+
     /// Store the drawing's PDF bytes. `page_count` is what the front-end (pdf.js)
     /// reports after loading.
     pub fn set_drawing_pdf(

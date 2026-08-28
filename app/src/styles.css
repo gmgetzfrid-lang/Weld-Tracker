@@ -589,3 +589,8 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 .wt.editing .inline-cell { border-color: var(--border-strong); background: var(--surface-2); min-width: 60px; }
 .wt.editing .inline-cell:hover { border-color: var(--blue); background: #eef3ff; }
 .wt.editing .inline-pen, .wt.editing .inline-caret { opacity: .5; }
+
+/* Weld-table row delete affordance (edit mode) */
+.wt-rowact { display: inline-flex; align-items: center; gap: 4px; }
+.wt-del { border: 0; background: transparent; cursor: pointer; color: var(--danger); font-size: 13px; padding: 0 2px; border-radius: 5px; }
+.wt-del:hover { background: var(--danger-bg); }

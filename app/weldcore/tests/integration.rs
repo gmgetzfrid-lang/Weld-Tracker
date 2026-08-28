@@ -630,3 +630,34 @@ fn welder_cert_continuity_and_status() {
     assert_eq!(f.1, "aGVsbG8=");
     assert!(s.list_welder_certs(wid).unwrap().into_iter().find(|c| c.id == aid).unwrap().has_file);
 }
+
+#[test]
+fn delete_work_order_admin_only() {
+    let s = store();
+    // WO "900": one drawing + two welds by different people.
+    let d = Drawing { work_order: Some("900".into()), drawing_no: Some("D9".into()), ..Default::default() };
+    s.create_drawing(&d, "admin").unwrap();
+    s.create_weld(&weld("900", "BW", "K1", "2026-06-01"), "alice").unwrap();
+    s.create_weld(&weld("900", "SW", "K1", "2026-06-02"), "bob").unwrap();
+    // a different WO that must be left untouched.
+    s.create_weld(&weld("901", "BW", "K1", "2026-06-03"), "alice").unwrap();
+
+    // A non-admin cannot delete a whole work order (it spans others' welds).
+    assert!(matches!(
+        s.delete_work_order("900", "alice", "editor"),
+        Err(weldcore::Error::PermissionDenied)
+    ));
+    let wo900 = || WeldFilter { work_order: Some("900".into()), ..Default::default() };
+    assert_eq!(s.count_welds(&wo900()).unwrap(), 2);
+
+    // An admin deletes the whole work order — welds + drawings — leaving others.
+    let (w, dr) = s.delete_work_order("900", "carol", "admin").unwrap();
+    assert_eq!(w, 2);
+    assert_eq!(dr, 1);
+    assert_eq!(s.count_welds(&wo900()).unwrap(), 0);
+    assert!(s.list_drawings_for_wo("900").unwrap().is_empty());
+    assert_eq!(
+        s.count_welds(&WeldFilter { work_order: Some("901".into()), ..Default::default() }).unwrap(),
+        1
+    );
+}

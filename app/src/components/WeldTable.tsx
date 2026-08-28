@@ -100,7 +100,7 @@ export function WeldTable({
           </button>
         )}
       </div>
-      {edit && <div className="wt-editing">Edit mode — click any cell to change it. Changes save automatically. Use the ▸ chevron for more fields, repair &amp; delete.</div>}
+      {edit && <div className="wt-editing">Edit mode — click any cell to change it (saves automatically). The 🗑 on a row deletes that weld (your own, or any if you're an admin); the ▸ chevron opens more fields, cert &amp; repair.</div>}
 
       <div className="table-wrap wt-scroll">
         <table className={`data wt ${edit ? "editing" : ""}`}>
@@ -124,7 +124,14 @@ export function WeldTable({
               return (
                 <Fragment key={w.id}>
                   <tr className={isOpen ? "wt-open" : ""}>
-                    <td><button className="chev" onClick={() => toggleOpen(w.id)}>{isOpen ? "▾" : "▸"}</button></td>
+                    <td>
+                      <span className="wt-rowact">
+                        <button className="chev" onClick={() => toggleOpen(w.id)}>{isOpen ? "▾" : "▸"}</button>
+                        {edit && canDelete(w) && (
+                          <button className="wt-del" title="Delete this weld" onClick={() => del(w)}>🗑</button>
+                        )}
+                      </span>
+                    </td>
                     <td style={{ fontWeight: 600 }}>{w.weld_number ?? "—"}</td>
                     {showWorkOrder && (
                       <td onClick={() => w.work_order && onOpenWorkOrder?.(w.work_order)}>

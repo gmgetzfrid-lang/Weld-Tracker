@@ -111,6 +111,7 @@ fn main() {
             create_drawing,
             update_drawing,
             delete_drawing,
+            delete_work_order,
             set_drawing_pdf,
             get_drawing_pdf,
             list_drawing_welds,

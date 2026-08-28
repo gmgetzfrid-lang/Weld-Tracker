@@ -364,6 +364,12 @@ pub fn delete_drawing(state: State<AppState>, id: i64) -> R<()> {
 }
 
 #[tauri::command]
+pub fn delete_work_order(state: State<AppState>, work_order: String) -> R<(i64, i64)> {
+    let actor = state.require_admin()?;
+    e(state.store.delete_work_order(&work_order, &actor.username, &actor.role))
+}
+
+#[tauri::command]
 pub fn set_drawing_pdf(
     state: State<AppState>,
     id: i64,
