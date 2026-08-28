@@ -70,9 +70,23 @@ export function WeldTable({
     }
   };
 
-  const del = async (w: Weld) => {
-    if (!confirm(`Delete weld ${w.weld_number ?? w.id}?`)) return;
+  // Void = the normal, record-preserving delete: the weld is kept for the QC
+  // record but excluded from every count. A reason is required.
+  const voidWeld = async (w: Weld) => {
+    const reason = prompt(
+      `Void weld ${w.weld_number ?? w.id}?\n\nIt is kept on the record (excluded from counts) and can be restored. Reason:`
+    );
+    if (reason == null || !reason.trim()) return;
+    try { await api.voidWeld(w.id, reason.trim()); onChanged?.(); }
+    catch (e) { toast.push("err", errMsg(e)); }
+  };
+  // Purge = admin-only permanent delete. Destroys the record.
+  const purge = async (w: Weld) => {
+    if (!confirm(`Permanently DELETE weld ${w.weld_number ?? w.id}?\n\nThis destroys the record and cannot be undone. Prefer Void.`)) return;
     try { await api.deleteWeld(w.id); onChanged?.(); } catch (e) { toast.push("err", errMsg(e)); }
+  };
+  const restore = async (w: Weld) => {
+    try { await api.restoreWeld(w.id); onChanged?.(); } catch (e) { toast.push("err", errMsg(e)); }
   };
   const repair = async (w: Weld) => {
     try {
@@ -123,12 +137,12 @@ export function WeldTable({
               const warn = specWarning(w);
               return (
                 <Fragment key={w.id}>
-                  <tr className={isOpen ? "wt-open" : ""}>
+                  <tr className={`${isOpen ? "wt-open" : ""}${w.voided_at ? " wt-voided" : ""}`}>
                     <td>
                       <span className="wt-rowact">
                         <button className="chev" onClick={() => toggleOpen(w.id)}>{isOpen ? "▾" : "▸"}</button>
-                        {edit && canDelete(w) && (
-                          <button className="wt-del" title="Delete this weld" onClick={() => del(w)}>🗑</button>
+                        {edit && canDelete(w) && !w.voided_at && (
+                          <button className="wt-del" title="Void this weld (kept on record)" onClick={() => voidWeld(w)}>🗑</button>
                         )}
                       </span>
                     </td>
@@ -185,7 +199,9 @@ export function WeldTable({
                     <tr className="wt-detail">
                       <td colSpan={cols}>
                         <DetailPanel w={w} edit={edit} editable={editable} lookups={lookups} save={save}
-                          canDelete={canDelete(w)} onRepair={() => repair(w)} onDelete={() => del(w)} />
+                          canDelete={canDelete(w)} isAdmin={user?.role === "admin"}
+                          onRepair={() => repair(w)} onVoid={() => voidWeld(w)}
+                          onPurge={() => purge(w)} onRestore={() => restore(w)} />
                       </td>
                     </tr>
                   )}
@@ -226,10 +242,11 @@ function specWarning(w: Weld): string | null {
 }
 
 function DetailPanel({
-  w, edit, editable, lookups, save, canDelete, onRepair, onDelete,
+  w, edit, editable, lookups, save, canDelete, isAdmin, onRepair, onVoid, onPurge, onRestore,
 }: {
   w: Weld; edit: boolean; editable: boolean; lookups: Lookups;
-  save: (w: Weld, c: Partial<Weld>) => void; canDelete: boolean; onRepair: () => void; onDelete: () => void;
+  save: (w: Weld, c: Partial<Weld>) => void; canDelete: boolean; isAdmin: boolean;
+  onRepair: () => void; onVoid: () => void; onPurge: () => void; onRestore: () => void;
 }) {
   // The welder's cert aliases feed the Cert dropdown (which cert this weld used).
   const [certAliases, setCertAliases] = useState<string[]>([]);
@@ -274,11 +291,22 @@ function DetailPanel({
             <button className="btn btn-sm" onClick={onRepair}>＋ Repair &amp; Tracers</button>
           )}
           <div className="spacer" style={{ flex: 1 }} />
-          {canDelete ? (
-            <button className="btn btn-sm btn-danger" onClick={onDelete}>Delete weld</button>
+          {w.voided_at ? (
+            <>
+              <span className="voided-tag" title={w.void_reason ? `Voided: ${w.void_reason}` : "Voided"}>
+                Voided{w.voided_by ? ` by ${w.voided_by}` : ""}
+              </span>
+              {canDelete && <button className="btn btn-sm" onClick={onRestore}>Restore</button>}
+              {isAdmin && <button className="btn btn-sm btn-danger" onClick={onPurge}>Purge permanently</button>}
+            </>
+          ) : canDelete ? (
+            <>
+              <button className="btn btn-sm btn-danger" onClick={onVoid} title="Keep on the record but exclude from counts (reversible)">Void weld</button>
+              {isAdmin && <button className="btn btn-sm btn-ghost" onClick={onPurge} title="Permanently delete — destroys the record">Purge</button>}
+            </>
           ) : (
-            <span className="faint" title="Only the person who created this weld (or an admin) can delete it.">
-              Delete restricted to its creator
+            <span className="faint" title="Only the person who created this weld (or an admin) can void it.">
+              Void restricted to its creator
             </span>
           )}
         </div>

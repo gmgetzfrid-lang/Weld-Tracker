@@ -308,6 +308,16 @@ pub struct Weld {
     /// false (semicolon-joined), so the entry form can name each blocker.
     #[serde(default)]
     pub expected_nde_blockers: Option<String>,
+    /// Soft-delete: when set, the weld is Voided — retained for the record but
+    /// excluded from every count (count_omission is also 1). NULL = live.
+    #[serde(default)]
+    pub voided_at: Option<String>,
+    /// Who voided it.
+    #[serde(default)]
+    pub voided_by: Option<String>,
+    /// Why it was voided (required when voiding).
+    #[serde(default)]
+    pub void_reason: Option<String>,
 }
 
 /// One file in a work order's quality package (weld map, NDE report, UT, MTR,
@@ -519,4 +529,20 @@ pub struct WeldFilter {
     pub limit: Option<i64>,
     #[serde(default)]
     pub offset: Option<i64>,
+    /// Include voided (soft-deleted) welds. Off by default so the weld log
+    /// hides them; the log's own "show voided" toggle sets it.
+    #[serde(default)]
+    pub include_voided: bool,
+}
+
+/// One row of the audit trail (the Activity log), newest-first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub ts: String,
+    pub username: Option<String>,
+    pub action: Option<String>,
+    pub entity: Option<String>,
+    pub entity_id: Option<String>,
+    pub detail: Option<String>,
 }

@@ -75,6 +75,7 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     b31_temp_f, b31_pressure_psig, required_nde_method,
     nde_rule_set, expected_nde_percent, expected_nde_method, expected_nde_note,
     expected_nde_resolved, expected_nde_blockers,
+    voided_at, voided_by, void_reason,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
 
@@ -229,6 +230,9 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
             .map(|v| v != 0)
             .unwrap_or(false),
         expected_nde_blockers: r.get("expected_nde_blockers")?,
+        voided_at: r.get("voided_at")?,
+        voided_by: r.get("voided_by")?,
+        void_reason: r.get("void_reason")?,
     };
     // Legacy rows saved before migration 0009 have no snapshot — compute it live
     // so the readout is never blank. (New writes always persist the snapshot.)
@@ -261,6 +265,55 @@ fn apply_nde_snapshot(w: &mut Weld) {
     } else {
         Some(req.blockers.join("; "))
     };
+}
+
+/// The QC-meaningful fields of a weld, as (label, value) pairs, for the
+/// field-level audit trail. Derived/snapshot fields are intentionally excluded
+/// (they follow from these), so the log shows only what a person actually
+/// changed. An empty value renders as "—".
+fn weld_audit_fields(w: &Weld) -> Vec<(&'static str, String)> {
+    let s = |o: &Option<String>| o.clone().unwrap_or_default();
+    let n = |o: Option<f64>| o.map(|v| v.to_string()).unwrap_or_default();
+    let b = |v: bool| if v { "yes".to_string() } else { String::new() };
+    vec![
+        ("weld number", s(&w.weld_number)),
+        ("welder", s(&w.stamp_number)),
+        ("date welded", s(&w.date_welded)),
+        ("joint type", s(&w.joint_type)),
+        ("size", n(w.size)),
+        ("schedule", s(&w.schedule)),
+        ("material", s(&w.material)),
+        ("material group", s(&w.material_group)),
+        ("service", s(&w.service_category)),
+        ("flange class", s(&w.flange_class)),
+        ("shop/field", s(&w.shop_or_field)),
+        ("tie-in", b(w.new_to_existing)),
+        ("NDE %", s(&w.nde_percent)),
+        ("NDE methods", s(&w.nde_types)),
+        ("NDE result", s(&w.nde_result)),
+        ("NDE date", s(&w.nde_date)),
+        ("RT accepted", s(&w.rt_accepted)),
+        ("RT rejected", s(&w.rt_rejected)),
+        ("PWHT date", s(&w.pwht_date)),
+        ("hydro", s(&w.hydro_status)),
+        ("status", w.status.clone()),
+    ]
+}
+
+/// A human-readable summary of what changed between two welds, e.g.
+/// `NDE %: 5% → 10%; NDE result: — → Accepted`. Empty when nothing tracked
+/// changed.
+fn weld_change_detail(old: &Weld, new: &Weld) -> String {
+    let before = weld_audit_fields(old);
+    let after = weld_audit_fields(new);
+    let mut parts: Vec<String> = Vec::new();
+    for ((label, o), (_, nv)) in before.iter().zip(after.iter()) {
+        if o != nv {
+            let show = |v: &str| if v.is_empty() { "—".to_string() } else { v.to_string() };
+            parts.push(format!("{label}: {} → {}", show(o), show(nv)));
+        }
+    }
+    parts.join("; ")
 }
 
 impl Store {
@@ -383,6 +436,10 @@ impl Store {
         eq!(f.joint_type, "joint_type");
         eq!(f.status, "status");
         eq!(f.unit, "unit");
+        // Hide voided (soft-deleted) welds unless the caller opts in.
+        if !f.include_voided {
+            clauses.push("voided_at IS NULL".to_string());
+        }
         let where_sql = if clauses.is_empty() {
             String::new()
         } else {
@@ -430,6 +487,9 @@ impl Store {
         Ok(id)
     }
 
+    /// Update a weld and record a field-level audit entry in the same
+    /// transaction, so the trail can never diverge from the data: the UPDATE and
+    /// its "what changed" record commit together or not at all.
     pub fn update_weld(&self, w: &Weld, actor: &str) -> Result<()> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
@@ -437,19 +497,38 @@ impl Store {
         let sql = format!("UPDATE welds SET {set}, updated_at=datetime('now') WHERE id=?");
         let mut vals = weld_write_values(&w);
         vals.push(Box::new(w.id));
-        let conn = self.conn.lock().unwrap();
-        let n = conn.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        // Snapshot the row as it was, to diff against the new values.
+        let old = {
+            let mut stmt = tx.prepare(&format!("SELECT {COLS} FROM welds WHERE id = ?1"))?;
+            let mut rows = stmt.query(params![w.id])?;
+            match rows.next()? {
+                Some(r) => weld_from_row(r)?,
+                None => return Err(Error::NotFound),
+            }
+        };
+        let n = tx.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
         if n == 0 {
             return Err(Error::NotFound);
         }
-        drop(conn);
-        self.audit(actor, "update", "weld", &w.id.to_string(), "");
+        let mut detail = weld_change_detail(&old, &w);
+        if detail.is_empty() {
+            detail = "no tracked fields changed".to_string();
+        }
+        tx.execute(
+            "INSERT INTO audit_log (username, action, entity, entity_id, detail)
+             VALUES (?1, 'update', 'weld', ?2, ?3)",
+            params![actor, w.id.to_string(), detail],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
-    /// Delete a weld. A non-admin may only delete a weld they created; an admin
-    /// may delete anyone's.
-    pub fn delete_weld(&self, id: i64, actor: &str, role: &str) -> Result<()> {
+    /// The caller's permission to act on a weld: an admin may act on any weld,
+    /// anyone else only on one they created. Returns the weld's creator.
+    fn guard_weld_owner(&self, id: i64, actor: &str, role: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let created_by: Option<String> = conn
             .query_row("SELECT created_by FROM welds WHERE id = ?1", params![id], |r| r.get(0))
@@ -457,6 +536,60 @@ impl Store {
         if role != "admin" && created_by.as_deref() != Some(actor) {
             return Err(Error::PermissionDenied);
         }
+        Ok(())
+    }
+
+    /// Void (soft-delete) a weld: retain the row and its full history but exclude
+    /// it from every count (count_omission = 1) and mark it Void with who / when
+    /// / why. This is the normal "delete" for a QC record — nothing is destroyed.
+    /// A non-admin may only void a weld they created; an admin may void any.
+    pub fn void_weld(&self, id: i64, actor: &str, role: &str, reason: &str) -> Result<()> {
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(Error::Invalid("a reason is required to void a weld".into()));
+        }
+        self.guard_weld_owner(id, actor, role)?;
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE welds SET status = 'Void', count_omission = 1,
+                 voided_at = datetime('now'), voided_by = ?2, void_reason = ?3,
+                 updated_at = datetime('now')
+             WHERE id = ?1 AND voided_at IS NULL",
+            params![id, actor, reason],
+        )?;
+        drop(conn);
+        if n == 0 {
+            return Err(Error::NotFound);
+        }
+        self.audit(actor, "void", "weld", &id.to_string(), reason);
+        Ok(())
+    }
+
+    /// Restore a voided weld back to the live log. Owner or admin.
+    pub fn restore_weld(&self, id: i64, actor: &str, role: &str) -> Result<()> {
+        self.guard_weld_owner(id, actor, role)?;
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE welds SET status = 'Required', count_omission = 0,
+                 voided_at = NULL, voided_by = NULL, void_reason = NULL,
+                 updated_at = datetime('now')
+             WHERE id = ?1 AND voided_at IS NOT NULL",
+            params![id],
+        )?;
+        drop(conn);
+        if n == 0 {
+            return Err(Error::NotFound);
+        }
+        self.audit(actor, "restore", "weld", &id.to_string(), "");
+        Ok(())
+    }
+
+    /// Permanently delete a weld (hard purge). Prefer `void_weld`, which retains
+    /// the record; this destroys it. A non-admin may only purge a weld they
+    /// created; an admin may purge anyone's.
+    pub fn delete_weld(&self, id: i64, actor: &str, role: &str) -> Result<()> {
+        self.guard_weld_owner(id, actor, role)?;
+        let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM welds WHERE id = ?1", params![id])?;
         drop(conn);
         self.audit(actor, "delete", "weld", &id.to_string(), "");

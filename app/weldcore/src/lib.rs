@@ -134,6 +134,7 @@ impl Store {
             (7, include_str!("migrations/0007_doc_control.sql")),
             (8, include_str!("migrations/0008_nde_table4.sql")),
             (9, include_str!("migrations/0009_integrity_snapshot.sql")),
+            (10, include_str!("migrations/0010_soft_delete_audit.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {
@@ -158,6 +159,65 @@ impl Store {
                 rusqlite::params![username, action, entity, entity_id, detail],
             );
         }
+    }
+
+    /// The most recent audit-log entries (the Activity log), newest first.
+    /// `entity` optionally narrows to one kind (e.g. "weld"); `limit` is clamped
+    /// to a sane range.
+    pub fn recent_activity(
+        &self,
+        entity: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<models::AuditEntry>> {
+        let limit = limit.clamp(1, 1000);
+        let conn = self.conn.lock().unwrap();
+        let ent = entity.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let sql = format!(
+            "SELECT id, ts, username, action, entity, entity_id, detail
+             FROM audit_log {} ORDER BY id DESC LIMIT {limit}",
+            if ent.is_some() { "WHERE entity = ?1" } else { "" }
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let map = |r: &rusqlite::Row| {
+            Ok(models::AuditEntry {
+                id: r.get("id")?,
+                ts: r.get("ts")?,
+                username: r.get("username")?,
+                action: r.get("action")?,
+                entity: r.get("entity")?,
+                entity_id: r.get("entity_id")?,
+                detail: r.get("detail")?,
+            })
+        };
+        let rows: rusqlite::Result<Vec<models::AuditEntry>> = match ent {
+            Some(e) => stmt.query_map(rusqlite::params![e], map)?.collect(),
+            None => stmt.query_map([], map)?.collect(),
+        };
+        Ok(rows?)
+    }
+
+    /// Write a consistent snapshot of the live database to `dest` using SQLite's
+    /// online backup API — safe to call while the app is running, and it works
+    /// across the rollback-journal locking used on a network share. Returns the
+    /// destination path on success.
+    pub fn backup_to<P: AsRef<Path>>(&self, dest: P) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.backup(rusqlite::DatabaseName::Main, dest, None)?;
+        Ok(())
+    }
+
+    /// Write a timestamped backup into `dir` (created if needed) and return the
+    /// full path written, e.g. `.../backups/sentrix-backup-20260828-142530.db`.
+    pub fn backup_now(&self, dir: &Path) -> Result<std::path::PathBuf> {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| Error::Invalid(format!("cannot create backup folder: {e}")))?;
+        let ts: String = {
+            let conn = self.conn.lock().unwrap();
+            conn.query_row("SELECT strftime('%Y%m%d-%H%M%S','now')", [], |r| r.get(0))?
+        };
+        let dest = dir.join(format!("sentrix-backup-{ts}.db"));
+        self.backup_to(&dest)?;
+        Ok(dest)
     }
 }
 

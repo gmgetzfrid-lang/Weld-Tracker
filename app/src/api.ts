@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AuditEntry,
   ClientReportRow,
   CriteriaRow,
   DailyReport,
@@ -93,7 +94,13 @@ export const api = {
   getWeld: (id: number) => invoke<Weld>("get_weld", { id }),
   createWeld: (weld: Weld) => invoke<number>("create_weld", { weld }),
   updateWeld: (weld: Weld) => invoke<void>("update_weld", { weld }),
+  // Void = the normal, record-preserving "delete". Purge = admin-only hard delete.
+  voidWeld: (id: number, reason: string) => invoke<void>("void_weld", { id, reason }),
+  restoreWeld: (id: number) => invoke<void>("restore_weld", { id }),
   deleteWeld: (id: number) => invoke<void>("delete_weld", { id }),
+  recentActivity: (entity: string | null, limit?: number) =>
+    invoke<AuditEntry[]>("recent_activity", { entity, limit }),
+  backupDatabase: () => invoke<string>("backup_database"),
   createRepair: (weldId: number, includeTracers: boolean) =>
     invoke<number[]>("create_repair", { weldId, includeTracers }),
   distinctWeldValues: (field: string) =>

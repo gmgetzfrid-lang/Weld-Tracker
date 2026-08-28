@@ -6,8 +6,9 @@ use std::sync::Mutex;
 use tauri::State;
 use weldcore::reports::*;
 use weldcore::{
-    CriteriaRow, DocumentPackage, Drawing, DrawingRevision, Lookup, PipeRow, QualityFile, Store,
-    User, Weld, WeldFilter, Welder, WelderCert, WelderContinuity, WorkOrderSummary,
+    AuditEntry, CriteriaRow, DocumentPackage, Drawing, DrawingRevision, Lookup, PipeRow,
+    QualityFile, Store, User, Weld, WeldFilter, Welder, WelderCert, WelderContinuity,
+    WorkOrderSummary,
 };
 
 pub struct AppState {
@@ -295,10 +296,64 @@ pub fn update_weld(state: State<AppState>, weld: Weld) -> R<()> {
     e(state.store.update_weld(&weld, &actor.username))
 }
 
+/// Void (soft-delete) a weld — the normal "delete" for a QC record. The row is
+/// retained and excluded from every count; nothing is destroyed.
+#[tauri::command]
+pub fn void_weld(state: State<AppState>, id: i64, reason: String) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state
+        .store
+        .void_weld(id, &actor.username, &actor.role, &reason))
+}
+
+/// Restore a voided weld back into the live log.
+#[tauri::command]
+pub fn restore_weld(state: State<AppState>, id: i64) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state.store.restore_weld(id, &actor.username, &actor.role))
+}
+
+/// Permanently delete a weld (hard purge). Prefer `void_weld`, which retains the
+/// record. Admin only — a destructive action a QC system should gate tightly.
 #[tauri::command]
 pub fn delete_weld(state: State<AppState>, id: i64) -> R<()> {
-    let actor = state.require_editor()?;
+    let actor = state.require_admin()?;
     e(state.store.delete_weld(id, &actor.username, &actor.role))
+}
+
+/// The recent Activity log (audit trail), newest first. Any signed-in user may
+/// read it; `entity` optionally narrows to one kind (e.g. "weld").
+#[tauri::command]
+pub fn recent_activity(
+    state: State<AppState>,
+    entity: Option<String>,
+    limit: Option<i64>,
+) -> R<Vec<AuditEntry>> {
+    state.require_login()?;
+    e(state
+        .store
+        .recent_activity(entity.as_deref(), limit.unwrap_or(100)))
+}
+
+/// Write a timestamped backup of the database beside the live file (in a
+/// `backups` folder) and return the path written. Admin only.
+#[tauri::command]
+pub fn backup_database(state: State<AppState>) -> R<String> {
+    state.require_admin()?;
+    let db = std::path::Path::new(&state.db_path);
+    let dir = db
+        .parent()
+        .map(|p| p.join("backups"))
+        .unwrap_or_else(|| std::path::PathBuf::from("backups"));
+    let dest = e(state.store.backup_now(&dir))?;
+    state.store.audit(
+        &state.session.lock().unwrap().as_ref().map(|u| u.username.clone()).unwrap_or_default(),
+        "backup",
+        "database",
+        "",
+        &dest.to_string_lossy(),
+    );
+    Ok(dest.to_string_lossy().to_string())
 }
 
 #[tauri::command]

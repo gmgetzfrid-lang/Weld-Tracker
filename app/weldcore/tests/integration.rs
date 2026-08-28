@@ -902,3 +902,83 @@ fn unresolved_requirement_is_flagged_not_silently_carbon_steel() {
     let blockers = saved.expected_nde_blockers.unwrap_or_default();
     assert!(blockers.contains("service") || blockers.contains("material"));
 }
+
+// ---------------------------------------------------------------------------
+// Migration 0010: soft-delete (Void), field-level audit, activity, backup.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn void_retains_record_and_excludes_from_counts() {
+    let s = store();
+    let id = s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice").unwrap();
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 1);
+
+    // A reason is required.
+    assert!(s.void_weld(id, "alice", "editor", "  ").is_err());
+    // Owner can void.
+    s.void_weld(id, "alice", "editor", "wrong drawing").unwrap();
+
+    // The default weld log hides it and every count excludes it...
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 0);
+    assert!(s.list_welds(&Default::default()).unwrap().is_empty());
+    // ...but the row is retained and visible when voided are included.
+    let with_voided = weldcore::WeldFilter { include_voided: true, ..Default::default() };
+    let all = s.list_welds(&with_voided).unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].status, "Void");
+    assert_eq!(all[0].voided_by.as_deref(), Some("alice"));
+    assert_eq!(all[0].void_reason.as_deref(), Some("wrong drawing"));
+
+    // Restore brings it back into the live log and counts.
+    s.restore_weld(id, "alice", "editor").unwrap();
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 1);
+    assert!(s.get_weld(id).unwrap().voided_at.is_none());
+}
+
+#[test]
+fn void_permission_is_owner_or_admin() {
+    let s = store();
+    let id = s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice").unwrap();
+    // A different editor cannot void it.
+    assert!(matches!(
+        s.void_weld(id, "bob", "editor", "nope"),
+        Err(weldcore::Error::PermissionDenied)
+    ));
+    // An admin can.
+    s.void_weld(id, "carol", "admin", "supersure").unwrap();
+    assert_eq!(s.count_welds(&Default::default()).unwrap(), 0);
+}
+
+#[test]
+fn update_records_field_level_audit() {
+    let s = store();
+    let id = s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice").unwrap();
+    let mut w = s.get_weld(id).unwrap();
+    w.nde_percent = Some("10%".into());
+    w.nde_result = Some("Accepted".into());
+    s.update_weld(&w, "alice").unwrap();
+
+    let acts = s.recent_activity(Some("weld"), 20).unwrap();
+    let upd = acts.iter().find(|a| a.action.as_deref() == Some("update")).unwrap();
+    let detail = upd.detail.clone().unwrap_or_default();
+    assert!(detail.contains("NDE %"), "audit should name the changed field: {detail}");
+    assert!(detail.contains("10%"));
+    assert!(detail.contains("NDE result"));
+}
+
+#[test]
+fn backup_writes_a_readable_copy() {
+    let dir = std::env::temp_dir().join(format!("weldcore-backup-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("live.db");
+    let bak = dir.join("backup.db");
+    {
+        let s = Store::open(&db, false).unwrap();
+        s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice").unwrap();
+        s.backup_to(&bak).unwrap();
+    }
+    // The backup opens and carries the weld.
+    let restored = Store::open(&bak, false).unwrap();
+    assert_eq!(restored.count_welds(&Default::default()).unwrap(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}

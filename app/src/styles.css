@@ -616,6 +616,19 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 .dp-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); font-weight: 600; }
 .dp-val { font-size: 13px; }
 .dp-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.voided-tag { font-size: 11px; font-weight: 700; color: #c8402c; background: rgba(200,60,40,.10); border: 1px solid rgba(200,60,40,.4); border-radius: 6px; padding: 2px 8px; }
+tr.wt-voided > td { opacity: .55; }
+
+.activity-log { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.activity-row { display: grid; grid-template-columns: 148px 78px 110px 1fr; gap: 10px; align-items: baseline; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.activity-row:last-child { border-bottom: none; }
+.activity-ts { color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px; }
+.activity-action { font-weight: 700; text-transform: uppercase; letter-spacing: .03em; font-size: 10.5px; }
+.activity-action.act-void, .activity-action.act-delete { color: #c8402c; }
+.activity-action.act-create, .activity-action.act-restore { color: var(--teal); }
+.activity-action.act-backup { color: var(--accent, #1E90FF); }
+.activity-who { font-weight: 600; }
+.activity-what { color: var(--text-muted); word-break: break-word; }
 
 /* Work order record header */
 .wo-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }

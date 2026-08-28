@@ -31,6 +31,7 @@ export function WeldLog({
   const [search, setSearch] = useState("");
   const [joint, setJoint] = useState("");
   const [status, setStatus] = useState("");
+  const [showVoided, setShowVoided] = useState(false);
 
   const [welders, setWelders] = useState<Welder[]>([]);
   const [lookups, setLookups] = useState<Lookups>({});
@@ -48,13 +49,14 @@ export function WeldLog({
       search: search || undefined,
       joint_type: joint || undefined,
       status: status || undefined,
+      include_voided: showVoided,
       limit: 2000,
     };
     Promise.all([api.listWelds(filter), api.countWelds(filter)])
       .then(([rows, count]) => { setWelds(rows); setTotal(count); setError(null); })
       .catch((e) => setError(errMsg(e)))
       .finally(() => setLoading(false));
-  }, [search, joint, status]);
+  }, [search, joint, status, showVoided]);
 
   useEffect(() => {
     const t = setTimeout(load, 200);
@@ -110,6 +112,10 @@ export function WeldLog({
           <option value="">All statuses</option>
           {(lookups.status ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <label className="btn" style={{ padding: "7px 10px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+          title="Show voided (soft-deleted) welds — retained on the record but excluded from counts">
+          <input type="checkbox" checked={showVoided} onChange={(e) => setShowVoided(e.target.checked)} /> Show voided
+        </label>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>{num(total)} welds</span>
         <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>

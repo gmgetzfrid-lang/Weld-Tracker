@@ -28,6 +28,24 @@ export function SettingsPage() {
   const [db, setDb] = useState<{ path: string; shared: boolean } | null>(null);
   useEffect(() => { api.dbInfo().then(setDb).catch(() => {}); }, []);
 
+  // Admin: backup + activity log.
+  const [backingUp, setBackingUp] = useState(false);
+  const [lastBackup, setLastBackup] = useState<string | null>(null);
+  const [activity, setActivity] = useState<import("../types").AuditEntry[]>([]);
+  useEffect(() => {
+    if (can("admin")) api.recentActivity(null, 100).then(setActivity).catch(() => {});
+  }, [can]);
+  const runBackup = async () => {
+    setBackingUp(true);
+    try {
+      const path = await api.backupDatabase();
+      setLastBackup(path);
+      toast.push("ok", "Backup written");
+      api.recentActivity(null, 100).then(setActivity).catch(() => {});
+    } catch (e) { toast.push("err", errMsg(e)); }
+    finally { setBackingUp(false); }
+  };
+
   const loadLookups = () => api.lookupsGrouped().then(setLookups).catch(() => {});
   useEffect(() => {
     api.getSettings().then(setSettings).catch((e) => setError(errMsg(e)));
@@ -158,6 +176,52 @@ export function SettingsPage() {
           </p>
         )}
       </div>
+
+      {can("admin") && (
+        <div className="card card-pad">
+          <h3>Backup</h3>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Write a timestamped snapshot of the whole database into a{" "}
+            <code>backups</code> folder beside the live file. Safe to run while
+            the app is in use.
+          </p>
+          <button className="btn btn-accent" onClick={runBackup} disabled={backingUp}>
+            {backingUp ? "Backing up…" : "Back up database now"}
+          </button>
+          {lastBackup && (
+            <p className="hint" style={{ marginTop: 10, wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+              ✓ {lastBackup}
+            </p>
+          )}
+        </div>
+      )}
+
+      {can("admin") && (
+        <div className="card card-pad">
+          <h3>Recent Activity</h3>
+          <p className="hint" style={{ marginTop: 0 }}>
+            The audit trail — who did what, newest first. Weld edits record which
+            fields changed.
+          </p>
+          {activity.length === 0 ? (
+            <p className="faint">No activity recorded yet.</p>
+          ) : (
+            <div className="activity-log">
+              {activity.map((a) => (
+                <div key={a.id} className="activity-row">
+                  <span className="activity-ts">{a.ts}</span>
+                  <span className={`activity-action act-${a.action ?? ""}`}>{a.action ?? "—"}</span>
+                  <span className="activity-who">{a.username ?? "—"}</span>
+                  <span className="activity-what">
+                    {a.entity ?? ""}{a.entity_id ? ` #${a.entity_id}` : ""}
+                    {a.detail ? ` — ${a.detail}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {showChangePw && <ChangePassword onClose={() => setShowChangePw(false)} />}
     </div>

@@ -151,6 +151,10 @@ export interface Weld {
   expected_nde_resolved?: boolean;
   /** Snapshot: semicolon-joined missing / unrecognized drivers when unresolved. */
   expected_nde_blockers?: string | null;
+  /** Soft-delete: set when the weld is Voided (retained, excluded from counts). */
+  voided_at?: string | null;
+  voided_by?: string | null;
+  void_reason?: string | null;
 }
 
 /** The computed EP 5-5-1 Table 4 requirement (live readout during entry). */
@@ -170,6 +174,17 @@ export interface NdeRequirement {
   blockers: string[];
   /** The rule set (procedure + revision) this was computed against. */
   rule_set: string;
+}
+
+/** One row of the Activity log (audit trail). */
+export interface AuditEntry {
+  id: number;
+  ts: string;
+  username?: string | null;
+  action?: string | null;
+  entity?: string | null;
+  entity_id?: string | null;
+  detail?: string | null;
 }
 
 /** One file in a work order's quality package. */
@@ -256,6 +271,8 @@ export interface WeldFilter {
   unit?: string;
   limit?: number;
   offset?: number;
+  /** Include voided (soft-deleted) welds. Default false. */
+  include_voided?: boolean;
 }
 
 export interface PipeRow {
