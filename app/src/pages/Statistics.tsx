@@ -220,7 +220,7 @@ export function Statistics() {
         <div className="card card-pad">
           <h3>Reject-Rate Analysis</h3>
           <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
-            Rejected ÷ examined. Bars over the {pct(threshold)} threshold are flagged.
+            Rejected ÷ inspected. Bars over the {pct(threshold)} threshold are flagged.
           </p>
           {byReject.length === 0 ? (
             <p className="faint">No examinations recorded yet.</p>

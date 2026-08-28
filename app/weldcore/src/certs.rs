@@ -61,7 +61,7 @@ impl Store {
                 let last_rt: Option<String> = conn
                     .query_row(
                         "SELECT MAX(rt_date) FROM welds
-                         WHERE stamp_number = ?1 COLLATE NOCASE AND cert_alias = ?2
+                         WHERE stamp_number = ?1 COLLATE NOCASE AND cert_alias = ?2 COLLATE NOCASE
                            AND rt_date IS NOT NULL AND rt_date <> ''",
                         params![stamp, c.alias],
                         |r| r.get(0),
@@ -70,7 +70,7 @@ impl Store {
                 let wc: i64 = conn
                     .query_row(
                         "SELECT COUNT(*) FROM welds
-                         WHERE stamp_number = ?1 COLLATE NOCASE AND cert_alias = ?2",
+                         WHERE stamp_number = ?1 COLLATE NOCASE AND cert_alias = ?2 COLLATE NOCASE",
                         params![stamp, c.alias],
                         |r| r.get(0),
                     )
@@ -208,7 +208,7 @@ impl Store {
                     CASE WHEN w.rt_rejected = 'Y' THEN 'Rejected'
                          WHEN w.rt_accepted = 'Y' THEN 'Accepted' ELSE '' END AS result,
                     (SELECT c.process FROM welder_certs c
-                       WHERE c.welder_id = ?1 AND c.alias = w.cert_alias) AS process
+                       WHERE c.welder_id = ?1 AND c.alias = w.cert_alias COLLATE NOCASE) AS process
              FROM welds w
              WHERE w.stamp_number = ?2 COLLATE NOCASE
                AND w.cert_alias IS NOT NULL AND w.cert_alias <> ''

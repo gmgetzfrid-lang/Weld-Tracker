@@ -835,8 +835,6 @@ fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
     }
 }
 
-/// Whether a percentage-spec weld has actually had NDE performed — any of a
-/// recorded result, an NDE type, an NDE date, or a legacy RT date.
 /// Whether a weld's NDE was actually performed and dispositioned — a recorded
 /// result, or a legacy RT date. A planned NDE type or a bare date does NOT
 /// count, so coverage is never overstated and a welder below spec is never

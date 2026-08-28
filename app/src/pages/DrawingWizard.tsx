@@ -231,6 +231,8 @@ function HeaderStep({
               </div>
             </div>
           )}
+          <div className="field"><label>Default Material <span className="faint">(editable per weld)</span></label>
+            <Combobox value={drawing.default_material ?? ""} options={lookups.material ?? []} allowCustom onChange={(v) => set("default_material", v || null)} placeholder="e.g. CS" /></div>
           <div className="field"><label>Title / Description</label>
             <input value={drawing.title ?? ""} onChange={(e) => set("title", e.target.value)} /></div>
         </div>

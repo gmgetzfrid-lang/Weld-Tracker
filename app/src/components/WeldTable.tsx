@@ -238,7 +238,7 @@ function DetailPanel({
         <F label="Old → New" node={edit ? <InlineSelect value={w.old_to_new} options={opt("old_to_new")} onCommit={(v) => save(w, { old_to_new: v })} /> : t(w.old_to_new)} />
         <F label="Groove Type" node={edit ? <InlineSelect value={w.groove_type} options={opt("groove_type")} onCommit={(v) => save(w, { groove_type: v })} /> : t(w.groove_type)} />
         <F label="Process" node={edit ? <InlineSelect value={w.process} options={opt("process")} onCommit={(v) => save(w, { process: v })} /> : t(w.process)} />
-        <F label="Cert (WPQ)" node={edit ? <InlineSelect value={w.cert_alias} options={certAliases} allowCustom onCommit={(v) => save(w, { cert_alias: v })} /> : t(w.cert_alias)} />
+        <F label="Cert (WPQ)" node={edit ? <InlineSelect value={w.cert_alias} options={certAliases} placeholder={certAliases.length ? "pick a cert…" : "no certs on this welder"} onCommit={(v) => save(w, { cert_alias: v })} /> : t(w.cert_alias)} />
         <F label="WPS Number" node={edit ? <InlineText value={w.wps_number} onCommit={(v) => save(w, { wps_number: v })} /> : t(w.wps_number)} />
         <F label="UT Thickness" node={edit ? <InlineText value={w.ut_thickness} onCommit={(v) => save(w, { ut_thickness: v })} /> : t(w.ut_thickness)} />
         <F label="PT/MT Prep" node={edit ? <InlineSelect value={w.pt_mt_prep} options={yn} onCommit={(v) => save(w, { pt_mt_prep: v })} /> : t(w.pt_mt_prep)} />

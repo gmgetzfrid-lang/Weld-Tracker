@@ -117,9 +117,9 @@ export function continuityPdf(c: WelderContinuity) {
   y += 6;
   drawTable(
     doc, M, y + 6,
-    ["Date", "Cert", "Process", "Weld #", "Work Order", "Result"],
-    c.events.map((e) => [e.date, e.cert_alias, e.process ?? "", e.weld_number ?? "", e.work_order ?? "", e.result]),
-    [75, 110, 70, 70, 100, 70],
+    ["Date", "Cert", "Process", "Weld #", "Work Order", "Drawing", "Result"],
+    c.events.map((e) => [e.date, e.cert_alias, e.process ?? "", e.weld_number ?? "", e.work_order ?? "", e.drawing_no ?? "", e.result]),
+    [70, 95, 60, 60, 85, 80, 60],
   );
 
   doc.save(`continuity-${c.stamp}.pdf`);
@@ -139,7 +139,7 @@ export function printContinuity(c: WelderContinuity) {
   const eventRows = c.events
     .map(
       (e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.cert_alias)}</td><td>${esc(e.process)}</td>
-      <td>${esc(e.weld_number)}</td><td>${esc(e.work_order)}</td><td>${esc(e.result)}</td></tr>`,
+      <td>${esc(e.weld_number)}</td><td>${esc(e.work_order)}</td><td>${esc(e.drawing_no)}</td><td>${esc(e.result)}</td></tr>`,
     )
     .join("");
   const w = window.open("", "_blank");
@@ -164,8 +164,8 @@ export function printContinuity(c: WelderContinuity) {
     <table><thead><tr><th>Cert (alias)</th><th>Process</th><th>Status</th><th>Qualified</th><th>Last X-ray</th><th>Continuous thru</th></tr></thead>
     <tbody>${certRows || '<tr><td colspan="6">none</td></tr>'}</tbody></table>
     <h2>X-ray Continuity Events</h2>
-    <table><thead><tr><th>Date</th><th>Cert</th><th>Process</th><th>Weld #</th><th>Work Order</th><th>Result</th></tr></thead>
-    <tbody>${eventRows || '<tr><td colspan="6">none</td></tr>'}</tbody></table>
+    <table><thead><tr><th>Date</th><th>Cert</th><th>Process</th><th>Weld #</th><th>Work Order</th><th>Drawing</th><th>Result</th></tr></thead>
+    <tbody>${eventRows || '<tr><td colspan="7">none</td></tr>'}</tbody></table>
     </body></html>`);
   w.document.close();
   w.focus();

@@ -132,6 +132,16 @@ export function WeldAnnotator({
     return () => { cancelled = true; };
   }, [pageNum, scale, hasPdf]);
 
+  // With no PDF attached, give the blank grid a real pixel size so bubbles, the
+  // legend and the guided-fill popup have coordinates to anchor to (otherwise
+  // size stays {0,0} and everything collapses onto the origin).
+  useEffect(() => {
+    if (loading || hasPdf) return;
+    if (size.w > 0 && size.h > 0) return;
+    const cw = Math.max(700, (stageRef.current?.clientWidth ?? 900) - 24);
+    setSize({ w: cw, h: Math.round(cw * 1.3) });
+  }, [loading, hasPdf, size.w, size.h]);
+
   const ordered = useMemo(
     () => [...welds].sort((a, b) => (a.weld_number ?? "").localeCompare(b.weld_number ?? "", undefined, { numeric: true })),
     [welds]
