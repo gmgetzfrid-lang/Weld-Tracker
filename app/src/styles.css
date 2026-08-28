@@ -517,6 +517,8 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 
 /* ---- Statistics page: NDE compliance ---- */
 .badge-amber { background: var(--warn-bg); color: var(--warn); }
+/* off-spec NDE % warning marker in the weld grid */
+.spec-warn { color: var(--warn); cursor: help; font-size: 13px; line-height: 1; }
 .stat.alert { border-color: #fca5a5; background: linear-gradient(180deg, #fff, var(--danger-bg)); }
 .stat.good { border-color: #a7f3d0; background: linear-gradient(180deg, #fff, #ecfdf5); }
 

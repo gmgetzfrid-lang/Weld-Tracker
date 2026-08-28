@@ -220,6 +220,12 @@ function NdeQuickRef({
           <div className="nq-fig">{num(owed)}</div>
           <div className="muted" style={{ fontSize: 12 }}>examinations owed</div>
         </div>
+        <div>
+          <div className="nq-fig" style={{ color: nde.spec_mismatch_count ? "var(--warn)" : "var(--ok)" }}>
+            {num(nde.spec_mismatch_count)}
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>off the shop/field rule</div>
+        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {nde.by_spec.map((s) => (
             <span key={s.spec} className={`badge ${s.compliant ? "badge-green" : "badge-red"}`} title={`${num(s.examined)} of ${num(s.population)} examined`}>

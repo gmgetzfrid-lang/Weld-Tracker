@@ -230,6 +230,8 @@ pub struct NdeComplianceReport {
     pub by_spec: Vec<NdeSpecStat>,
     pub welder_count: i64,
     pub noncompliant_count: i64,
+    /// Welds whose logged NDE % contradicts their shop/field/tie-in rule.
+    pub spec_mismatch_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -772,11 +774,41 @@ impl Store {
         });
         let noncompliant_count = out.iter().filter(|w| !w.compliant).count() as i64;
         let welder_count = out.len() as i64;
+
+        // Welds whose logged NDE % contradicts the facility rule for their
+        // shop/field/tie-in status (e.g. a shop weld not at 5%).
+        let spec_mismatch_count: i64 = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT old_to_new, shop_or_field, nde_percent FROM welds WHERE count_omission = 0",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            })?;
+            let mut n = 0i64;
+            for row in rows {
+                let (otn, sf, actual) = row?;
+                if let Some(expected) =
+                    crate::welds::default_spec_for(otn.as_deref(), sf.as_deref())
+                {
+                    if !actual.unwrap_or_default().eq_ignore_ascii_case(expected) {
+                        n += 1;
+                    }
+                }
+            }
+            n
+        };
+
         Ok(NdeComplianceReport {
             welders: out,
             by_spec: fleet,
             welder_count,
             noncompliant_count,
+            spec_mismatch_count,
         })
     }
 }

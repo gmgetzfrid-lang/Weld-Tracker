@@ -537,3 +537,29 @@ fn auto_nde_spec_from_shop_field_and_tie_in() {
     let eid = s.create_weld(&explicit, "admin").unwrap();
     assert_eq!(s.get_weld(eid).unwrap().nde_percent.as_deref(), Some("20%"));
 }
+
+#[test]
+fn nde_spec_mismatch_flagged() {
+    let s = store();
+    s.create_welder(&mk_welder("K1", "Alex")).unwrap();
+    // a shop weld explicitly logged at 10% contradicts the 5% shop rule
+    let mut off = weld("300", "BW", "K1", "2026-05-01");
+    off.weld_number = Some("O1".into());
+    off.nde_percent = Some("10%".into());
+    off.shop_or_field = Some("SHOP".into());
+    let oid = s.create_weld(&off, "admin").unwrap();
+    let g = s.get_weld(oid).unwrap();
+    assert_eq!(g.expected_nde_percent.as_deref(), Some("5%"));
+    assert_ne!(g.nde_percent.as_deref(), g.expected_nde_percent.as_deref());
+
+    // a field weld correctly at 10% is NOT a mismatch
+    let mut ok = weld("300", "BW", "K1", "2026-05-02");
+    ok.weld_number = Some("OK1".into());
+    ok.nde_percent = Some("10%".into());
+    ok.shop_or_field = Some("FW".into());
+    let okid = s.create_weld(&ok, "admin").unwrap();
+    assert_eq!(s.get_weld(okid).unwrap().expected_nde_percent.as_deref(), Some("10%"));
+
+    let rep = s.report_nde_compliance().unwrap();
+    assert_eq!(rep.spec_mismatch_count, 1);
+}

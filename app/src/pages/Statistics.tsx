@@ -154,6 +154,18 @@ export function Statistics() {
         </div>
       )}
 
+      {/* welds logged against the wrong facility NDE % for their status */}
+      {rep.spec_mismatch_count > 0 && (
+        <div className="card card-pad" style={{ borderColor: "#fcd34d", background: "var(--warn-bg)" }}>
+          <h3 style={{ color: "var(--warn)", margin: 0 }}>⚠ {num(rep.spec_mismatch_count)} weld{rep.spec_mismatch_count === 1 ? "" : "s"} off the facility NDE rule</h3>
+          <p className="muted" style={{ margin: "6px 0 0" }}>
+            Their logged NDE % doesn't match the rule for a shop weld (5%), field weld (10%) or
+            new-to-old tie-in (100%). Open the Weld Log — the mismatched welds are flagged with a ⚠
+            on their NDE % — and confirm or correct each.
+          </p>
+        </div>
+      )}
+
       {/* fleet coverage by spec */}
       <div className="card card-pad">
         <h3>NDE Coverage by Spec (fleet)</h3>

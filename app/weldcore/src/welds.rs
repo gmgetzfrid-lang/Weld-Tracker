@@ -144,6 +144,12 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         created_by: r.get("created_by")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
+        // Computed, not stored: the facility-rule spec for this weld's status.
+        expected_nde_percent: default_spec_for(
+            r.get::<_, Option<String>>("old_to_new")?.as_deref(),
+            r.get::<_, Option<String>>("shop_or_field")?.as_deref(),
+        )
+        .map(|s| s.to_string()),
     })
 }
 

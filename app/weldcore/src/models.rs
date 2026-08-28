@@ -173,6 +173,11 @@ pub struct Weld {
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,
+    /// Read-only: the facility-rule NDE % for this weld's shop/field/tie-in
+    /// status (None when no rule applies). Computed on read, never stored; the
+    /// UI flags a weld whose actual NDE % differs from this.
+    #[serde(default)]
+    pub expected_nde_percent: Option<String>,
 }
 
 /// An isometric drawing that welds are placed on.

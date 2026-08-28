@@ -89,6 +89,8 @@ export interface Weld {
   created_by?: string | null;
   created_at?: string;
   updated_at?: string;
+  /** Read-only: the facility-rule NDE % for this weld's shop/field/tie-in status. */
+  expected_nde_percent?: string | null;
 }
 
 export interface Drawing {
@@ -270,6 +272,7 @@ export interface NdeComplianceReport {
   by_spec: NdeSpecStat[];
   welder_count: number;
   noncompliant_count: number;
+  spec_mismatch_count: number;
 }
 
 export type Lookups = Record<string, string[]>;

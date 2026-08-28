@@ -118,6 +118,7 @@ export function WeldTable({
             {sorted.map((w) => {
               const rt = w.nde_result === "Rejected" ? "Rejected" : w.nde_result === "Accepted" ? "Accepted" : "";
               const isOpen = open.has(w.id);
+              const warn = specWarning(w);
               return (
                 <Fragment key={w.id}>
                   <tr className={isOpen ? "wt-open" : ""}>
@@ -129,7 +130,12 @@ export function WeldTable({
                       </td>
                     )}
                     <td>{txt(w.drawing_no)}</td>
-                    <td>{edit ? <InlineSelect value={w.nde_percent} options={opt("nde_percent")} allowCustom onCommit={(v) => save(w, { nde_percent: v })} /> : txt(w.nde_percent)}</td>
+                    <td>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        {edit ? <InlineSelect value={w.nde_percent} options={opt("nde_percent")} allowCustom onCommit={(v) => save(w, { nde_percent: v })} /> : txt(w.nde_percent)}
+                        {warn && <span className="spec-warn" title={warn}>⚠</span>}
+                      </span>
+                    </td>
                     <td>{edit ? <InlineSelect value={w.joint_type} options={opt("joint_type")} onCommit={(v) => save(w, { joint_type: v })} /> : txt(w.joint_type)}</td>
                     <td className="num">{edit ? <InlineSelect value={w.size?.toString()} options={sizeStr} allowCustom onCommit={(v) => save(w, { size: v == null ? null : Number(v) })} /> : txt(w.size)}</td>
                     <td>{edit ? <InlineSelect value={w.schedule} options={opt("schedule")} onCommit={(v) => save(w, { schedule: v })} /> : txt(w.schedule)}</td>
@@ -182,6 +188,25 @@ export function WeldTable({
       </div>
     </div>
   );
+}
+
+/**
+ * When a weld's logged NDE % contradicts the facility rule for its
+ * shop/field/tie-in status, returns an explanatory message; otherwise null.
+ * The backend supplies `expected_nde_percent` from the rule.
+ */
+function specWarning(w: Weld): string | null {
+  const exp = w.expected_nde_percent;
+  if (!exp) return null;
+  const actual = w.nde_percent ?? "";
+  if (actual.toLowerCase() === exp.toLowerCase()) return null;
+  const kind =
+    (w.old_to_new ?? "").toUpperCase() === "Y" ? "new-to-old tie-in"
+    : (w.shop_or_field ?? "").toUpperCase() === "SHOP" ? "shop weld"
+    : "field weld";
+  return actual
+    ? `Facility rule: a ${kind} is ${exp} NDE — this weld is logged at ${actual}.`
+    : `Facility rule: a ${kind} is ${exp} NDE — this weld has no NDE % set.`;
 }
 
 function DetailPanel({
