@@ -279,41 +279,13 @@ impl Store {
             w.governing_wall = w.thickness;
         }
 
-        // EP 5-5-1 Table 4: compute the required NDE coverage and method.
+        // EP 5-5-1 Table 4: compute the required NDE coverage and method. The
+        // required percentage is exposed read-only via `expected_nde_percent`
+        // (computed in weld_from_row); the actual `nde_percent` is left exactly
+        // as entered — blank until the user records it — so the form never
+        // shows a value nobody chose.
         let req = nde::table4(&nde_inputs_for(w));
         w.required_nde_method = Some(req.method.clone());
-        // Auto-fill the required NDE % when the user left it blank. An explicit
-        // value is never overridden.
-        let nde_blank = w
-            .nde_percent
-            .as_deref()
-            .map(|s| s.trim().is_empty())
-            .unwrap_or(true);
-        if nde_blank {
-            // Honour an explicitly-set legacy spec flag; otherwise take the
-            // Table 4 requirement. Either way the read-only expected_nde_percent
-            // still reflects Table 4 and flags any mismatch.
-            let from_flag = if w.spec_5 {
-                Some("5%")
-            } else if w.spec_10 {
-                Some("10%")
-            } else if w.spec_20 {
-                Some("20%")
-            } else if w.spec_25 {
-                Some("25%")
-            } else if w.spec_50 {
-                Some("50%")
-            } else if w.spec_100 {
-                Some("100%")
-            } else {
-                None
-            };
-            w.nde_percent = Some(
-                from_flag
-                    .map(str::to_string)
-                    .unwrap_or_else(|| format!("{}%", req.required_percent)),
-            );
-        }
         // NDE % drives the coverage-spec flags the level reports group on.
         if let Some(p) = w.nde_percent.as_deref() {
             let d: String = p.chars().filter(|c| c.is_ascii_digit()).collect();

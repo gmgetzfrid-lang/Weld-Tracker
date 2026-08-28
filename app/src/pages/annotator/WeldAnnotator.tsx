@@ -3,7 +3,7 @@ import { api, errMsg } from "../../api";
 import { useAuth } from "../../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../../types";
 import { Spinner, useToast } from "../../components/ui";
-import { Combobox } from "../../components/inline";
+import { Combobox, InlineMulti } from "../../components/inline";
 import { base64ToBytes, loadPdf, type PdfDoc } from "../../pdf";
 
 interface Pt { x: number; y: number }
@@ -29,6 +29,9 @@ export const B31_CODES = ["B31.3", "B31.1", "B31.4"];
 export const SHOP_FIELD = ["SHOP", "FW"];
 export const HYDRO_STATES = ["Pending", "Complete", "NA-API570", "NA-Service"];
 export const NDE_RESULTS = ["", "Accepted", "Rejected"];
+// NDE examination methods/passes. Butt welds under API 570 in-lieu-of-hydro
+// take both PT root & final AND RT final; fillet/socket take PT/MT root & final.
+export const NDE_TYPE_OPTIONS = ["RT", "PT Root", "PT Final", "MT Root", "MT Final", "UT (exam)", "VT"];
 
 // Fields that repeat weld-to-weld along a line and are carried forward to the
 // next weld in the guided walk. The disposition (NDE %/type/result/date) is
@@ -95,6 +98,15 @@ export function WeldAnnotator({
   const [pageTo, setPageTo] = useState(1);
   const [scale, setScale] = useState(1);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  // Transform-based viewport: the page is translated by `pan` (px) inside a
+  // non-scrolling stage, and `scale` is the render zoom. This replaces the
+  // three fighting scrollbars with one grab-to-pan / ctrl-scroll-to-zoom model.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [fullscreen, setFullscreen] = useState(false);
+  const panRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  const downRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const scaleRef = useRef(1);
+  const panStateRef = useRef({ x: 0, y: 0 });
 
   const [welds, setWelds] = useState<Weld[]>([]);
   const [stamp, setStamp] = useState("");
@@ -164,6 +176,7 @@ export function WeldAnnotator({
           const vp = page.getViewport({ scale: 1 });
           const cw = (stageRef.current?.clientWidth ?? 900) - 24;
           setScale(Math.max(0.2, Math.min(3, cw / vp.width)));
+          setPan({ x: 16, y: 16 });
         }
       } catch (e) {
         setError(errMsg(e));
@@ -230,6 +243,45 @@ export function WeldAnnotator({
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
 
+  // Fit the page to the stage width and reset the pan. Used on load, page
+  // change, fullscreen toggle, and the Fit button.
+  const fitToWidth = useCallback(async () => {
+    const doc = docRef.current;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const avail = stage.clientWidth - 24;
+    let base = 1;
+    if (doc) {
+      try {
+        const vp = (await doc.getPage(pageNum)).getViewport({ scale: 1 });
+        base = avail / vp.width;
+      } catch { /* ignore */ }
+    } else if (size.w > 0) {
+      base = avail / size.w;
+    }
+    const s = Math.max(0.15, Math.min(4, base));
+    setScale(s);
+    setPan({ x: 12, y: 12 });
+  }, [pageNum, size.w]);
+
+  // Centre a normalized point in the stage (guided fill jumps here).
+  const centerOn = (nx: number, ny: number) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    setPan({ x: stage.clientWidth / 2 - nx * size.w, y: stage.clientHeight / 2.3 - ny * size.h });
+  };
+
+  // Press on the background: begin either a pan (if the pointer moves) or a
+  // click action (place / select / legend, on release without moving).
+  const onStageDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if (dragRef.current) return; // a bubble drag owns the gesture
+    // A press on a bubble is handled by the bubble's own click/drag handlers.
+    if ((e.target as Element).closest?.(".wm-g")) return;
+    downRef.current = { x: e.clientX, y: e.clientY, moved: false };
+    panRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+  };
+
   const dropBubble = async (joint: Pt, at: Pt) => {
     try {
       const w = await api.addBubbleWeld(drawing.id, stamp, `W${nextNum}`, pageNum, at.x, at.y, joint.x, joint.y);
@@ -264,6 +316,17 @@ export function WeldAnnotator({
 
   const onMove = (e: React.MouseEvent) => {
     if (pending) setCursor(norm(e));
+    // Background pan: once the pointer has moved past the click threshold.
+    const dn = downRef.current;
+    if (dn && !dragRef.current && !pending && panRef.current) {
+      const dx = e.clientX - dn.x, dy = e.clientY - dn.y;
+      if (!dn.moved && Math.hypot(dx, dy) > 4) dn.moved = true;
+      if (dn.moved) {
+        const pr = panRef.current;
+        setPan({ x: pr.px + (e.clientX - pr.sx), y: pr.py + (e.clientY - pr.sy) });
+        return;
+      }
+    }
     const d = dragRef.current;
     if (d) {
       const p = norm(e);
@@ -284,6 +347,15 @@ export function WeldAnnotator({
     if (w && w.bubble_x != null && w.bubble_y != null) {
       try { await api.setWeldBubble(d.id, pageNum, w.bubble_x, w.bubble_y, w.joint_x ?? w.bubble_x, w.joint_y ?? w.bubble_y); } catch { /* ignore */ }
     }
+  };
+
+  // Release on the stage: finish a bubble drag, finish a pan, or — if the
+  // pointer never moved — perform the tool's click action at that point.
+  const onStageUp = async (e: React.MouseEvent) => {
+    if (dragRef.current) { await endDrag(); downRef.current = null; panRef.current = null; return; }
+    const dn = downRef.current;
+    downRef.current = null; panRef.current = null;
+    if (dn && !dn.moved) await onStageClick(e); // a click, not a pan
   };
 
   const reassign = async (id: number) => {
@@ -322,17 +394,56 @@ export function WeldAnnotator({
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [welds]);
 
-  // guided fill: pan to the active bubble
+  // guided fill: pan the active bubble to the centre of the stage
   useEffect(() => {
     if (guided === null) return;
     const w = ordered[guided];
     if (!w || w.bubble_x == null) return;
     if ((w.bubble_page ?? 1) !== pageNum) setPageNum(w.bubble_page ?? 1);
-    const stage = stageRef.current;
-    if (stage) {
-      stage.scrollTo({ left: (w.bubble_x ?? 0) * size.w - stage.clientWidth / 2, top: (w.bubble_y ?? 0) * size.h - stage.clientHeight / 2.4, behavior: "smooth" });
-    }
+    centerOn(w.bubble_x ?? 0.5, w.bubble_y ?? 0.5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guided, ordered, size.w, size.h, pageNum]);
+
+  // Keep refs current for the native wheel handler (which must be non-passive
+  // to preventDefault the browser's ctrl-zoom / page-scroll).
+  scaleRef.current = scale;
+  panStateRef.current = pan;
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const rect = stage.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        const cur = scaleRef.current;
+        const next = Math.max(0.15, Math.min(6, cur * factor));
+        const r = next / cur;
+        const p = panStateRef.current;
+        setPan({ x: mx - (mx - p.x) * r, y: my - (my - p.y) * r });
+        setScale(next);
+      } else {
+        const p = panStateRef.current;
+        setPan({ x: p.x - e.deltaX, y: p.y - e.deltaY });
+      }
+    };
+    stage.addEventListener("wheel", handler, { passive: false });
+    return () => stage.removeEventListener("wheel", handler);
+  }, []);
+
+  // Re-fit when entering/leaving fullscreen (the stage size changes). Esc exits.
+  useEffect(() => {
+    const t = setTimeout(() => { fitToWidth(); }, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setFullscreen(false); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [fullscreen]);
 
   if (loading) return <Spinner />;
   if (error) return <div className="error-box">{error}</div>;
@@ -346,178 +457,191 @@ export function WeldAnnotator({
   const gActive = guided !== null ? ordered[guided] : null;
   const gcx = (gActive?.bubble_x ?? 0) * size.w;
   const gcy = (gActive?.bubble_y ?? 0) * size.h;
-  const gLeftSide = gcx > size.w * 0.55; // pop to the left when the bubble sits on the right
 
-  const hint = !editable ? "Read-only." :
-    guided !== null ? `Guided fill — weld ${guided + 1} of ${ordered.length}. Fill the card, press Enter for the next.` :
-    tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a weld joint on the map.") :
-    tool === "select" ? "Click a bubble to edit — drag it to move the whole thing, drag its joint dot to re-extend the line; renumber or delete below." :
-    tool === "legend" ? "Click to place the legend stamp." : "Drag to pan.";
+  const acx = pan.x + gcx, acy = pan.y + gcy; // guided-card anchor, in stage space
+  const stageW = stageRef.current?.clientWidth ?? 900;
+  const gLeftSide = acx > stageW * 0.55;
+  const panning = downRef.current?.moved ?? false;
+  const placing = editable && tool === "bubble" && stamp && !pending;
+
+  const hint = !editable ? "Read-only — drag to pan, Ctrl+scroll to zoom." :
+    guided !== null ? `Guided fill — weld ${guided + 1} of ${ordered.length}. Enter for the next field, Save & next on the last.` :
+    tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a joint to place a weld · drag to pan · Ctrl+scroll to zoom.") :
+    tool === "select" ? "Click a bubble to edit — drag it to move, drag its joint dot to re-aim the leader." :
+    "Click to place the legend · drag to pan.";
+
+  const selWeld = selId != null && guided === null ? welds.find((x) => x.id === selId) : null;
 
   return (
-    <div className="anno">
-      <div className="anno-toolbar">
-        {/* tool chest */}
-        <div className="toolchest">
-          {([
-            ["bubble", "◎", "Weld bubble"],
-            ["select", "▧", "Select / move"],
-            ["legend", "🏷", "Legend stamp"],
-            ["pan", "✋", "Pan"],
-          ] as [Tool, string, string][]).map(([t, ico, label]) => (
-            <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label} onClick={() => setTool(t)} disabled={!editable}>{ico}</button>
-          ))}
-        </div>
-
-        <div className="welder-switch">
-          <span className="ws-label">Welder</span>
-          <select value={stamp} onChange={(e) => setStamp(e.target.value)} disabled={!editable}>
-            <option value="">— pick —</option>
-            {welders.map((w, i) => <option key={w.stamp} value={w.stamp}>{i < 9 ? `${i + 1}· ` : ""}{w.stamp} — {w.name}</option>)}
-          </select>
-        </div>
-        <label className="anno-num">Next&nbsp;<b>W{nextNum}</b></label>
-
-        <div className="spacer" />
-        {pageTo > pageFrom && (
-          <div className="anno-pages">
-            <button className="btn btn-sm" disabled={pageNum <= pageFrom} onClick={() => setPageNum((p) => Math.max(pageFrom, p - 1))}>‹</button>
-            <span className="muted">Sheet pg {pageNum - pageFrom + 1}/{pageTo - pageFrom + 1}</span>
-            <button className="btn btn-sm" disabled={pageNum >= pageTo} onClick={() => setPageNum((p) => Math.min(pageTo, p + 1))}>›</button>
-          </div>
-        )}
-        <button className="btn btn-sm" onClick={() => setScale((s) => Math.max(0.2, s - 0.2))}>−</button>
-        <span className="muted" style={{ width: 42, textAlign: "center" }}>{Math.round(scale * 100)}%</span>
-        <button className="btn btn-sm" onClick={() => setScale((s) => Math.min(4, s + 0.2))}>+</button>
-        {editable && guided === null && ordered.length > 0 && (
-          <button className="btn btn-accent" style={{ fontWeight: 700 }} title="Walk each weld on the map in order and fill its data — you won't have to remember which bubble is which" onClick={() => setGuided(0)}>▶ Fill attributes ({ordered.length})</button>
-        )}
-        <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
-      </div>
-
+    <div className={`anno ${fullscreen ? "anno-full" : ""}`}>
       {editable && showCoach && <CoachMarks onDone={dismissCoach} />}
 
-      <div className={`anno-hint ${pending || guided !== null ? "active" : ""}`}>{hint}</div>
-
-      <div className="anno-stage" ref={stageRef} style={{ cursor: tool === "pan" ? "grab" : "default" }}>
+      <div
+        className="anno-stage"
+        ref={stageRef}
+        onMouseDown={onStageDown}
+        onMouseMove={onMove}
+        onMouseUp={onStageUp}
+        onMouseLeave={() => { setCursor(null); if (dragRef.current) endDrag(); downRef.current = null; panRef.current = null; }}
+        style={{ cursor: panning ? "grabbing" : placing ? "crosshair" : "grab" }}
+      >
         {!hasPdf && <div className="anno-empty">No PDF attached — place bubbles on the blank grid, or attach the isometric in the previous step.</div>}
-        <div className="anno-page" style={{ width: size.w || 800, height: size.h || 600 }}>
-          <canvas ref={canvasRef} />
-          <svg
-            ref={svgRef} className="anno-svg" width={size.w || 800} height={size.h || 600}
-            style={{ cursor: editable && tool === "bubble" && stamp ? "crosshair" : "default" }}
-            onClick={onStageClick} onMouseMove={onMove} onMouseUp={endDrag} onMouseLeave={() => { setCursor(null); endDrag(); }}
-          >
-            {pageWelds.map((w) => {
-              const cx = (w.bubble_x ?? 0) * size.w, cy = (w.bubble_y ?? 0) * size.h;
-              const jx = (w.joint_x ?? w.bubble_x ?? 0) * size.w, jy = (w.joint_y ?? w.bubble_y ?? 0) * size.h;
-              const sel = w.id === selId, active = w.id === activeId;
-              const editing = sel && editable;
-              // A weld is grabbable when it's selected, or when the Select tool
-              // is active. Clicking a bubble (even with the Bubble tool, as long
-              // as you're not mid-placement) selects it for editing.
-              const grab = editable && (sel || tool === "select");
-              const selectable = tool === "select" || (tool === "bubble" && !pending);
-              return (
-                <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""}`}
-                  onClick={(e) => { if (selectable) { e.stopPropagation(); setSelId(w.id); } }}
-                  onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); startDrag(w, "both", e); } }}
-                  style={{ cursor: grab ? "move" : "pointer" }}
-                >
-                  <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} />
-                  {/* joint handle — drag to re-extend / re-aim the leader */}
-                  <circle
-                    cx={jx} cy={jy} r={editing ? 7 : 2.5}
-                    className={`anno-joint ${editing ? "handle" : ""}`}
-                    onMouseDown={editing ? (e) => { e.stopPropagation(); startDrag(w, "joint", e); } : undefined}
-                    style={editing ? { cursor: "crosshair" } : undefined}
-                  />
-                  <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} />
-                  <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" />
-                  <text x={cx} y={cy - 4} className="anno-txt">{w.stamp_number ?? ""}</text>
-                  <text x={cx} y={cy + R - 4} className="anno-txt">{w.weld_number ?? ""}</text>
-                </g>
-              );
-            })}
-            {pending && cursor && (
-              <>
-                <line x1={pending.x * size.w} y1={pending.y * size.h} x2={cursor.x * size.w} y2={cursor.y * size.h} className="anno-leader" />
-                <circle cx={pending.x * size.w} cy={pending.y * size.h} r={3} className="anno-joint" />
-                <circle cx={cursor.x * size.w} cy={cursor.y * size.h} r={R} className="anno-bubble ghost" />
-              </>
+
+        {/* the page — translated (pan) and rendered at `scale` (zoom) */}
+        <div className="anno-viewport" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+          <div className="anno-page" style={{ width: size.w || 800, height: size.h || 600 }}>
+            <canvas ref={canvasRef} />
+            <svg ref={svgRef} className="anno-svg" width={size.w || 800} height={size.h || 600}>
+              {pageWelds.map((w) => {
+                const cx = (w.bubble_x ?? 0) * size.w, cy = (w.bubble_y ?? 0) * size.h;
+                const jx = (w.joint_x ?? w.bubble_x ?? 0) * size.w, jy = (w.joint_y ?? w.bubble_y ?? 0) * size.h;
+                const sel = w.id === selId, active = w.id === activeId;
+                const editing = sel && editable;
+                const grab = editable && (sel || tool === "select");
+                const selectable = tool === "select" || (tool === "bubble" && !pending);
+                return (
+                  <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""}`}
+                    onClick={(e) => { if (selectable) { e.stopPropagation(); setSelId(w.id); } }}
+                    onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); startDrag(w, "both", e); } }}
+                    style={{ cursor: grab ? "move" : "pointer" }}
+                  >
+                    <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} />
+                    <circle
+                      cx={jx} cy={jy} r={editing ? 7 : 2.5}
+                      className={`anno-joint ${editing ? "handle" : ""}`}
+                      onMouseDown={editing ? (e) => { e.stopPropagation(); startDrag(w, "joint", e); } : undefined}
+                      style={editing ? { cursor: "crosshair" } : undefined}
+                    />
+                    <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} />
+                    <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" />
+                    <text x={cx} y={cy - 8} className="anno-txt">{w.stamp_number ?? ""}</text>
+                    <text x={cx} y={cy + 8} className="anno-txt">{w.weld_number ?? ""}</text>
+                  </g>
+                );
+              })}
+              {pending && cursor && (
+                <>
+                  <line x1={pending.x * size.w} y1={pending.y * size.h} x2={cursor.x * size.w} y2={cursor.y * size.h} className="anno-leader" />
+                  <circle cx={pending.x * size.w} cy={pending.y * size.h} r={3} className="anno-joint" />
+                  <circle cx={cursor.x * size.w} cy={cursor.y * size.h} r={R} className="anno-bubble ghost" />
+                </>
+              )}
+            </svg>
+
+            {legendOn && (
+              <Legend
+                pos={legendPos}
+                size={size}
+                totals={totals}
+                editable={editable}
+                onMove={(p) => { setLegendPos(p); persistLegend(p, true); }}
+                onClose={() => { setLegendOn(false); persistLegend(legendPos, false); }}
+              />
             )}
-          </svg>
-
-          {/* Legend stamp overlay */}
-          {legendOn && (
-            <Legend
-              pos={legendPos}
-              size={size}
-              totals={totals}
-              editable={editable}
-              onMove={(p) => { setLegendPos(p); persistLegend(p, true); }}
-              onClose={() => { setLegendOn(false); persistLegend(legendPos, false); }}
-            />
-          )}
-
-          {/* Guided-fill popup, docked right beside the active weld bubble */}
-          {guided !== null && gActive && (
-            <GuidedPopup
-              key={gActive.id}
-              weld={gActive}
-              index={guided}
-              total={ordered.length}
-              welders={welders}
-              lookups={lookups}
-              sizes={sizes}
-              specOptions={specOptions}
-              sticky={stickyRef.current}
-              anchor={{ cx: gcx, cy: gcy, left: gLeftSide, pageH: size.h }}
-              onSaveNext={async (changes) => {
-                const w = ordered[guided];
-                // Remember the driver values so the next weld inherits them.
-                stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
-                try {
-                  await api.updateWeld({ ...w, ...changes });
-                  await refreshWelds();
-                } catch (e) { toast.push("err", errMsg(e)); }
-                if (guided + 1 >= ordered.length) {
-                  setGuided(null);
-                  toast.push("ok", "All welds filled — review & save");
-                  onComplete?.();
-                } else setGuided(guided + 1);
-              }}
-              onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
-              onSkip={() => {
-                if (guided + 1 >= ordered.length) { setGuided(null); onComplete?.(); }
-                else setGuided(guided + 1);
-              }}
-              onExit={() => setGuided(null)}
-            />
-          )}
+          </div>
         </div>
-      </div>
 
-      {!legendOn && (
-        <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}>Show legend</button>
-      )}
+        {/* floating tools (top-left) */}
+        {guided === null && (
+          <div className="anno-hud tl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="toolchest">
+              {([
+                ["bubble", "◎", "Place weld bubbles"],
+                ["select", "▧", "Select / move"],
+                ["legend", "🏷", "Legend stamp"],
+              ] as [Tool, string, string][]).map(([t, ico, label]) => (
+                <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label} onClick={() => setTool(t)} disabled={!editable}>{ico}</button>
+              ))}
+            </div>
+            <div className="welder-switch">
+              <span className="ws-label">Welder</span>
+              <select value={stamp} onChange={(e) => setStamp(e.target.value)} disabled={!editable}>
+                <option value="">— pick —</option>
+                {welders.map((w, i) => <option key={w.stamp} value={w.stamp}>{i < 9 ? `${i + 1}· ` : ""}{w.stamp} — {w.name}</option>)}
+              </select>
+            </div>
+            <span className="anno-num">Next <b>W{nextNum}</b></span>
+          </div>
+        )}
 
-      {selId != null && guided === null && (() => {
-        const w = welds.find((x) => x.id === selId);
-        if (!w) return null;
-        return (
-          <SelBar
-            weld={w}
-            editable={editable}
-            stamp={stamp}
-            onRenumber={renumber}
-            onReassign={() => reassign(w.id)}
-            onDelete={() => delWeld(w.id)}
-            onClose={() => setSelId(null)}
+        {/* floating actions (top-right) */}
+        <div className="anno-hud tr" onMouseDown={(e) => e.stopPropagation()}>
+          {editable && guided === null && ordered.length > 0 && (
+            <button className="btn btn-accent btn-sm" title="Walk each weld in order and fill its data" onClick={() => setGuided(0)}>▶ Fill attributes ({ordered.length})</button>
+          )}
+          {!legendOn && <button className="btn btn-sm" onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}>🏷</button>}
+          <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
+          <button className="btn btn-sm" title={fullscreen ? "Exit full screen (Esc)" : "Full screen"} onClick={() => setFullscreen((v) => !v)}>{fullscreen ? "⤢" : "⛶"}</button>
+        </div>
+
+        {/* zoom + page (bottom-right) */}
+        <div className="anno-hud br" onMouseDown={(e) => e.stopPropagation()}>
+          {pageTo > pageFrom && (
+            <>
+              <button className="btn btn-sm" disabled={pageNum <= pageFrom} onClick={() => setPageNum((p) => Math.max(pageFrom, p - 1))}>‹</button>
+              <span className="anno-pglabel">Pg {pageNum - pageFrom + 1}/{pageTo - pageFrom + 1}</span>
+              <button className="btn btn-sm" disabled={pageNum >= pageTo} onClick={() => setPageNum((p) => Math.min(pageTo, p + 1))}>›</button>
+              <span className="anno-hud-div" />
+            </>
+          )}
+          <button className="btn btn-sm" title="Zoom out" onClick={() => setScale((s) => Math.max(0.15, s / 1.15))}>−</button>
+          <button className="btn btn-sm" title="Fit to width" onClick={fitToWidth}>{Math.round(scale * 100)}%</button>
+          <button className="btn btn-sm" title="Zoom in" onClick={() => setScale((s) => Math.min(6, s * 1.15))}>+</button>
+        </div>
+
+        {/* hint (bottom-left) */}
+        <div className={`anno-hud bl anno-hintchip ${pending || guided !== null ? "active" : ""}`}>{hint}</div>
+
+        {/* selection bar (bottom-center) */}
+        {selWeld && (
+          <div className="anno-hud sel" onMouseDown={(e) => e.stopPropagation()}>
+            <SelBar
+              weld={selWeld}
+              editable={editable}
+              stamp={stamp}
+              onRenumber={renumber}
+              onReassign={() => reassign(selWeld.id)}
+              onDelete={() => delWeld(selWeld.id)}
+              onClose={() => setSelId(null)}
+            />
+          </div>
+        )}
+
+        {/* guided-fill card — positioned in stage space so it never scales */}
+        {guided !== null && gActive && (
+          <GuidedPopup
+            key={gActive.id}
+            weld={gActive}
+            index={guided}
+            total={ordered.length}
+            welders={welders}
+            lookups={lookups}
+            sizes={sizes}
+            specOptions={specOptions}
+            sticky={stickyRef.current}
+            anchor={{ cx: acx, cy: acy, left: gLeftSide, pageH: size.h }}
+            onSaveNext={async (changes) => {
+              const w = ordered[guided];
+              stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
+              try {
+                await api.updateWeld({ ...w, ...changes });
+                await refreshWelds();
+              } catch (e) { toast.push("err", errMsg(e)); }
+              if (guided + 1 >= ordered.length) {
+                setGuided(null);
+                toast.push("ok", "All welds filled — review & save");
+                onComplete?.();
+              } else setGuided(guided + 1);
+            }}
+            onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
+            onSkip={() => {
+              if (guided + 1 >= ordered.length) { setGuided(null); onComplete?.(); }
+              else setGuided(guided + 1);
+            }}
+            onExit={() => setGuided(null)}
           />
-        );
-      })()}
-
+        )}
+      </div>
     </div>
   );
 }
@@ -627,7 +751,7 @@ function Legend({
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   };
   return (
-    <div className="wm-legend" style={{ left: pos.x * size.w, top: pos.y * size.h }}>
+    <div className="wm-legend" style={{ left: pos.x * size.w, top: pos.y * size.h }} onMouseDown={(e) => e.stopPropagation()}>
       <div
         className="wm-legend-head"
         style={{ cursor: editable ? "grab" : "default", touchAction: "none" }}
@@ -769,14 +893,14 @@ function GuidedPopup({
 
   const W = 372;
   const left = anchor.left ? Math.max(8, anchor.cx - W - 34) : anchor.cx + 34;
-  const top = Math.max(8, anchor.cy - 54);
 
   return (
     <div
       ref={rootRef}
       className={`guided-pop ${anchor.left ? "to-left" : "to-right"}`}
-      style={{ left, top, width: W }}
+      style={{ left, top: "50%", transform: "translateY(-50%)", width: W }}
       onKeyDown={onKeyDown}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="guided-head">
         <span className="guided-weld">{weld.weld_number}</span>
@@ -835,20 +959,31 @@ function GuidedPopup({
         <label className="guided-check"><input type="checkbox" checked={f.aes_service} onChange={(e) => setF({ ...f, aes_service: e.target.checked })} /> AES service</label>
         <label className="guided-check"><input type="checkbox" checked={f.new_to_existing} onChange={(e) => setF({ ...f, new_to_existing: e.target.checked })} /> New-to-existing tie-in (100%)</label>
         {tieIn && <>
-          <div className="field"><label>UT wall — existing</label>
+          <div className="guided-lock-note" style={{ color: "var(--text-muted)", background: "var(--surface-2)", borderColor: "var(--border)" }}>
+            UT <b>thickness</b> gauging (not NDE) — confirm the existing pipe is thick enough to weld to. The lesser reading governs the wall &amp; makes this a 100% weld.
+          </div>
+          <div className="field"><label>UT wall — existing (in)</label>
             <input type="number" step="0.001" value={f.ut_wall_existing} onChange={(e) => setF({ ...f, ut_wall_existing: e.target.value })} /></div>
-          <div className="field"><label>UT wall — new</label>
+          <div className="field"><label>UT wall — new (in)</label>
             <input type="number" step="0.001" value={f.ut_wall_new} onChange={(e) => setF({ ...f, ut_wall_new: e.target.value })} /></div>
+          {(f.ut_wall_existing || f.ut_wall_new) && (
+            <div className="field span2"><label>Governing wall</label>
+              <div className="guided-gov">{Math.min(...[f.ut_wall_existing, f.ut_wall_new].filter(Boolean).map(Number)).toFixed(3)} in (lesser)</div></div>
+          )}
         </>}
 
-        <div className="guided-sec">NDE result</div>
+        <div className="guided-sec">NDE result <span className="faint">(record after examination)</span></div>
         {!driversComplete && <div className="guided-lock-note">Set the Table 4 drivers above (Shop/Field, Joint, Service, Flange, Material) to unlock NDE entry.</div>}
-        <div className="field nde-field"><label>NDE %</label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
-        <div className="field nde-field"><label>NDE Type</label><Combobox value={f.nde_types} options={opt("nde_type")} allowCustom onChange={(v) => setF({ ...f, nde_types: v })} /></div>
+        <div className="field nde-field"><label>NDE %
+          {driversReady && req && f.nde_percent.replace(/[^0-9]/g, "") !== String(req.required_percent) &&
+            <button type="button" className="use-req" onClick={() => setF({ ...f, nde_percent: `${req.required_percent}%` })}>use {req.required_percent}%</button>}
+        </label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
         <div className="field nde-field"><label>Accept / Reject</label>
           <select value={f.nde_result} onChange={(e) => setF({ ...f, nde_result: e.target.value })}>
             {NDE_RESULTS.map((o) => <option key={o} value={o}>{o || "—"}</option>)}
           </select></div>
+        <div className="field span2 nde-field"><label>NDE methods / passes</label>
+          <InlineMulti value={f.nde_types} options={NDE_TYPE_OPTIONS} onCommit={(v) => setF({ ...f, nde_types: v ?? "" })} /></div>
         <div className="field nde-field"><label>NDE date</label>
           <input type="date" value={f.nde_date} onChange={(e) => setF({ ...f, nde_date: e.target.value })} /></div>
 

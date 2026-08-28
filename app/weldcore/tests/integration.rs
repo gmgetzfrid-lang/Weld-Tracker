@@ -610,9 +610,10 @@ fn nde_reject_rate_uses_inspected_denominator() {
 }
 
 #[test]
-fn auto_nde_spec_from_shop_field_and_tie_in() {
+fn required_nde_spec_from_shop_field_and_tie_in() {
     let s = store();
-    // shop weld with a blank NDE % is auto-assigned 5%
+    // The actual NDE % is left blank until recorded; the Table 4 requirement is
+    // surfaced read-only via expected_nde_percent. A shop butt weld → 5%.
     let mut shop = weld("200", "BW", "K1", "2026-03-01");
     shop.weld_number = Some("S1".into());
     shop.spec_5 = false;
@@ -620,19 +621,22 @@ fn auto_nde_spec_from_shop_field_and_tie_in() {
     shop.shop_or_field = Some("SHOP".into());
     let sid = s.create_weld(&shop, "admin").unwrap();
     let g = s.get_weld(sid).unwrap();
-    assert_eq!(g.nde_percent.as_deref(), Some("5%"));
-    assert!(g.spec_5 && !g.spec_10);
+    assert_eq!(g.nde_percent, None, "actual NDE % stays blank until recorded");
+    assert_eq!(g.expected_nde_percent.as_deref(), Some("5%"));
 
-    // field weld -> 10%
+    // field weld -> required 10%
     let mut field = weld("200", "BW", "K1", "2026-03-02");
     field.weld_number = Some("F1".into());
     field.spec_5 = false;
     field.nde_percent = None;
     field.shop_or_field = Some("FW".into());
     let fid = s.create_weld(&field, "admin").unwrap();
-    assert_eq!(s.get_weld(fid).unwrap().nde_percent.as_deref(), Some("10%"));
+    assert_eq!(
+        s.get_weld(fid).unwrap().expected_nde_percent.as_deref(),
+        Some("10%")
+    );
 
-    // new-to-old tie-in -> 100% regardless of shop/field
+    // new-to-old tie-in -> required 100% regardless of shop/field
     let mut tie = weld("200", "BW", "K1", "2026-03-03");
     tie.weld_number = Some("T1".into());
     tie.spec_5 = false;
@@ -641,16 +645,17 @@ fn auto_nde_spec_from_shop_field_and_tie_in() {
     tie.shop_or_field = Some("SHOP".into());
     let tid = s.create_weld(&tie, "admin").unwrap();
     let gt = s.get_weld(tid).unwrap();
-    assert_eq!(gt.nde_percent.as_deref(), Some("100%"));
-    assert!(gt.spec_100);
+    assert_eq!(gt.expected_nde_percent.as_deref(), Some("100%"));
 
-    // an explicitly chosen NDE % is never overridden by the rule
+    // an explicitly recorded NDE % is stored verbatim and drives its spec flag
     let mut explicit = weld("200", "BW", "K1", "2026-03-04");
     explicit.weld_number = Some("E1".into());
     explicit.nde_percent = Some("20%".into());
     explicit.shop_or_field = Some("SHOP".into());
     let eid = s.create_weld(&explicit, "admin").unwrap();
-    assert_eq!(s.get_weld(eid).unwrap().nde_percent.as_deref(), Some("20%"));
+    let ge = s.get_weld(eid).unwrap();
+    assert_eq!(ge.nde_percent.as_deref(), Some("20%"));
+    assert!(ge.spec_20);
 }
 
 #[test]

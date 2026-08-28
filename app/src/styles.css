@@ -299,7 +299,8 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .dz-file { display: flex; align-items: center; gap: 12px; text-align: left; }
 
 /* ---------------- Weld-bubble annotator ---------------- */
-.anno { display: flex; flex-direction: column; position: relative; }
+.anno { position: relative; }
+.anno.anno-full { position: fixed; inset: 0; z-index: 1000; background: #3a4250; }
 .anno-toolbar { display: flex; align-items: center; gap: 10px; padding: 7px 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px 10px 0 0; flex-wrap: wrap; }
 .anno-toolbar .spacer { flex: 1; }
 .anno-num { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
@@ -311,10 +312,26 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 }
 .anno-hint.active { background: var(--teal); color: #fff; }
 .anno-stage {
-  position: relative; overflow: auto; background: #55606f;
-  border: 1px solid var(--border); border-top: 0; border-radius: 0 0 10px 10px;
-  max-height: min(82vh, calc(100vh - 168px)); padding: 12px; display: flex; justify-content: center;
+  position: relative; overflow: hidden; background: #55606f;
+  border: 1px solid var(--border); border-radius: 10px;
+  height: min(80vh, calc(100vh - 208px));
+  touch-action: none; user-select: none;
 }
+.anno.anno-full .anno-stage { height: 100vh; border: 0; border-radius: 0; }
+.anno-viewport { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+/* floating heads-up controls over the PDF */
+.anno-hud { position: absolute; z-index: 6; display: flex; align-items: center; gap: 8px; }
+.anno-hud.tl { top: 12px; left: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px 9px; box-shadow: var(--shadow); }
+.anno-hud.tr { top: 12px; right: 12px; gap: 6px; }
+.anno-hud.br { bottom: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 5px 7px; box-shadow: var(--shadow); }
+.anno-hud.bl { bottom: 12px; left: 12px; max-width: 56%; }
+.anno-hud.sel { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: 92%; }
+.anno-hud .btn { box-shadow: var(--shadow-sm); }
+.anno-hud-div { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+.anno-num { font-size: 12px; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.anno-pglabel { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.anno-hintchip { background: rgba(10,20,40,.74); color: #e8eeff; font-size: 12px; font-weight: 500; padding: 6px 13px; border-radius: 999px; pointer-events: none; box-shadow: var(--shadow); }
+.anno-hintchip.active { background: var(--teal); color: #fff; }
 .anno-empty { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3; background: #fff8e1; border: 1px solid #f0d98a; color: #7a5c00; padding: 8px 14px; border-radius: 8px; font-size: 12.5px; max-width: 560px; }
 .anno-page { position: relative; background: #fff; box-shadow: var(--shadow-lg); flex-shrink: 0; }
 .anno-page canvas { display: block; }
@@ -372,20 +389,14 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .guided-pop {
   position: absolute; z-index: 8; background: var(--surface); border: 2px solid var(--teal);
   border-radius: 12px; box-shadow: var(--shadow-lg); padding: 12px 13px; animation: guidedPop .14s ease-out;
+  display: flex; flex-direction: column; max-height: calc(100% - 20px);
 }
-@keyframes guidedPop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
-/* little arrow pointing back at the bubble */
-.guided-pop::before {
-  content: ""; position: absolute; top: 46px; width: 12px; height: 12px; background: var(--surface);
-  border: 2px solid var(--teal); transform: rotate(45deg);
-}
-.guided-pop.to-right::before { left: -8px; border-right: 0; border-top: 0; }
-.guided-pop.to-left::before { right: -8px; border-left: 0; border-bottom: 0; }
+@keyframes guidedPop { from { opacity: 0; } to { opacity: 1; } }
 .guided-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .guided-head .spacer { flex: 1; }
 .guided-weld { font-size: 17px; font-weight: 800; color: var(--navy); }
 .guided-prog { background: var(--teal); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
-.guided-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; max-height: 52vh; overflow-y: auto; padding-right: 2px; }
+.guided-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
 .guided-fields .field { margin: 0; }
 .guided-fields .field.span2 { grid-column: 1 / -1; }
 .guided-fields label { font-size: 11px; }
@@ -422,6 +433,9 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
   color: var(--text); cursor: pointer; margin: 0;
 }
 .guided-check input { width: auto; margin: 0; }
+.use-req { margin-left: 8px; border: 1px solid var(--teal); background: var(--hi-bg, rgba(10,132,120,.12)); color: var(--teal); border-radius: 999px; font-size: 10px; font-weight: 700; padding: 0 7px; cursor: pointer; line-height: 1.6; }
+.use-req:hover { background: var(--teal); color: #fff; }
+.guided-gov { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; font-weight: 700; color: var(--navy); padding: 6px 0; }
 /* required-field marker */
 .req-star { color: var(--danger); margin-left: 3px; font-weight: 800; }
 .guided-fields .field.missing input, .guided-fields .field.missing select,
