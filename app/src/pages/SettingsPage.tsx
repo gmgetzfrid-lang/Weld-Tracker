@@ -32,9 +32,11 @@ export function SettingsPage() {
   const [backingUp, setBackingUp] = useState(false);
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [activity, setActivity] = useState<import("../types").AuditEntry[]>([]);
+  // The activity trail is visible to everyone (transparency), newest first;
+  // backup stays admin-only.
   useEffect(() => {
-    if (can("admin")) api.recentActivity(null, 100).then(setActivity).catch(() => {});
-  }, [can]);
+    api.recentActivity(null, 100).then(setActivity).catch(() => {});
+  }, []);
   const runBackup = async () => {
     setBackingUp(true);
     try {
@@ -196,7 +198,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {can("admin") && (
+      {(
         <div className="card card-pad">
           <h3>Recent Activity</h3>
           <p className="hint" style={{ marginTop: 0 }}>

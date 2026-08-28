@@ -284,8 +284,26 @@ function DetailPanel({
   );
   const t = (v: unknown) => (v == null || v === "" ? <span className="faint">—</span> : String(v));
   const yn = ["Y"];
+  const ndeResolved = w.expected_nde_resolved !== false && !!w.expected_nde_percent;
   return (
     <div className="detail-panel">
+      {(w.expected_nde_percent || w.expected_nde_blockers) && (
+        <div className={`dp-provenance ${ndeResolved ? "" : "unresolved"}`}>
+          <span className="dp-prov-tag">NDE basis</span>
+          {ndeResolved ? (
+            <span className="dp-prov-body">
+              <b>{w.expected_nde_percent}</b>
+              {w.expected_nde_method ? ` · ${w.expected_nde_method}` : ""}
+              {w.expected_nde_note ? ` — ${w.expected_nde_note}` : ""}
+              {w.nde_rule_set ? <span className="dp-prov-rule"> [{w.nde_rule_set}]</span> : null}
+            </span>
+          ) : (
+            <span className="dp-prov-body">
+              Requirement unresolved{w.expected_nde_blockers ? ` — set/correct: ${w.expected_nde_blockers}` : ""}
+            </span>
+          )}
+        </div>
+      )}
       <div className="dp-grid">
         <F label="Unit" node={edit ? <InlineText value={w.unit} onCommit={(v) => save(w, { unit: v })} /> : t(w.unit)} />
         <F label="Line Spec" node={edit ? <InlineText value={w.line_spec} onCommit={(v) => save(w, { line_spec: v })} /> : t(w.line_spec)} />
