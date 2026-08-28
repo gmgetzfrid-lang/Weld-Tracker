@@ -4,7 +4,7 @@ import { useAuth } from "../auth";
 import type { NdeComplianceReport, SummaryReport } from "../types";
 import { BarChart, ErrorBox, Spinner, StatCard, num, pct } from "../components/ui";
 
-export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
+export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => void; onNewEntry: () => void }) {
   const { user } = useAuth();
   const [rep, setRep] = useState<SummaryReport | null>(null);
   const [nde, setNde] = useState<NdeComplianceReport | null>(null);
@@ -33,10 +33,11 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
     },
     {
       done: drawingCount > 0,
-      title: "Map a work order, then Fill attributes",
-      body: "Click “New Weld Entry”: pick or create a work order, add the drawing number(s) and iso PDF, drop a bubble on each joint, then hit Fill attributes to walk each weld and enter its details.",
-      cta: "Open Weld Log",
+      title: "Start a Weld Entry",
+      body: "Hit “New Weld Entry” — create a work order (or add to one), attach the drawing, drop a bubble on each joint, then Fill attributes to walk each weld. Everything is scoped to the work order.",
+      cta: "New Weld Entry",
       go: "weldlog",
+      entry: true,
     },
     {
       done: t.welds > 0,
@@ -65,7 +66,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
                 <div className="guide-body">{s.body}</div>
                 <button
                   className={`btn btn-sm ${i === 1 ? "btn-accent" : ""}`}
-                  onClick={() => onNavigate(s.go)}
+                  onClick={() => ("entry" in s && s.entry ? onNewEntry() : onNavigate(s.go))}
                 >
                   {s.cta} →
                 </button>
@@ -78,7 +79,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
       {!fresh && (
         <div className="quick-row">
           <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Quick actions:</span>
-          <button className="btn btn-accent btn-sm" onClick={() => onNavigate("weldlog")}>+ New Weld Entry</button>
+          <button className="btn btn-accent btn-sm" onClick={onNewEntry}>+ New Weld Entry</button>
           <button className="btn btn-sm" onClick={() => onNavigate("workorders")}>🗂️ Work Orders</button>
           <button className="btn btn-sm" onClick={() => onNavigate("roster")}>☺ Welder Roster</button>
         </div>

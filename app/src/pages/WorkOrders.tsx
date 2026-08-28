@@ -5,14 +5,22 @@ import type { Lookups, Welder, WorkOrderSummary } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
 import { DrawingWizard } from "./DrawingWizard";
 import { WorkOrderRecord } from "./WorkOrderRecord";
-import { NewEntryChooser } from "../components/NewEntryChooser";
+import type { WoIntent } from "../App";
 
 type View =
   | { kind: "list" }
   | { kind: "record"; wo: string }
   | { kind: "wizard"; drawingId: number | null; wo?: string };
 
-export function WorkOrders() {
+export function WorkOrders({
+  onNewEntry,
+  initial,
+  onConsumedInitial,
+}: {
+  onNewEntry: () => void;
+  initial?: WoIntent;
+  onConsumedInitial?: () => void;
+}) {
   const { can, user } = useAuth();
   const toast = useToast();
   // The work order's owner (its creator) or an admin may delete the whole thing.
@@ -25,7 +33,15 @@ export function WorkOrders() {
   const [welders, setWelders] = useState<Welder[]>([]);
   const [lookups, setLookups] = useState<Lookups>({});
   const [sizes, setSizes] = useState<number[]>([]);
-  const [chooser, setChooser] = useState(false);
+
+  // Open the view the app asked for (from the global New Weld Entry chooser, or
+  // clicking a work order in the Weld Log), then clear the one-shot intent.
+  useEffect(() => {
+    if (!initial) return;
+    if (initial.kind === "wizard") setView({ kind: "wizard", drawingId: null });
+    else if (initial.kind === "record") setView({ kind: "record", wo: initial.wo });
+    onConsumedInitial?.();
+  }, [initial, onConsumedInitial]);
 
   const load = () => api.listWorkOrders().then(setRows).catch((e) => setError(errMsg(e)));
 
@@ -86,18 +102,11 @@ export function WorkOrders() {
         </div>
         <div className="spacer" />
         {can("editor") && (
-          <button className="btn btn-accent" onClick={() => setChooser(true)}>
+          <button className="btn btn-accent" onClick={onNewEntry}>
             + New Weld Entry
           </button>
         )}
       </div>
-      {chooser && (
-        <NewEntryChooser
-          onClose={() => setChooser(false)}
-          onExisting={(wo) => { setChooser(false); setView({ kind: "record", wo }); }}
-          onNew={() => { setChooser(false); setView({ kind: "wizard", drawingId: null }); }}
-        />
-      )}
 
       <ErrorBox message={error} />
       {!rows ? (

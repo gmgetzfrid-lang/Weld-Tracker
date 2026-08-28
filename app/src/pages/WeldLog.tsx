@@ -4,14 +4,6 @@ import { useAuth } from "../auth";
 import type { Lookups, Weld, WeldFilter, Welder } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, useToast } from "../components/ui";
 import { WeldTable } from "../components/WeldTable";
-import { DrawingWizard } from "./DrawingWizard";
-import { WorkOrderRecord } from "./WorkOrderRecord";
-import { NewEntryChooser } from "../components/NewEntryChooser";
-
-type View =
-  | { kind: "log" }
-  | { kind: "record"; wo: string }
-  | { kind: "wizard"; drawingId: number | null; wo?: string };
 
 function blankWeld(): Weld {
   return {
@@ -21,10 +13,17 @@ function blankWeld(): Weld {
   };
 }
 
-export function WeldLog() {
+/** The Weld Log is the searchable ledger of every weld. New entries and a work
+ * order's records live in the Work Orders hub — this page routes there. */
+export function WeldLog({
+  onNewEntry,
+  onOpenWorkOrder,
+}: {
+  onNewEntry: () => void;
+  onOpenWorkOrder: (wo: string) => void;
+}) {
   const { can } = useAuth();
   const toast = useToast();
-  const [view, setView] = useState<View>({ kind: "log" });
   const [welds, setWelds] = useState<Weld[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -32,7 +31,6 @@ export function WeldLog() {
   const [search, setSearch] = useState("");
   const [joint, setJoint] = useState("");
   const [status, setStatus] = useState("");
-  const [chooser, setChooser] = useState(false);
 
   const [welders, setWelders] = useState<Welder[]>([]);
   const [lookups, setLookups] = useState<Lookups>({});
@@ -59,34 +57,9 @@ export function WeldLog() {
   }, [search, joint, status]);
 
   useEffect(() => {
-    if (view.kind !== "log") return;
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
-  }, [load, view.kind]);
-
-  if (view.kind === "wizard") {
-    return (
-      <DrawingWizard
-        drawingId={view.drawingId}
-        initialWorkOrder={view.wo}
-        welders={welders}
-        lookups={lookups}
-        onClose={() => setView(view.wo ? { kind: "record", wo: view.wo } : { kind: "log" })}
-      />
-    );
-  }
-  if (view.kind === "record") {
-    return (
-      <WorkOrderRecord
-        workOrder={view.wo}
-        welders={welders}
-        lookups={lookups}
-        sizes={sizes}
-        onOpenDrawing={(drawingId) => setView({ kind: "wizard", drawingId, wo: view.wo })}
-        onBack={() => setView({ kind: "log" })}
-      />
-    );
-  }
+  }, [load]);
 
   const addQuick = async () => {
     try {
@@ -110,24 +83,17 @@ export function WeldLog() {
 
   return (
     <div>
-      {chooser && (
-        <NewEntryChooser
-          onClose={() => setChooser(false)}
-          onExisting={(wo) => { setChooser(false); setView({ kind: "record", wo }); }}
-          onNew={() => { setChooser(false); setView({ kind: "wizard", drawingId: null }); }}
-        />
-      )}
-
       {can("editor") && (
         <div className="hub-actions">
           <div>
             <div className="hub-actions-title">Log welds from an isometric</div>
             <div className="hub-actions-sub">
-              Enter the work order, drop weld bubbles on the drawing, and the rows
-              fill themselves — the fast way.
+              A weld entry is a work order: pick or create the work order, attach the drawing,
+              drop weld bubbles and the rows fill themselves. This log is every weld you've entered —
+              click a work order to open its records.
             </div>
           </div>
-          <button className="btn btn-accent" onClick={() => setChooser(true)}>＋ New Weld Entry</button>
+          <button className="btn btn-accent" onClick={onNewEntry}>＋ New Weld Entry</button>
           <button className="btn" onClick={addQuick}>Quick single weld</button>
         </div>
       )}
@@ -162,7 +128,7 @@ export function WeldLog() {
           editable={can("editor")}
           onChanged={load}
           showWorkOrder
-          onOpenWorkOrder={(wo) => setView({ kind: "record", wo })}
+          onOpenWorkOrder={onOpenWorkOrder}
         />
       )}
     </div>

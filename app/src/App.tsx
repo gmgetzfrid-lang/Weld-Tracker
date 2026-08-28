@@ -8,6 +8,7 @@ import { ChangePassword } from "./pages/ChangePassword";
 import { Dashboard } from "./pages/Dashboard";
 import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
+import { NewEntryChooser } from "./components/NewEntryChooser";
 import { Roster } from "./pages/Roster";
 import { Performance } from "./pages/Performance";
 import { Statistics } from "./pages/Statistics";
@@ -74,10 +75,21 @@ const NAV: NavDef[] = [
   { key: "settings", label: "Settings", icon: "⚑", group: "Administration", admin: true, desc: "Branding, dropdown lists and your own password." },
 ];
 
+/** Where the Work Orders page should open when navigated to from elsewhere. */
+export type WoIntent =
+  | { kind: "record"; wo: string }
+  | { kind: "wizard" }
+  | null;
+
 export function App() {
   const { user, ready, logout, can } = useAuth();
   const [page, setPage] = useState<PageKey>("dashboard");
   const [settings, setSettings] = useState<Settings>({});
+  // One app-level "New Weld Entry" chooser and a single hub (Work Orders).
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [woIntent, setWoIntent] = useState<WoIntent>(null);
+  const openNewEntry = () => setEntryOpen(true);
+  const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch(() => {});
@@ -167,8 +179,22 @@ export function App() {
           </div>
         </header>
         <div className="content">
-          <PageView page={page} onNavigate={setPage} />
+          <PageView
+            page={page}
+            onNavigate={setPage}
+            onNewEntry={openNewEntry}
+            onOpenWorkOrder={openWorkOrder}
+            woIntent={woIntent}
+            clearWoIntent={() => setWoIntent(null)}
+          />
         </div>
+        {entryOpen && (
+          <NewEntryChooser
+            onClose={() => setEntryOpen(false)}
+            onNew={() => { setEntryOpen(false); setWoIntent({ kind: "wizard" }); setPage("workorders"); }}
+            onExisting={(wo) => { setEntryOpen(false); setWoIntent({ kind: "record", wo }); setPage("workorders"); }}
+          />
+        )}
       </main>
     </div>
   );
@@ -177,17 +203,31 @@ export function App() {
 function PageView({
   page,
   onNavigate,
+  onNewEntry,
+  onOpenWorkOrder,
+  woIntent,
+  clearWoIntent,
 }: {
   page: PageKey;
   onNavigate: (p: PageKey) => void;
+  onNewEntry: () => void;
+  onOpenWorkOrder: (wo: string) => void;
+  woIntent: WoIntent;
+  clearWoIntent: () => void;
 }) {
   switch (page) {
     case "dashboard":
-      return <Dashboard onNavigate={onNavigate} />;
+      return <Dashboard onNavigate={onNavigate} onNewEntry={onNewEntry} />;
     case "workorders":
-      return <WorkOrders />;
+      return (
+        <WorkOrders
+          onNewEntry={onNewEntry}
+          initial={woIntent}
+          onConsumedInitial={clearWoIntent}
+        />
+      );
     case "weldlog":
-      return <WeldLog />;
+      return <WeldLog onNewEntry={onNewEntry} onOpenWorkOrder={onOpenWorkOrder} />;
     case "roster":
       return <Roster />;
     case "performance":
