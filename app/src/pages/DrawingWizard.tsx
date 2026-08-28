@@ -183,13 +183,26 @@ function HeaderStep({
       <div className="wsection">
         <div className="wsection-head"><span className="wsection-ico">📐</span><h4>Drawing (controlled document)</h4>
           {composed && <span className="badge badge-blue" style={{ marginLeft: "auto" }}>{composed}</span>}</div>
+        <div className="field span-full" style={{ maxWidth: 560 }}>
+          <label>Drawing identity <span className="faint">— number, sheet and revision form one document name</span></label>
+          <div className="seg">
+            <div className="seg-part grow">
+              <span className="seg-lab">Drawing / Iso #</span>
+              <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} placeholder="ISO-1042" />
+            </div>
+            <div className="seg-part narrow">
+              <span className="seg-lab">Sheet</span>
+              <input value={drawing.sheet_no ?? ""} onChange={(e) => set("sheet_no", e.target.value)} placeholder="1" />
+            </div>
+            <div className="seg-part narrow">
+              <span className="seg-lab">Rev</span>
+              <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} placeholder="0" />
+            </div>
+          </div>
+          <div className="hint">Reads as <b>{composed || "…"}</b></div>
+        </div>
+
         <div className="form-grid cols-3">
-          <div className="field"><label>Drawing / Iso # *</label>
-            <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} placeholder="e.g. ISO-1042" /></div>
-          <div className="field"><label>Sheet # <span className="faint">(SHT)</span></label>
-            <input value={drawing.sheet_no ?? ""} onChange={(e) => set("sheet_no", e.target.value)} placeholder="e.g. 1" /></div>
-          <div className="field"><label>Revision</label>
-            <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} placeholder="0" /></div>
           <div className="field"><label>Line Spec <span className="faint">(autocompletes)</span></label>
             <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" />
             {!showBreak && (
