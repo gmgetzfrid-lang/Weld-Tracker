@@ -178,6 +178,38 @@ export interface NdeRequirement {
   rule_set: string;
 }
 
+/** Validation-engine severity. */
+export type Severity = "error" | "warning" | "advisory";
+
+/** One validation finding about a weld. */
+export interface Finding {
+  severity: Severity;
+  code: string;
+  message: string;
+}
+
+/** A weld with at least one finding, for the exceptions dashboard. */
+export interface WeldException {
+  weld_id: number;
+  weld_number?: string | null;
+  work_order?: string | null;
+  drawing_no?: string | null;
+  stamp_number?: string | null;
+  severity: Severity;
+  findings: Finding[];
+}
+
+/** The fleet-wide exceptions roll-up. */
+export interface ExceptionsSummary {
+  population: number;
+  flagged: number;
+  errors: number;
+  warnings: number;
+  advisories: number;
+  by_code: Record<string, number>;
+  welds: WeldException[];
+}
+
 /** One row of the Activity log (audit trail). */
 export interface AuditEntry {
   id: number;

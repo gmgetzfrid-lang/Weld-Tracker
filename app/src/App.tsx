@@ -6,6 +6,7 @@ import type { Settings } from "./types";
 import { Login } from "./pages/Login";
 import { ChangePassword } from "./pages/ChangePassword";
 import { Dashboard } from "./pages/Dashboard";
+import { Exceptions } from "./pages/Exceptions";
 import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
 import { NewEntryChooser } from "./components/NewEntryChooser";
@@ -27,6 +28,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 type PageKey =
   | "dashboard"
+  | "exceptions"
   | "weldlog"
   | "workorders"
   | "roster"
@@ -56,6 +58,7 @@ interface NavDef {
 
 const NAV: NavDef[] = [
   { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "Your at-a-glance totals — weld count, RT coverage and reject rate." },
+  { key: "exceptions", label: "Exceptions", icon: "⚠", group: "Overview", desc: "Every weld the validation engine flags — unresolved NDE, below-spec coverage, rejects awaiting repair, missing heat-treat. Clear the errors before closeout." },
   { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The hub: log new welds from an isometric, search, and open a work order's records. Start here." },
   { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory." },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
@@ -218,6 +221,8 @@ function PageView({
   switch (page) {
     case "dashboard":
       return <Dashboard onNavigate={onNavigate} onNewEntry={onNewEntry} />;
+    case "exceptions":
+      return <Exceptions onOpenWorkOrder={onOpenWorkOrder} />;
     case "workorders":
       return (
         <WorkOrders

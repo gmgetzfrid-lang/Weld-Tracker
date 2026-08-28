@@ -375,6 +375,18 @@ pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<Stri
     e(state.store.distinct_weld_values(&field))
 }
 
+/// Run the validation engine across the live weld population and return the
+/// exceptions roll-up (errors / warnings / advisories + the offending welds).
+/// `workOrder` optionally scopes it to one work order.
+#[tauri::command]
+pub fn weld_exceptions(
+    state: State<AppState>,
+    work_order: Option<String>,
+) -> R<weldcore::validate::ExceptionsSummary> {
+    state.require_login()?;
+    e(state.store.weld_exceptions(work_order.as_deref()))
+}
+
 /// Compute the EP 5-5-1 Table 4 required NDE coverage for a (partial) weld —
 /// the live readout the entry form shows while the drivers are being filled in.
 /// Uses the same engine the backend applies on save, so the form can never show

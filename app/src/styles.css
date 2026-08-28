@@ -630,6 +630,40 @@ tr.wt-voided > td { opacity: .55; }
 .activity-who { font-weight: 600; }
 .activity-what { color: var(--text-muted); word-break: break-word; }
 
+/* Exceptions dashboard */
+.page-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+.exc-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.exc-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface, #fff); cursor: pointer; transition: border-color .12s, box-shadow .12s; text-align: left; }
+.exc-tile:hover { border-color: var(--text-muted); }
+.exc-tile.active { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; }
+.exc-tile .exc-num { font-size: 28px; font-weight: 800; line-height: 1; }
+.exc-tile .exc-cap { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.exc-tile .exc-sub { font-size: 11px; color: var(--text-muted); }
+.exc-tile.sev-error .exc-num { color: #c8402c; }
+.exc-tile.sev-warning .exc-num { color: #b8860b; }
+.exc-tile.sev-advisory .exc-num { color: #2563eb; }
+.exc-codes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.exc-chip { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2, #f4f4f5); cursor: pointer; }
+.exc-chip.active { border-color: var(--teal); background: rgba(0,199,140,.12); }
+.exc-list { display: flex; flex-direction: column; gap: 8px; }
+.exc-row { border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px; padding: 10px 14px; background: var(--surface, #fff); }
+.exc-row.sev-error { border-left-color: #c8402c; }
+.exc-row.sev-warning { border-left-color: #b8860b; }
+.exc-row.sev-advisory { border-left-color: #2563eb; }
+.exc-row-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.exc-weld { font-weight: 800; }
+.exc-wo { border: none; background: rgba(0,199,140,.12); color: var(--teal); font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+.exc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.exc-dot.sev-error { background: #c8402c; }
+.exc-dot.sev-warning { background: #b8860b; }
+.exc-dot.sev-advisory { background: #2563eb; }
+.exc-findings { margin: 6px 0 0; padding-left: 22px; }
+.exc-findings li { font-size: 12.5px; margin: 2px 0; }
+.exc-findings li.sev-error { color: #c8402c; font-weight: 600; }
+.exc-findings li.sev-warning { color: #8a6d0b; }
+.exc-findings li.sev-advisory { color: var(--text-muted); }
+@media (max-width: 720px) { .exc-tiles { grid-template-columns: repeat(2, 1fr); } }
+
 /* Work order record header */
 .wo-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .wo-header-title h2 { margin: 0; font-size: 22px; color: var(--navy); }

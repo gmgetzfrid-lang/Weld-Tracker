@@ -7,6 +7,7 @@ import type {
   DocumentPackage,
   Drawing,
   DrawingRevision,
+  ExceptionsSummary,
   JobReport,
   Lookups,
   PdfWindow,
@@ -105,6 +106,8 @@ export const api = {
     invoke<number[]>("create_repair", { weldId, includeTracers }),
   distinctWeldValues: (field: string) =>
     invoke<string[]>("distinct_weld_values", { field }),
+  weldExceptions: (workOrder?: string | null) =>
+    invoke<ExceptionsSummary>("weld_exceptions", { workOrder: workOrder ?? null }),
 
   // work orders (records directory)
   listWorkOrders: () => invoke<WorkOrderSummary[]>("list_work_orders"),

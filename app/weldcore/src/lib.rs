@@ -20,6 +20,7 @@ pub mod nde;
 pub mod pipe;
 pub mod reports;
 pub mod seed;
+pub mod validate;
 pub mod welders;
 pub mod welds;
 pub mod wo_files;

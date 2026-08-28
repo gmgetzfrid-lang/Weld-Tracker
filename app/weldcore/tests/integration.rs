@@ -1041,3 +1041,79 @@ fn reopening_a_file_db_is_idempotent_with_no_stray_backup() {
     assert!(strays.is_empty(), "no backup should be made when nothing migrates");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------------
+// Validation engine + exceptions dashboard (P1).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn exceptions_roll_up_flags_unresolved_and_rejected() {
+    let s = store();
+    // A fully specified, in-spec weld → no findings.
+    let mut good = weld("500", "BW", "K1", "2026-02-01");
+    good.service_category = Some("Normal".into());
+    good.material_group = Some("Carbon Steel".into());
+    good.flange_class = Some("300".into());
+    good.shop_or_field = Some("SHOP".into());
+    good.nde_percent = Some("5%".into());
+    s.create_weld(&good, "alice").unwrap();
+
+    // An underspecified weld → NDE unresolved (error).
+    let mut vague = weld("500", "BW", "K2", "2026-02-02");
+    vague.weld_number = Some("W-unclear".into());
+    vague.material = None;
+    vague.material_group = None;
+    vague.service_category = None;
+    vague.flange_class = None;
+    vague.shop_or_field = Some("SHOP".into());
+    s.create_weld(&vague, "alice").unwrap();
+
+    // A rejected weld with no repair → rejected-unrepaired (error).
+    let mut rej = weld("500", "BW", "K3", "2026-02-03");
+    rej.weld_number = Some("W-rej".into());
+    rej.service_category = Some("Normal".into());
+    rej.material_group = Some("Carbon Steel".into());
+    rej.flange_class = Some("300".into());
+    rej.shop_or_field = Some("SHOP".into());
+    rej.nde_percent = Some("5%".into());
+    rej.nde_result = Some("Rejected".into());
+    s.create_weld(&rej, "alice").unwrap();
+
+    let ex = s.weld_exceptions(None).unwrap();
+    assert_eq!(ex.population, 3);
+    assert!(ex.flagged >= 2, "vague + rejected should be flagged");
+    assert!(ex.errors >= 2);
+    assert!(ex.by_code.contains_key("nde.unresolved"));
+    assert!(ex.by_code.contains_key("result.rejected_unrepaired"));
+    // Errors sort first.
+    assert_eq!(ex.welds[0].severity, weldcore::validate::Severity::Error);
+
+    // Scoping to a different work order yields an empty population.
+    let other = s.weld_exceptions(Some("999")).unwrap();
+    assert_eq!(other.population, 0);
+    assert!(other.welds.is_empty());
+}
+
+#[test]
+fn rejected_weld_with_repair_is_downgraded() {
+    let s = store();
+    let mut rej = weld("600", "BW", "K1", "2026-02-01");
+    rej.weld_number = Some("W1".into());
+    rej.service_category = Some("Normal".into());
+    rej.material_group = Some("Carbon Steel".into());
+    rej.flange_class = Some("300".into());
+    rej.shop_or_field = Some("SHOP".into());
+    rej.nde_percent = Some("5%".into());
+    rej.nde_result = Some("Rejected".into());
+    let id = s.create_weld(&rej, "alice").unwrap();
+    // Log a repair (creates W1R1).
+    s.create_repair(id, false, "alice").unwrap();
+
+    let ex = s.weld_exceptions(Some("600")).unwrap();
+    assert!(
+        ex.by_code.contains_key("result.rejected_repaired"),
+        "a rejected weld with a repair child should be an advisory, not an error"
+    );
+    assert!(!ex.by_code.contains_key("result.rejected_unrepaired"));
+}
+

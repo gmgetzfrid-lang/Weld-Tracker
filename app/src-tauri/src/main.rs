@@ -121,6 +121,7 @@ fn main() {
             backup_database,
             create_repair,
             distinct_weld_values,
+            weld_exceptions,
             list_drawings,
             list_work_orders,
             list_drawings_for_wo,

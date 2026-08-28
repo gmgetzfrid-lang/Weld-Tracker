@@ -470,6 +470,107 @@ impl Store {
         Ok(n)
     }
 
+    /// Run the validation engine across the live, counted weld population and
+    /// roll up the findings for the exceptions dashboard. Cross-weld rules that
+    /// `validate_weld` can't see on its own are applied here: a rejected weld is
+    /// downgraded to an advisory when a repair child (`<n>R<k>`) exists, and
+    /// escalated to an error when none does. `wo` optionally scopes to one work
+    /// order.
+    pub fn weld_exceptions(&self, wo: Option<&str>) -> Result<crate::validate::ExceptionsSummary> {
+        use crate::validate::{self, Finding, Severity, WeldException};
+
+        let conn = self.conn.lock().unwrap();
+        let mut sql = format!(
+            "SELECT {COLS} FROM welds
+             WHERE count_omission = 0 AND voided_at IS NULL"
+        );
+        if wo.map(|s| !s.trim().is_empty()).unwrap_or(false) {
+            sql.push_str(" AND work_order = ?1 COLLATE NOCASE");
+        }
+        sql.push_str(" ORDER BY id DESC");
+        let mut stmt = conn.prepare(&sql)?;
+        let welds: Vec<Weld> = match wo.filter(|s| !s.trim().is_empty()) {
+            Some(w) => stmt
+                .query_map(params![w], weld_from_row)?
+                .collect::<rusqlite::Result<_>>()?,
+            None => stmt
+                .query_map([], weld_from_row)?
+                .collect::<rusqlite::Result<_>>()?,
+        };
+        drop(stmt);
+        drop(conn);
+
+        // Weld numbers present, to detect repair children (`<base>R<k>`).
+        let numbers: Vec<String> = welds
+            .iter()
+            .filter_map(|w| w.weld_number.clone())
+            .map(|s| s.trim().to_uppercase())
+            .collect();
+        let has_repair = |base: &str| {
+            let prefix = format!("{}R", base.trim().to_uppercase());
+            numbers.iter().any(|n| n.starts_with(&prefix))
+        };
+
+        let mut summary = validate::ExceptionsSummary {
+            population: welds.len() as i64,
+            ..Default::default()
+        };
+        for w in &welds {
+            let mut findings = validate::validate_weld(w);
+            // Layer the repair-chain rule onto a rejected weld.
+            if let Some(pos) = findings.iter().position(|f| f.code == "result.rejected") {
+                let base = w.weld_number.clone().unwrap_or_default();
+                if has_repair(&base) {
+                    findings[pos] = Finding {
+                        severity: Severity::Advisory,
+                        code: "result.rejected_repaired".into(),
+                        message: "Weld was rejected — repair logged".into(),
+                    };
+                } else {
+                    findings[pos] = Finding {
+                        severity: Severity::Error,
+                        code: "result.rejected_unrepaired".into(),
+                        message: "Weld was rejected — no repair logged".into(),
+                    };
+                }
+            }
+            if findings.is_empty() {
+                continue;
+            }
+            for f in &findings {
+                *summary.by_code.entry(f.code.clone()).or_insert(0) += 1;
+                match f.severity {
+                    Severity::Error => summary.errors += 1,
+                    Severity::Warning => summary.warnings += 1,
+                    Severity::Advisory => summary.advisories += 1,
+                }
+            }
+            let severity = validate::worst(&findings).unwrap_or(Severity::Advisory);
+            summary.flagged += 1;
+            summary.welds.push(WeldException {
+                weld_id: w.id,
+                weld_number: w.weld_number.clone(),
+                work_order: w.work_order.clone(),
+                drawing_no: w.drawing_no.clone(),
+                stamp_number: w.stamp_number.clone(),
+                severity,
+                findings,
+            });
+        }
+        // Worst-severity first, then by work order for a stable read.
+        summary.welds.sort_by(|a, b| {
+            let rank = |s: Severity| match s {
+                Severity::Error => 0,
+                Severity::Warning => 1,
+                Severity::Advisory => 2,
+            };
+            rank(a.severity)
+                .cmp(&rank(b.severity))
+                .then_with(|| a.work_order.cmp(&b.work_order))
+        });
+        Ok(summary)
+    }
+
     pub fn create_weld(&self, w: &Weld, actor: &str) -> Result<i64> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
@@ -670,6 +771,12 @@ impl Store {
         repair.brinnel_complete = None;
         repair.pmi_date = None;
         repair.inches_of_defect = None;
+        // A repair is a fresh weld awaiting examination — clear the consolidated
+        // NDE result too, or it inherits the original's "Rejected" and reads as
+        // an un-repaired reject. The coverage spec (nde_percent) still applies.
+        repair.nde_result = None;
+        repair.nde_date = None;
+        repair.nde_types = None;
         repair.count_omission = false;
         repair.status = "Required".to_string();
         repair.description = Some(format!("Repair of {base}"));
@@ -684,6 +791,9 @@ impl Store {
                 tracer.rt_date = None;
                 tracer.rt_accepted = None;
                 tracer.rt_rejected = None;
+                tracer.nde_result = None;
+                tracer.nde_date = None;
+                tracer.nde_types = None;
                 tracer.count_omission = false;
                 tracer.status = "Required".to_string();
                 tracer.description = Some(format!("W{base} Tracer {k}"));
