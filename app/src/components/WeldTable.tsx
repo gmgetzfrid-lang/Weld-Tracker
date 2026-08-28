@@ -200,22 +200,26 @@ export function WeldTable({
 }
 
 /**
- * When a weld's logged NDE % contradicts the facility rule for its
- * shop/field/tie-in status, returns an explanatory message; otherwise null.
- * The backend supplies `expected_nde_percent` from the rule.
+ * When a weld's logged NDE % falls *below* the EP 5-5-1 Table 4 requirement for
+ * its service / material / class / joint, returns an explanatory message;
+ * otherwise null. Over-inspection (a higher %) is allowed and never warns. The
+ * backend supplies `expected_nde_percent`, `_method` and `_note` from the
+ * single-source-of-truth engine.
  */
 function specWarning(w: Weld): string | null {
   const exp = w.expected_nde_percent;
   if (!exp) return null;
-  const actual = w.nde_percent ?? "";
-  if (actual.toLowerCase() === exp.toLowerCase()) return null;
-  const kind =
-    (w.old_to_new ?? "").toUpperCase() === "Y" ? "new-to-old tie-in"
-    : (w.shop_or_field ?? "").toUpperCase() === "SHOP" ? "shop weld"
-    : "field weld";
-  return actual
-    ? `Facility rule: a ${kind} is ${exp} NDE — this weld is logged at ${actual}.`
-    : `Facility rule: a ${kind} is ${exp} NDE — this weld has no NDE % set.`;
+  const reqPct = Number((exp.match(/\d+/) ?? ["0"])[0]);
+  const actualRaw = (w.nde_percent ?? "").trim();
+  // API 570 in-lieu-of-hydro records its own two-form NDE, not a percentage.
+  if (/api|570/i.test(actualRaw)) return null;
+  const actualPct = actualRaw ? Number((actualRaw.match(/\d+/) ?? ["0"])[0]) : null;
+  if (actualPct != null && actualPct >= reqPct) return null;
+  const method = w.expected_nde_method ? ` (${w.expected_nde_method})` : "";
+  const note = w.expected_nde_note ? ` — ${w.expected_nde_note}` : "";
+  return actualRaw
+    ? `Table 4 requires ${exp}${method}${note}. This weld is logged at ${actualRaw}, below spec.`
+    : `Table 4 requires ${exp}${method}${note}. This weld has no NDE % set.`;
 }
 
 function DetailPanel({

@@ -9,11 +9,13 @@ pub mod auth;
 pub mod certs;
 pub mod drawings;
 pub mod models;
+pub mod nde;
 pub mod pipe;
 pub mod reports;
 pub mod seed;
 pub mod welders;
 pub mod welds;
+pub mod wo_files;
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -111,6 +113,7 @@ impl Store {
             (5, include_str!("migrations/0005_welder_certs.sql")),
             (6, include_str!("migrations/0006_drop_welder_legacy.sql")),
             (7, include_str!("migrations/0007_doc_control.sql")),
+            (8, include_str!("migrations/0008_nde_table4.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {

@@ -11,8 +11,10 @@ import type {
   PdfWindow,
   MonthlyReport,
   NdeComplianceReport,
+  NdeRequirement,
   PerformanceReport,
   PipeRow,
+  QualityFile,
   Settings,
   SummaryReport,
   User,
@@ -126,6 +128,26 @@ export const api = {
     invoke<DocumentPackage[]>("list_packages", { workOrder }),
   getPackagePdf: (id: number) =>
     invoke<[string, string] | null>("get_package_pdf", { id }),
+
+  // work-order quality package
+  addWoFile: (
+    workOrder: string,
+    category: string | null,
+    name: string,
+    mime: string | null,
+    dataBase64: string,
+    note: string | null
+  ) =>
+    invoke<number>("add_wo_file", { workOrder, category, name, mime, dataBase64, note }),
+  listWoFiles: (workOrder: string) =>
+    invoke<QualityFile[]>("list_wo_files", { workOrder }),
+  getWoFile: (id: number) =>
+    invoke<[string, string, string] | null>("get_wo_file", { id }),
+  deleteWoFile: (id: number) => invoke<void>("delete_wo_file", { id }),
+
+  // live EP 5-5-1 Table 4 requirement for a (partial) weld
+  computeNde: (weld: Partial<Weld>) =>
+    invoke<NdeRequirement>("compute_nde", { weld }),
   getRevisionPdf: (revId: number) =>
     invoke<PdfWindow | null>("get_revision_pdf", { revId }),
   setEffectiveSource: (drawingId: number, packageId: number, pageFrom: number, pageTo: number) =>

@@ -5,6 +5,7 @@ import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
 import { WeldTable } from "../components/WeldTable";
 import { docName, RevisePanel, RevisionHistory, PackageIngest } from "../docControl";
+import { QualityPackage } from "./QualityPackage";
 
 function blankWeld(workOrder: string): Weld {
   return {
@@ -158,6 +159,10 @@ export function WorkOrderRecord({
             onChanged={load}
             onAddWeld={addWeld}
           />
+
+          <div style={{ marginTop: 26 }}>
+            <QualityPackage workOrder={workOrder} />
+          </div>
         </>
       )}
 

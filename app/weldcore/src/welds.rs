@@ -1,7 +1,44 @@
 //! Weld-log CRUD, filtering, and the rejected-weld repair workflow.
 
-use crate::{weld_inches, Error, Result, Store, Weld, WeldFilter};
+use crate::{nde, weld_inches, Error, Result, Store, Weld, WeldFilter};
 use rusqlite::{params, params_from_iter, Row, ToSql};
+
+/// The EP 5-5-1 Table 4 requirement for a (possibly partial) weld — the live
+/// readout the entry form shows as the user fills in the drivers. Single source
+/// of truth: the same engine `apply_derived` uses on save.
+pub fn requirement_for_weld(w: &Weld) -> nde::NdeRequirement {
+    nde::table4(&nde_inputs_for(w))
+}
+
+/// Build the Table 4 inputs from a weld. Material group falls back to the
+/// free-text `material`; the tie-in flag honours both the boolean and the
+/// legacy `old_to_new = 'Y'` text; the governing wall falls back to thickness.
+pub(crate) fn nde_inputs_for(w: &Weld) -> nde::NdeInputs<'_> {
+    let mg = w
+        .material_group
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .or(w.material.as_deref());
+    let new_to_existing = w.new_to_existing
+        || w.old_to_new
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("Y"))
+            .unwrap_or(false);
+    nde::NdeInputs {
+        b31_code: w.b31_code.as_deref(),
+        service_category: w.service_category.as_deref(),
+        material_group: mg,
+        flange_class: w.flange_class.as_deref(),
+        aes_service: w.aes_service,
+        shop_or_field: w.shop_or_field.as_deref(),
+        joint_type: w.joint_type.as_deref(),
+        new_to_existing,
+        size: w.size,
+        governing_wall: w.governing_wall.or(w.thickness),
+        b31_temp_f: w.b31_temp_f,
+        b31_pressure_psig: w.b31_pressure_psig,
+    }
+}
 
 /// The facility's default NDE coverage for a weld, from its shop/field status
 /// and whether it is a new-to-old tie-in. A tie-in is 100% regardless of
@@ -33,6 +70,9 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     brinnel_complete, pmi_date, hydro_pressure, hydro_comp_date, wps_number,
     description, file_location, status, cert_alias,
     nde_percent, nde_types, nde_result, nde_date, pwht_temp, brinnel_value, hydro_time_held,
+    b31_code, service_category, material_group, flange_class, aes_service, new_to_existing,
+    ut_wall_existing, ut_wall_new, governing_wall, pwht_required, pmi_required, hydro_status,
+    b31_temp_f, b31_pressure_psig, required_nde_method,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
 
@@ -47,6 +87,9 @@ const WRITE_COLS: &[&str] = &[
     "brinnel_complete", "pmi_date", "hydro_pressure", "hydro_comp_date", "wps_number",
     "description", "file_location", "status", "cert_alias",
     "nde_percent", "nde_types", "nde_result", "nde_date", "pwht_temp", "brinnel_value", "hydro_time_held",
+    "b31_code", "service_category", "material_group", "flange_class", "aes_service", "new_to_existing",
+    "ut_wall_existing", "ut_wall_new", "governing_wall", "pwht_required", "pmi_required", "hydro_status",
+    "b31_temp_f", "b31_pressure_psig", "required_nde_method",
     "drawing_id", "groove_type", "process", "bubble_page", "bubble_x", "bubble_y", "joint_x", "joint_y",
 ];
 
@@ -76,6 +119,14 @@ fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
         Box::new(w.nde_result.clone()), Box::new(w.nde_date.clone()),
         Box::new(w.pwht_temp.clone()), Box::new(w.brinnel_value.clone()),
         Box::new(w.hydro_time_held.clone()),
+        Box::new(w.b31_code.clone()), Box::new(w.service_category.clone()),
+        Box::new(w.material_group.clone()), Box::new(w.flange_class.clone()),
+        Box::new(w.aes_service as i64), Box::new(w.new_to_existing as i64),
+        Box::new(w.ut_wall_existing), Box::new(w.ut_wall_new), Box::new(w.governing_wall),
+        Box::new(w.pwht_required as i64), Box::new(w.pmi_required as i64),
+        Box::new(w.hydro_status.clone()),
+        Box::new(w.b31_temp_f), Box::new(w.b31_pressure_psig),
+        Box::new(w.required_nde_method.clone()),
         Box::new(w.drawing_id), Box::new(w.groove_type.clone()), Box::new(w.process.clone()),
         Box::new(w.bubble_page), Box::new(w.bubble_x), Box::new(w.bubble_y),
         Box::new(w.joint_x), Box::new(w.joint_y),
@@ -83,7 +134,7 @@ fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
 }
 
 fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
-    Ok(Weld {
+    let mut w = Weld {
         id: r.get("id")?,
         unit: r.get("unit")?,
         drawing_no: r.get("drawing_no")?,
@@ -135,6 +186,21 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         pwht_temp: r.get("pwht_temp")?,
         brinnel_value: r.get("brinnel_value")?,
         hydro_time_held: r.get("hydro_time_held")?,
+        b31_code: r.get("b31_code")?,
+        service_category: r.get("service_category")?,
+        material_group: r.get("material_group")?,
+        flange_class: r.get("flange_class")?,
+        aes_service: r.get::<_, i64>("aes_service")? != 0,
+        new_to_existing: r.get::<_, i64>("new_to_existing")? != 0,
+        ut_wall_existing: r.get("ut_wall_existing")?,
+        ut_wall_new: r.get("ut_wall_new")?,
+        governing_wall: r.get("governing_wall")?,
+        pwht_required: r.get::<_, i64>("pwht_required")? != 0,
+        pmi_required: r.get::<_, i64>("pmi_required")? != 0,
+        hydro_status: r.get("hydro_status")?,
+        b31_temp_f: r.get("b31_temp_f")?,
+        b31_pressure_psig: r.get("b31_pressure_psig")?,
+        required_nde_method: r.get("required_nde_method")?,
         drawing_id: r.get("drawing_id")?,
         groove_type: r.get("groove_type")?,
         process: r.get("process")?,
@@ -146,40 +212,107 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         created_by: r.get("created_by")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
-        // Computed, not stored: the facility-rule spec for this weld's status.
-        expected_nde_percent: default_spec_for(
-            r.get::<_, Option<String>>("old_to_new")?.as_deref(),
-            r.get::<_, Option<String>>("shop_or_field")?.as_deref(),
-        )
-        .map(|s| s.to_string()),
-    })
+        // Computed below from the full EP 5-5-1 Table 4 engine.
+        expected_nde_percent: None,
+        expected_nde_method: None,
+        expected_nde_note: None,
+    };
+    let req = nde::table4(&nde_inputs_for(&w));
+    w.expected_nde_percent = Some(format!("{}%", req.required_percent));
+    w.expected_nde_method = Some(req.method.clone());
+    let mut note = req.note.clone();
+    for s in &req.supplemental {
+        note.push_str(" • ");
+        note.push_str(s);
+    }
+    w.expected_nde_note = Some(note);
+    Ok(w)
 }
 
 impl Store {
     /// Recompute derived fields (weld inches, wall thickness) the way the
     /// workbook formulas did.
     fn apply_derived(&self, w: &mut Weld) -> Result<()> {
-        if let Some(size) = w.size {
-            w.weld_inches = Some(weld_inches(size));
-            if let Some(sched) = &w.schedule {
-                if let Some(t) = self.lookup_thickness(size, sched)? {
-                    w.thickness = Some(t);
-                }
+        // Keep the tie-in boolean and the legacy `old_to_new` text in sync so
+        // both the new engine and the older reports agree on tie-in status.
+        let tie_in = w.new_to_existing
+            || w.old_to_new
+                .as_deref()
+                .map(|s| s.eq_ignore_ascii_case("Y"))
+                .unwrap_or(false);
+        w.new_to_existing = tie_in;
+        w.old_to_new = Some(if tie_in { "Y" } else { "N" }.to_string());
+
+        // Derive the material group from the free-text material when unset, so
+        // the NDE engine has a group even if the user only picked a grade.
+        if w
+            .material_group
+            .as_deref()
+            .map(|s| s.trim().is_empty())
+            .unwrap_or(true)
+        {
+            if let Some(g) = nde::classify_material(w.material.as_deref()) {
+                w.material_group = Some(nde::group_label(g).to_string());
             }
         }
-        // Facility rule: apply the required NDE coverage automatically when it
-        // wasn't set — shop welds 5%, field welds 10%, new-to-old tie-ins 100%.
-        // A tie-in is 100% regardless of shop/field. An explicit NDE % is never
-        // overridden.
+
+        if let Some(size) = w.size {
+            w.weld_inches = Some(weld_inches(size));
+        }
+
+        // Governing wall thickness. A new-to-existing tie-in is judged on the
+        // lesser of its two UT readings (the existing side is often corroded and
+        // thinner) — NOT the schedule. A normal weld uses the pipe-table wall.
+        if tie_in {
+            let min_wall = [w.ut_wall_existing, w.ut_wall_new]
+                .into_iter()
+                .flatten()
+                .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.min(v))));
+            if let Some(m) = min_wall {
+                w.governing_wall = Some(m);
+                w.thickness = Some(m);
+            }
+        } else if let (Some(size), Some(sched)) = (w.size, w.schedule.clone()) {
+            if let Some(t) = self.lookup_thickness(size, &sched)? {
+                w.thickness = Some(t);
+            }
+            w.governing_wall = w.thickness;
+        }
+
+        // EP 5-5-1 Table 4: compute the required NDE coverage and method.
+        let req = nde::table4(&nde_inputs_for(w));
+        w.required_nde_method = Some(req.method.clone());
+        // Auto-fill the required NDE % when the user left it blank. An explicit
+        // value is never overridden.
         let nde_blank = w
             .nde_percent
             .as_deref()
             .map(|s| s.trim().is_empty())
             .unwrap_or(true);
         if nde_blank {
-            if let Some(p) = default_spec_for(w.old_to_new.as_deref(), w.shop_or_field.as_deref()) {
-                w.nde_percent = Some(p.to_string());
-            }
+            // Honour an explicitly-set legacy spec flag; otherwise take the
+            // Table 4 requirement. Either way the read-only expected_nde_percent
+            // still reflects Table 4 and flags any mismatch.
+            let from_flag = if w.spec_5 {
+                Some("5%")
+            } else if w.spec_10 {
+                Some("10%")
+            } else if w.spec_20 {
+                Some("20%")
+            } else if w.spec_25 {
+                Some("25%")
+            } else if w.spec_50 {
+                Some("50%")
+            } else if w.spec_100 {
+                Some("100%")
+            } else {
+                None
+            };
+            w.nde_percent = Some(
+                from_flag
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{}%", req.required_percent)),
+            );
         }
         // NDE % drives the coverage-spec flags the level reports group on.
         if let Some(p) = w.nde_percent.as_deref() {

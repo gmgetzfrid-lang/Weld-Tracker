@@ -142,6 +142,55 @@ pub struct Weld {
     pub joint_type: Option<String>,
     #[serde(default)]
     pub old_to_new: Option<String>,
+    // --- EP 5-5-1 Table 4 drivers (feed the NDE-determination engine) ---
+    /// Governing piping code: B31.3 (default) | B31.1 | B31.4.
+    #[serde(default)]
+    pub b31_code: Option<String>,
+    /// Fluid-service category: Category D | Normal | Category M | Severe Cyclic
+    /// | Fired Heater Coil.
+    #[serde(default)]
+    pub service_category: Option<String>,
+    /// Material P-number group (Carbon Steel | Low Alloy P4-P5A | Low Alloy
+    /// P5B-P5C | Titanium | Stainless/Nickel). Auto-derived from `material`
+    /// when blank; editable per weld.
+    #[serde(default)]
+    pub material_group: Option<String>,
+    /// Flange / pressure class: 150 | 300 | 600 | 900 | 1500.
+    #[serde(default)]
+    pub flange_class: Option<String>,
+    /// AES service — bumps Class-300-and-less carbon steel from 5/10 to 10/20 RT.
+    #[serde(default)]
+    pub aes_service: bool,
+    /// New-to-existing (tie-in) weld — 100% NDE mandatory, wall governed by UT.
+    #[serde(default)]
+    pub new_to_existing: bool,
+    /// UT wall reading of the existing (often corroded) side of a tie-in.
+    #[serde(default)]
+    pub ut_wall_existing: Option<f64>,
+    /// UT wall reading of the new side of a tie-in.
+    #[serde(default)]
+    pub ut_wall_new: Option<f64>,
+    /// Governing (lesser) wall the weld is judged on — computed for tie-ins.
+    #[serde(default)]
+    pub governing_wall: Option<f64>,
+    /// Whether PWHT is required for this weld (gates the temp / time fields).
+    #[serde(default)]
+    pub pwht_required: bool,
+    /// Whether PMI is required for this weld (gates the PMI date field).
+    #[serde(default)]
+    pub pmi_required: bool,
+    /// Pressure-test disposition: Complete | NA-API570 | NA-Service | Pending.
+    #[serde(default)]
+    pub hydro_status: Option<String>,
+    /// B31.1 metal temperature (°F) — only used when b31_code = B31.1.
+    #[serde(default)]
+    pub b31_temp_f: Option<f64>,
+    /// B31.1 design pressure (psig) — only used when b31_code = B31.1.
+    #[serde(default)]
+    pub b31_pressure_psig: Option<f64>,
+    /// Computed-on-write copy of the required NDE method, for report queries.
+    #[serde(default)]
+    pub required_nde_method: Option<String>,
     #[serde(default)]
     pub weld_number: Option<String>,
     #[serde(default)]
@@ -233,11 +282,44 @@ pub struct Weld {
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,
-    /// Read-only: the facility-rule NDE % for this weld's shop/field/tie-in
-    /// status (None when no rule applies). Computed on read, never stored; the
-    /// UI flags a weld whose actual NDE % differs from this.
+    /// Read-only: the EP 5-5-1 Table 4 required NDE % for this weld (None when
+    /// the drivers are insufficient). Computed on read, never stored; the UI
+    /// flags a weld whose actual NDE % differs from this.
     #[serde(default)]
     pub expected_nde_percent: Option<String>,
+    /// Read-only: the required NDE method label ("RT", "PT/MT root & final", …).
+    #[serde(default)]
+    pub expected_nde_method: Option<String>,
+    /// Read-only: the governing Table 4 row / rule, plus any supplemental
+    /// requirements (NPS ≥ 24 spot RT, thick-wall UT, weld-o-let root VT, …).
+    #[serde(default)]
+    pub expected_nde_note: Option<String>,
+}
+
+/// One file in a work order's quality package (weld map, NDE report, UT, MTR,
+/// hydro / PWHT chart, PMI record, …). The bytes are fetched separately.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct QualityFile {
+    #[serde(default)]
+    pub id: i64,
+    pub work_order: String,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub mime: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// True when the row still holds its bytes (viewable / downloadable).
+    #[serde(default)]
+    pub has_file: bool,
+    #[serde(default)]
+    pub size: i64,
+    #[serde(default)]
+    pub uploaded_by: Option<String>,
+    #[serde(default)]
+    pub uploaded_at: String,
 }
 
 /// An isometric drawing that welds are placed on.

@@ -79,6 +79,22 @@ export interface Weld {
   weld_inches?: number | null;
   joint_type?: string | null;
   old_to_new?: string | null;
+  // EP 5-5-1 Table 4 drivers
+  b31_code?: string | null;
+  service_category?: string | null;
+  material_group?: string | null;
+  flange_class?: string | null;
+  aes_service?: boolean;
+  new_to_existing?: boolean;
+  ut_wall_existing?: number | null;
+  ut_wall_new?: number | null;
+  governing_wall?: number | null;
+  pwht_required?: boolean;
+  pmi_required?: boolean;
+  hydro_status?: string | null;
+  b31_temp_f?: number | null;
+  b31_pressure_psig?: number | null;
+  required_nde_method?: string | null;
   weld_number?: string | null;
   count_omission: boolean;
   stamp_number?: string | null;
@@ -123,8 +139,37 @@ export interface Weld {
   created_by?: string | null;
   created_at?: string;
   updated_at?: string;
-  /** Read-only: the facility-rule NDE % for this weld's shop/field/tie-in status. */
+  /** Read-only: the EP 5-5-1 Table 4 required NDE % for this weld. */
   expected_nde_percent?: string | null;
+  /** Read-only: the required NDE method label ("RT", "PT/MT root & final", …). */
+  expected_nde_method?: string | null;
+  /** Read-only: the governing Table 4 row plus any supplemental requirements. */
+  expected_nde_note?: string | null;
+}
+
+/** The computed EP 5-5-1 Table 4 requirement (live readout during entry). */
+export interface NdeRequirement {
+  rt_percent: number;
+  ptmt_percent: number;
+  required_percent: number;
+  method: string;
+  root_and_final: boolean;
+  note: string;
+  supplemental: string[];
+}
+
+/** One file in a work order's quality package. */
+export interface QualityFile {
+  id: number;
+  work_order: string;
+  category?: string | null;
+  name?: string | null;
+  mime?: string | null;
+  note?: string | null;
+  has_file: boolean;
+  size: number;
+  uploaded_by?: string | null;
+  uploaded_at: string;
 }
 
 export interface Drawing {

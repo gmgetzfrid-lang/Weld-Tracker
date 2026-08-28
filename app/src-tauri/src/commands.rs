@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use tauri::State;
 use weldcore::reports::*;
 use weldcore::{
-    CriteriaRow, DocumentPackage, Drawing, DrawingRevision, Lookup, PipeRow, Store, User, Weld,
-    WeldFilter, Welder, WelderCert, WelderContinuity, WorkOrderSummary,
+    CriteriaRow, DocumentPackage, Drawing, DrawingRevision, Lookup, PipeRow, QualityFile, Store,
+    User, Weld, WeldFilter, Welder, WelderCert, WelderContinuity, WorkOrderSummary,
 };
 
 pub struct AppState {
@@ -319,6 +319,16 @@ pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<Stri
     e(state.store.distinct_weld_values(&field))
 }
 
+/// Compute the EP 5-5-1 Table 4 required NDE coverage for a (partial) weld —
+/// the live readout the entry form shows while the drivers are being filled in.
+/// Uses the same engine the backend applies on save, so the form can never show
+/// a different requirement than the record is judged against.
+#[tauri::command]
+pub fn compute_nde(state: State<AppState>, weld: Weld) -> R<weldcore::nde::NdeRequirement> {
+    state.require_login()?;
+    Ok(weldcore::welds::requirement_for_weld(&weld))
+}
+
 // --------------------------- drawings & bubbles ----------------------------
 
 #[tauri::command]
@@ -425,6 +435,50 @@ pub fn list_packages(state: State<AppState>, work_order: String) -> R<Vec<Docume
 pub fn get_package_pdf(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
     state.require_login()?;
     e(state.store.get_package_pdf(id))
+}
+
+// ----------------------- work-order quality package ------------------------
+
+#[tauri::command]
+pub fn add_wo_file(
+    state: State<AppState>,
+    work_order: String,
+    category: Option<String>,
+    name: String,
+    mime: Option<String>,
+    data_base64: String,
+    note: Option<String>,
+) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store.add_wo_file(
+        &work_order,
+        category.as_deref(),
+        &name,
+        mime.as_deref(),
+        &data_base64,
+        note.as_deref(),
+        &actor.username,
+    ))
+}
+
+#[tauri::command]
+pub fn list_wo_files(state: State<AppState>, work_order: String) -> R<Vec<QualityFile>> {
+    state.require_login()?;
+    e(state.store.list_wo_files(&work_order))
+}
+
+#[tauri::command]
+pub fn get_wo_file(state: State<AppState>, id: i64) -> R<Option<(String, String, String)>> {
+    state.require_login()?;
+    e(state.store.get_wo_file(id))
+}
+
+#[tauri::command]
+pub fn delete_wo_file(state: State<AppState>, id: i64) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state
+        .store
+        .delete_wo_file(id, &actor.username, &actor.role))
 }
 
 #[tauri::command]
