@@ -49,6 +49,17 @@ jobs:
       - name: Tests
         run: cargo test
 
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Audit Rust dependencies
+        # Fails on a security vulnerability; unmaintained/unsound advisories in
+        # transitive GUI-stack crates are warnings only and do not block.
+        working-directory: app
+        run: cargo audit
+
   build-windows:
     needs: weldcore-checks
     runs-on: windows-latest
@@ -79,6 +90,11 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Audit shipped dependencies
+        # Only the production dependency tree ships in the app; dev-only tooling
+        # (e.g. the Vite dev server) is out of scope for the installed product.
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build Tauri app (NSIS per-user installer)
         run: npm run tauri build -- --bundles nsis
