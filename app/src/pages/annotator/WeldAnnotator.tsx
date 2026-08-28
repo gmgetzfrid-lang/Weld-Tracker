@@ -24,12 +24,16 @@ export function WeldAnnotator({
   lookups,
   sizes,
   onChange,
+  onComplete,
 }: {
   drawing: Drawing;
   welders: Welder[];
   lookups: Lookups;
   sizes: number[];
   onChange?: (welds: Weld[]) => void;
+  /** Called when the guided Fill-attributes walk finishes the last weld —
+   * the wizard uses this to move on to the review table. */
+  onComplete?: () => void;
 }) {
   const { can } = useAuth();
   const toast = useToast();
@@ -344,7 +348,7 @@ export function WeldAnnotator({
         <span className="muted" style={{ width: 42, textAlign: "center" }}>{Math.round(scale * 100)}%</span>
         <button className="btn btn-sm" onClick={() => setScale((s) => Math.min(4, s + 0.2))}>+</button>
         {editable && guided === null && ordered.length > 0 && (
-          <button className="btn btn-sm btn-accent" onClick={() => setGuided(0)}>Fill attributes ▶</button>
+          <button className="btn btn-accent" style={{ fontWeight: 700 }} title="Walk each weld on the map in order and fill its data — you won't have to remember which bubble is which" onClick={() => setGuided(0)}>▶ Fill attributes ({ordered.length})</button>
         )}
         <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
       </div>
@@ -421,6 +425,7 @@ export function WeldAnnotator({
               weld={gActive}
               index={guided}
               total={ordered.length}
+              welders={welders}
               lookups={lookups}
               sizes={sizes}
               specOptions={specOptions}
@@ -431,11 +436,17 @@ export function WeldAnnotator({
                   await api.updateWeld({ ...w, ...changes });
                   await refreshWelds();
                 } catch (e) { toast.push("err", errMsg(e)); }
-                if (guided + 1 >= ordered.length) { setGuided(null); toast.push("ok", "All welds filled"); }
-                else setGuided(guided + 1);
+                if (guided + 1 >= ordered.length) {
+                  setGuided(null);
+                  toast.push("ok", "All welds filled — review & save");
+                  onComplete?.();
+                } else setGuided(guided + 1);
               }}
               onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
-              onSkip={() => { if (guided + 1 >= ordered.length) setGuided(null); else setGuided(guided + 1); }}
+              onSkip={() => {
+                if (guided + 1 >= ordered.length) { setGuided(null); onComplete?.(); }
+                else setGuided(guided + 1);
+              }}
               onExit={() => setGuided(null)}
             />
           )}
@@ -603,24 +614,26 @@ function Legend({
 }
 
 function GuidedPopup({
-  weld, index, total, lookups, sizes, specOptions, anchor, onSaveNext, onBack, onSkip, onExit,
+  weld, index, total, welders, lookups, sizes, specOptions, anchor, onSaveNext, onBack, onSkip, onExit,
 }: {
-  weld: Weld; index: number; total: number; lookups: Lookups; sizes: number[];
+  weld: Weld; index: number; total: number; welders: Welder[]; lookups: Lookups; sizes: number[];
   specOptions: string[];
   anchor: { cx: number; cy: number; left: boolean; pageH: number };
   onSaveNext: (c: Partial<Weld>) => void; onBack: () => void; onSkip: () => void; onExit: () => void;
 }) {
   const mk = (w: Weld) => ({
+    stamp_number: w.stamp_number ?? "",
     size: w.size?.toString() ?? "", joint_type: w.joint_type ?? "", groove_type: w.groove_type ?? "",
     process: w.process ?? "", schedule: w.schedule ?? "", material: w.material ?? "",
-    line_spec: w.line_spec ?? "", nde_percent: w.nde_percent ?? "",
+    line_spec: w.line_spec ?? "", nde_percent: w.nde_percent ?? "", nde_types: w.nde_types ?? "",
   });
   const [f, setF] = useState(mk(weld));
   useEffect(() => { setF(mk(weld)); }, [weld.id]);
   const save = () => onSaveNext({
+    stamp_number: f.stamp_number || null,
     size: f.size ? Number(f.size) : null, joint_type: f.joint_type || null, groove_type: f.groove_type || null,
     process: f.process || null, schedule: f.schedule || null, material: f.material || null,
-    line_spec: f.line_spec || null, nde_percent: f.nde_percent || null,
+    line_spec: f.line_spec || null, nde_percent: f.nde_percent || null, nde_types: f.nde_types || null,
   });
   const opt = (k: string) => lookups[k] ?? [];
   const hasBreak = specOptions.length > 1;
@@ -637,12 +650,18 @@ function GuidedPopup({
     >
       <div className="guided-head">
         <span className="guided-weld">{weld.weld_number}</span>
-        <span className="muted">welder {weld.stamp_number ?? "—"}</span>
+        <span className="muted">welder {f.stamp_number || "—"}</span>
         <div className="spacer" />
         <span className="guided-prog">{index + 1}/{total}</span>
         <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill">✕</button>
       </div>
       <div className="guided-fields">
+        <div className="field span2"><label>Welder</label>
+          <select value={f.stamp_number} onChange={(e) => setF({ ...f, stamp_number: e.target.value })}>
+            <option value="">— pick —</option>
+            {welders.map((w) => <option key={w.stamp} value={w.stamp}>{w.stamp} — {w.name}</option>)}
+          </select>
+        </div>
         <div className="field"><label>Size (NPS)</label><Combobox value={f.size} options={sizes.map(String)} allowCustom onChange={(v) => setF({ ...f, size: v })} /></div>
         <div className="field"><label>Joint Type</label><Combobox value={f.joint_type} options={opt("joint_type")} onChange={(v) => setF({ ...f, joint_type: v })} /></div>
         <div className="field"><label>Schedule</label><Combobox value={f.schedule} options={opt("schedule")} allowCustom onChange={(v) => setF({ ...f, schedule: v })} /></div>
@@ -654,12 +673,13 @@ function GuidedPopup({
         <div className="field"><label>Groove</label><Combobox value={f.groove_type} options={opt("groove_type")} onChange={(v) => setF({ ...f, groove_type: v })} /></div>
         <div className="field"><label>Process</label><Combobox value={f.process} options={opt("process")} onChange={(v) => setF({ ...f, process: v })} /></div>
         <div className="field"><label>NDE %</label><Combobox value={f.nde_percent} options={opt("nde_percent")} allowCustom onChange={(v) => setF({ ...f, nde_percent: v })} /></div>
+        <div className="field"><label>NDE Type</label><Combobox value={f.nde_types} options={opt("nde_type")} allowCustom onChange={(v) => setF({ ...f, nde_types: v })} /></div>
       </div>
       <div className="guided-foot">
-        <button className="btn btn-sm" onClick={onBack} disabled={index === 0}>‹</button>
-        <button className="btn btn-sm" onClick={onSkip}>Skip</button>
+        <button className="btn btn-sm" onClick={onBack} disabled={index === 0} title="Previous weld">‹ Prev</button>
+        <button className="btn btn-sm" onClick={onSkip} title="Leave this weld unchanged and go to the next">Skip</button>
         <div className="spacer" />
-        <button className="btn btn-accent btn-sm" onClick={save}>{index + 1 >= total ? "Save & finish ✓" : "Save & next ▶"}</button>
+        <button className="btn btn-accent btn-sm" onClick={save}>{index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}</button>
       </div>
     </div>
   );

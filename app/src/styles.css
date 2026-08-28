@@ -380,10 +380,12 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .guided-head .spacer { flex: 1; }
 .guided-weld { font-size: 17px; font-weight: 800; color: var(--navy); }
 .guided-prog { background: var(--teal); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
-.guided-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.guided-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; max-height: 52vh; overflow-y: auto; padding-right: 2px; }
 .guided-fields .field { margin: 0; }
 .guided-fields .field.span2 { grid-column: 1 / -1; }
 .guided-fields label { font-size: 11px; }
+.guided-fields select { width: 100%; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 13px; font-family: inherit; background: var(--surface); color: var(--text); }
+.guided-fields select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,64,143,.14); }
 .guided-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .guided-foot .spacer { flex: 1; }
 
