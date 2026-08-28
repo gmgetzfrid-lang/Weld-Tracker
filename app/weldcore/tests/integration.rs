@@ -982,3 +982,62 @@ fn backup_writes_a_readable_copy() {
     assert_eq!(restored.count_welds(&Default::default()).unwrap(), 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------------
+// Migration 0011: optimistic concurrency + pre-migration backup.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stale_update_conflicts_and_fresh_version_succeeds() {
+    let s = store();
+    let id = s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice").unwrap();
+    let w0 = s.get_weld(id).unwrap();
+    assert_eq!(w0.row_version, 0);
+
+    // First editor saves — the version is bumped and returned.
+    let mut a = w0.clone();
+    a.description = Some("first".into());
+    let saved = s.update_weld(&a, "alice").unwrap();
+    assert_eq!(saved.row_version, 1);
+
+    // A second editor still holding the stale version-0 weld is rejected, not
+    // silently clobbering the first edit.
+    let mut b = w0.clone();
+    b.description = Some("second".into());
+    assert!(matches!(
+        s.update_weld(&b, "bob"),
+        Err(weldcore::Error::Conflict)
+    ));
+    assert_eq!(s.get_weld(id).unwrap().description.as_deref(), Some("first"));
+
+    // Re-reading (fresh version) lets the edit go through.
+    let mut c = saved.clone();
+    c.description = Some("third".into());
+    let saved2 = s.update_weld(&c, "bob").unwrap();
+    assert_eq!(saved2.row_version, 2);
+    assert_eq!(s.get_weld(id).unwrap().description.as_deref(), Some("third"));
+}
+
+#[test]
+fn reopening_a_file_db_is_idempotent_with_no_stray_backup() {
+    let dir = std::env::temp_dir().join(format!("weldcore-migrate-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("live.db");
+    {
+        let s = Store::open(&db, false).unwrap();
+        s.create_weld(&weld("100", "BW", "K1", "2026-01-15"), "alice").unwrap();
+    }
+    // Re-open: every migration is already applied, so migrate() is a no-op and
+    // must NOT drop a pre-migration backup beside the file.
+    {
+        let s = Store::open(&db, false).unwrap();
+        assert_eq!(s.count_welds(&Default::default()).unwrap(), 1);
+    }
+    let strays: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("pre-migrate"))
+        .collect();
+    assert!(strays.is_empty(), "no backup should be made when nothing migrates");
+    let _ = std::fs::remove_dir_all(&dir);
+}

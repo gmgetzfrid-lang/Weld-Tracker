@@ -151,6 +151,8 @@ export interface Weld {
   expected_nde_resolved?: boolean;
   /** Snapshot: semicolon-joined missing / unrecognized drivers when unresolved. */
   expected_nde_blockers?: string | null;
+  /** Optimistic-concurrency token; sent back on update to detect a clash. */
+  row_version?: number;
   /** Soft-delete: set when the weld is Voided (retained, excluded from counts). */
   voided_at?: string | null;
   voided_by?: string | null;

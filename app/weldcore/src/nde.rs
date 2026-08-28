@@ -941,6 +941,55 @@ mod tests {
     }
 
     #[test]
+    fn p91_grade_string_resolves_to_100() {
+        // A free-text P91 grade must classify as P5B/P5C low alloy → 100% RT.
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            material_group: Some("A335-P91"),
+            flange_class: Some("300"),
+            shop_or_field: Some("SHOP"),
+            joint_type: Some("BW"),
+            ..inp()
+        });
+        assert!(r.resolved);
+        assert_eq!(r.required_percent, 100);
+    }
+
+    #[test]
+    fn category_m_overrides_low_flange_class() {
+        // Category M is 100% RT even at Class 150 carbon steel (it overrides the
+        // ordinary class-based row).
+        let r = table4(&NdeInputs {
+            service_category: Some("Category M"),
+            material_group: Some("Carbon Steel"),
+            flange_class: Some("150"),
+            shop_or_field: Some("FW"),
+            joint_type: Some("BW"),
+            ..inp()
+        });
+        assert_eq!(r.required_percent, 100);
+        assert!(r.resolved);
+    }
+
+    #[test]
+    fn tie_in_with_nps_24_still_100_no_spot_note() {
+        // A tie-in is already 100% RT, so the NPS ≥ 24 *spot* supplemental (which
+        // only applies below 100%) must not be added.
+        let r = table4(&NdeInputs {
+            service_category: Some("Normal"),
+            material_group: Some("Carbon Steel"),
+            flange_class: Some("300"),
+            shop_or_field: Some("SHOP"),
+            joint_type: Some("BW"),
+            size: Some(24.0),
+            new_to_existing: true,
+            ..inp()
+        });
+        assert_eq!(r.required_percent, 100);
+        assert!(!r.supplemental.iter().any(|s| s.contains("NPS")));
+    }
+
+    #[test]
     fn joint_classification() {
         assert_eq!(classify_joint(Some("BW")), Joint::Butt);
         assert_eq!(classify_joint(Some("SW")), Joint::Socket);

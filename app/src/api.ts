@@ -93,7 +93,7 @@ export const api = {
   countWelds: (filter: WeldFilter) => invoke<number>("count_welds", { filter }),
   getWeld: (id: number) => invoke<Weld>("get_weld", { id }),
   createWeld: (weld: Weld) => invoke<number>("create_weld", { weld }),
-  updateWeld: (weld: Weld) => invoke<void>("update_weld", { weld }),
+  updateWeld: (weld: Weld) => invoke<Weld>("update_weld", { weld }),
   // Void = the normal, record-preserving "delete". Purge = admin-only hard delete.
   voidWeld: (id: number, reason: string) => invoke<void>("void_weld", { id, reason }),
   restoreWeld: (id: number) => invoke<void>("restore_weld", { id }),

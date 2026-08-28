@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { api, errMsg } from "../api";
 import type { Lookups, Weld, Welder } from "../types";
 import { useAuth } from "../auth";
@@ -57,17 +57,41 @@ export function WeldTable({
     return r;
   }, [rows, sortDir]);
 
-  const save = async (w: Weld, changes: Partial<Weld>) => {
-    const updated = { ...w, ...changes };
-    setRows((prev) => prev.map((x) => (x.id === w.id ? updated : x)));
-    try {
-      await api.updateWeld(updated);
-      const fresh = await api.getWeld(w.id);
-      setRows((prev) => prev.map((x) => (x.id === w.id ? fresh : x)));
-      onChanged?.();
-    } catch (e) {
-      toast.push("err", errMsg(e));
-    }
+  // Optimistic-concurrency bookkeeping. `latestVer` holds the newest row_version
+  // the server has confirmed for each weld, so a burst of quick single-field
+  // edits doesn't conflict with itself; `chain` serializes saves per weld so
+  // they apply in order, each seeing the previous one's committed version.
+  const latestVer = useRef<Map<number, number>>(new Map());
+  const chain = useRef<Map<number, Promise<void>>>(new Map());
+
+  const save = (w: Weld, changes: Partial<Weld>) => {
+    setRows((prev) => prev.map((x) => (x.id === w.id ? { ...x, ...changes } : x)));
+    const prior = chain.current.get(w.id) ?? Promise.resolve();
+    const next = prior.then(async () => {
+      const version = latestVer.current.get(w.id) ?? w.row_version ?? 0;
+      const updated = { ...w, ...changes, row_version: version };
+      try {
+        const fresh = await api.updateWeld(updated);
+        latestVer.current.set(w.id, fresh.row_version ?? version + 1);
+        setRows((prev) => prev.map((x) => (x.id === w.id ? fresh : x)));
+        onChanged?.();
+      } catch (e) {
+        const msg = errMsg(e);
+        if (/changed by someone else|conflict/i.test(msg)) {
+          // Someone else saved first — reload the row and keep the newest
+          // version so the user can re-apply their change on top.
+          try {
+            const fresh = await api.getWeld(w.id);
+            latestVer.current.set(w.id, fresh.row_version ?? 0);
+            setRows((prev) => prev.map((x) => (x.id === w.id ? fresh : x)));
+          } catch { /* ignore reload failure */ }
+          toast.push("err", "Someone else changed this weld — reloaded it. Re-apply your edit.");
+        } else {
+          toast.push("err", msg);
+        }
+      }
+    });
+    chain.current.set(w.id, next);
   };
 
   // Void = the normal, record-preserving delete: the weld is kept for the QC

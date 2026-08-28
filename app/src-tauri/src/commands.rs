@@ -291,7 +291,7 @@ pub fn create_weld(state: State<AppState>, weld: Weld) -> R<i64> {
 }
 
 #[tauri::command]
-pub fn update_weld(state: State<AppState>, weld: Weld) -> R<()> {
+pub fn update_weld(state: State<AppState>, weld: Weld) -> R<Weld> {
     let actor = state.require_editor()?;
     e(state.store.update_weld(&weld, &actor.username))
 }
@@ -314,10 +314,11 @@ pub fn restore_weld(state: State<AppState>, id: i64) -> R<()> {
 }
 
 /// Permanently delete a weld (hard purge). Prefer `void_weld`, which retains the
-/// record. Admin only — a destructive action a QC system should gate tightly.
+/// record; this is used for removing a mis-placed bubble during map creation and
+/// as the admin "purge" escape hatch. The store enforces owner-or-admin.
 #[tauri::command]
 pub fn delete_weld(state: State<AppState>, id: i64) -> R<()> {
-    let actor = state.require_admin()?;
+    let actor = state.require_editor()?;
     e(state.store.delete_weld(id, &actor.username, &actor.role))
 }
 

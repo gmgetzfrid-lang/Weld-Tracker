@@ -75,7 +75,7 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     b31_temp_f, b31_pressure_psig, required_nde_method,
     nde_rule_set, expected_nde_percent, expected_nde_method, expected_nde_note,
     expected_nde_resolved, expected_nde_blockers,
-    voided_at, voided_by, void_reason,
+    voided_at, voided_by, void_reason, row_version,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
 
@@ -233,6 +233,7 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         voided_at: r.get("voided_at")?,
         voided_by: r.get("voided_by")?,
         void_reason: r.get("void_reason")?,
+        row_version: r.get("row_version")?,
     };
     // Legacy rows saved before migration 0009 have no snapshot — compute it live
     // so the readout is never blank. (New writes always persist the snapshot.)
@@ -490,17 +491,27 @@ impl Store {
     /// Update a weld and record a field-level audit entry in the same
     /// transaction, so the trail can never diverge from the data: the UPDATE and
     /// its "what changed" record commit together or not at all.
-    pub fn update_weld(&self, w: &Weld, actor: &str) -> Result<()> {
+    ///
+    /// Optimistic concurrency: the save must carry the `row_version` it last
+    /// read. If someone else changed the row in the meantime the versions differ
+    /// and the update is rejected with [`Error::Conflict`] instead of silently
+    /// overwriting their change. On success the row's version is bumped and the
+    /// fresh weld (new version, recomputed derived fields) is returned.
+    pub fn update_weld(&self, w: &Weld, actor: &str) -> Result<Weld> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
         let set = WRITE_COLS.iter().map(|c| format!("{c}=?")).collect::<Vec<_>>().join(", ");
-        let sql = format!("UPDATE welds SET {set}, updated_at=datetime('now') WHERE id=?");
-        let mut vals = weld_write_values(&w);
-        vals.push(Box::new(w.id));
+        let expected_version = w.row_version;
+        let new_version = expected_version + 1;
+        let sql = format!(
+            "UPDATE welds SET {set}, row_version=?, updated_at=datetime('now')
+             WHERE id=? AND row_version=?"
+        );
 
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
-        // Snapshot the row as it was, to diff against the new values.
+        // Snapshot the row as it was, to diff against the new values and to
+        // detect a concurrent change.
         let old = {
             let mut stmt = tx.prepare(&format!("SELECT {COLS} FROM welds WHERE id = ?1"))?;
             let mut rows = stmt.query(params![w.id])?;
@@ -509,9 +520,18 @@ impl Store {
                 None => return Err(Error::NotFound),
             }
         };
+        if old.row_version != expected_version {
+            return Err(Error::Conflict);
+        }
+        let mut vals = weld_write_values(&w);
+        vals.push(Box::new(new_version));
+        vals.push(Box::new(w.id));
+        vals.push(Box::new(expected_version));
         let n = tx.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
         if n == 0 {
-            return Err(Error::NotFound);
+            // The version guard in the WHERE clause didn't match — a concurrent
+            // writer slipped in. Fail closed rather than lose their change.
+            return Err(Error::Conflict);
         }
         let mut detail = weld_change_detail(&old, &w);
         if detail.is_empty() {
@@ -523,7 +543,8 @@ impl Store {
             params![actor, w.id.to_string(), detail],
         )?;
         tx.commit()?;
-        Ok(())
+        w.row_version = new_version;
+        Ok(w)
     }
 
     /// The caller's permission to act on a weld: an admin may act on any weld,

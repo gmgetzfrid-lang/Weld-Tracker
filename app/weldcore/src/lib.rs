@@ -46,6 +46,10 @@ pub enum Error {
     PermissionDenied,
     #[error("{0}")]
     Invalid(String),
+    /// Optimistic-concurrency clash: someone else changed this record since it
+    /// was loaded. The caller should reload and re-apply the change.
+    #[error("this record was changed by someone else since you opened it — reload and try again")]
+    Conflict,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -109,7 +113,7 @@ impl Store {
     }
 
     fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
                 version INTEGER PRIMARY KEY,
@@ -135,16 +139,42 @@ impl Store {
             (8, include_str!("migrations/0008_nde_table4.sql")),
             (9, include_str!("migrations/0009_integrity_snapshot.sql")),
             (10, include_str!("migrations/0010_soft_delete_audit.sql")),
+            (11, include_str!("migrations/0011_row_version.sql")),
         ];
 
-        for (version, sql) in MIGRATIONS {
-            if *version > applied {
-                conn.execute_batch(sql)?;
-                conn.execute(
-                    "INSERT INTO schema_migrations (version) VALUES (?1)",
-                    [version],
-                )?;
+        let pending: Vec<&(i64, &str)> =
+            MIGRATIONS.iter().filter(|(v, _)| *v > applied).collect();
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        // Pre-migration backup: before changing the schema of an existing
+        // on-disk database, copy it aside so a botched upgrade is always
+        // recoverable. Best-effort — a fresh (version 0) database has nothing
+        // worth saving, and a backup failure must not block first-run creation.
+        if applied > 0 {
+            if let Some(path) = main_db_path(&conn) {
+                let ts: String = conn
+                    .query_row("SELECT strftime('%Y%m%d-%H%M%S','now')", [], |r| r.get(0))
+                    .unwrap_or_else(|_| "backup".to_string());
+                let dest = format!("{path}.pre-migrate-v{applied}-{ts}.bak");
+                if let Err(e) = conn.backup(rusqlite::DatabaseName::Main, &dest, None) {
+                    eprintln!("warning: pre-migration backup to {dest} failed: {e}");
+                }
             }
+        }
+
+        // Each migration runs in its own transaction together with the row that
+        // records it, so a failed migration rolls back cleanly and the version
+        // counter never gets ahead of the schema.
+        for (version, sql) in pending {
+            let tx = conn.transaction()?;
+            tx.execute_batch(sql)?;
+            tx.execute(
+                "INSERT INTO schema_migrations (version) VALUES (?1)",
+                [version],
+            )?;
+            tx.commit()?;
         }
         Ok(())
     }
@@ -219,6 +249,14 @@ impl Store {
         self.backup_to(&dest)?;
         Ok(dest)
     }
+}
+
+/// The on-disk file backing the `main` database, or `None` for an in-memory or
+/// unfiled connection. Read from `PRAGMA database_list`.
+fn main_db_path(conn: &Connection) -> Option<String> {
+    conn.query_row("PRAGMA database_list", [], |r| r.get::<_, String>(2))
+        .ok()
+        .filter(|p| !p.is_empty())
 }
 
 /// Diameter inches for a weld: the nominal pipe size itself (a 6" pipe weld is

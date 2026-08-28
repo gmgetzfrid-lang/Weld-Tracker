@@ -308,6 +308,11 @@ pub struct Weld {
     /// false (semicolon-joined), so the entry form can name each blocker.
     #[serde(default)]
     pub expected_nde_blockers: Option<String>,
+    /// Optimistic-concurrency token. Incremented on every update; a save must
+    /// carry the version it last read or it is rejected as a conflict. Round-
+    /// trips through the UI so the client always sends back the version it has.
+    #[serde(default)]
+    pub row_version: i64,
     /// Soft-delete: when set, the weld is Voided — retained for the record but
     /// excluded from every count (count_omission is also 1). NULL = live.
     #[serde(default)]
