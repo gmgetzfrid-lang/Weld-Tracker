@@ -20,6 +20,7 @@ export function WeldTable({
   onAddWeld,
   showWorkOrder,
   onOpenWorkOrder,
+  initialEdit,
 }: {
   welds: Weld[];
   welders: Welder[];
@@ -30,6 +31,7 @@ export function WeldTable({
   onAddWeld?: () => void;
   showWorkOrder?: boolean;
   onOpenWorkOrder?: (wo: string) => void;
+  initialEdit?: boolean;
 }) {
   const toast = useToast();
   const { user } = useAuth();
@@ -37,7 +39,7 @@ export function WeldTable({
   const canDelete = (w: Weld) =>
     user != null && (user.role === "admin" || w.created_by === user.username);
   const [rows, setRows] = useState<Weld[]>(welds);
-  const [edit, setEdit] = useState(false);
+  const [edit, setEdit] = useState(!!initialEdit && editable);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [open, setOpen] = useState<Set<number>>(new Set());
   useEffect(() => setRows(welds), [welds]);
@@ -101,7 +103,7 @@ export function WeldTable({
       {edit && <div className="wt-editing">Edit mode — click any cell to change it. Changes save automatically. Use the ▸ chevron for more fields, repair &amp; delete.</div>}
 
       <div className="table-wrap wt-scroll">
-        <table className="data wt">
+        <table className={`data wt ${edit ? "editing" : ""}`}>
           <thead>
             <tr>
               <th style={{ width: 26 }}></th>

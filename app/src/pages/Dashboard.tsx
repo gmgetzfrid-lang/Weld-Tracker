@@ -26,22 +26,22 @@ export function Dashboard({ onNavigate }: { onNavigate: (p: any) => void }) {
   const steps = [
     {
       done: rep.welder_count > 0,
-      title: "Add your welders",
-      body: "Enter each welder and their stamp ID once. You'll pick from them when placing weld bubbles.",
+      title: "Add welders & their certs",
+      body: "Add each welder with their stamp, then their WPQ certs (alias + document). The app tracks continuity automatically and you pick a cert per weld.",
       cta: "Open Welder Roster",
       go: "roster",
     },
     {
       done: drawingCount > 0,
-      title: "Log welds from an isometric",
-      body: "In the Weld Log, click “New Weld Entry”: enter the work order, attach the iso PDF, and click each weld joint to drop a bubble. Every bubble becomes a weld — no typing rows.",
+      title: "Map a work order, then Fill attributes",
+      body: "Click “New Weld Entry”: pick or create a work order, add the drawing number(s) and iso PDF, drop a bubble on each joint, then hit Fill attributes to walk each weld and enter its details.",
       cta: "Open Weld Log",
       go: "weldlog",
     },
     {
       done: t.welds > 0,
-      title: "Fill NDE results & watch the reports",
-      body: "As welds get X-rayed, open the weld and record the results. The dashboard and every report update automatically.",
+      title: "Record X-rays & watch the stats",
+      body: "As welds are inspected, open them in the Weld Log and record the NDE result. Compliance, welder continuity and every report update automatically.",
       cta: "Open Work Orders",
       go: "workorders",
     },

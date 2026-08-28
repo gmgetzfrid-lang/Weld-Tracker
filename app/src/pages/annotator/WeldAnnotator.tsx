@@ -506,7 +506,7 @@ function GuidedPopup({
     <div
       className={`guided-pop ${anchor.left ? "to-left" : "to-right"}`}
       style={{ left, top, width: W }}
-      onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "INPUT") save(); }}
+      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } }}
     >
       <div className="guided-head">
         <span className="guided-weld">{weld.weld_number}</span>

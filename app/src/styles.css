@@ -314,11 +314,13 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .welder-switch select { padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 13px; font-weight: 600; }
 
 /* Legend stamp */
-.wm-legend { position: absolute; z-index: 6; min-width: 190px; background: #fff; border: 2px solid var(--navy); border-radius: 8px; box-shadow: var(--shadow-lg); font-size: 12px; overflow: hidden; }
-.wm-legend-head { background: var(--navy); color: #fff; font-weight: 800; font-size: 11px; letter-spacing: .06em; padding: 6px 10px; display: flex; align-items: center; gap: 6px; }
-.wm-grip { opacity: .7; letter-spacing: -1px; }
+/* An on-drawing stamp (not a floating window): thin navy border, drawn onto the
+   sheet like the bubbles, drag it by the title strip. */
+.wm-legend { position: absolute; z-index: 6; min-width: 180px; background: rgba(255,255,255,.97); border: 1.5px solid var(--navy); border-radius: 5px; box-shadow: 0 2px 6px rgba(10,31,107,.22); font-size: 12px; overflow: hidden; }
+.wm-legend-head { background: transparent; color: var(--navy); font-weight: 800; font-size: 10px; letter-spacing: .09em; padding: 5px 8px; display: flex; align-items: center; gap: 6px; border-bottom: 1px dashed var(--border-strong); }
+.wm-grip { opacity: .55; letter-spacing: -1px; }
 .wm-legend-head .wm-x { margin-left: auto; }
-.wm-x { border: 0; background: transparent; color: #fff; cursor: pointer; font-size: 12px; }
+.wm-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; }
 .wm-legend-key { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border); }
 .wm-legend-keytext div { line-height: 1.5; }
 .wm-legend-tot { padding: 8px 10px; }
@@ -572,3 +574,18 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 .cert-chip .clip { font-size: 11px; opacity: .7; }
 .cert-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
 .cert-add > input, .cert-add > select { padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13px; }
+
+/* additive chip input (e.g. multiple drawing numbers) */
+.chip-input { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 8px; background: var(--surface); max-width: 560px; }
+.chip-input input { border: 0; outline: none; flex: 1; min-width: 150px; font-size: 13px; padding: 4px; }
+.chip-input .chip button { border: 0; background: transparent; cursor: pointer; color: var(--text-muted); margin-left: 5px; font-weight: 800; padding: 0; }
+
+/* compact wizard header controls (direct children only, so chip-input is untouched) */
+.wsection .field > input:not(.big), .wsection .field > .combo { max-width: 240px; }
+.wsection .field > input:not(.big) { padding: 7px 10px; font-size: 13px; }
+.wsection .combo-input { padding: 7px 10px; font-size: 13px; }
+
+/* review table in edit mode: editable cells clearly look like inputs */
+.wt.editing .inline-cell { border-color: var(--border-strong); background: var(--surface-2); min-width: 60px; }
+.wt.editing .inline-cell:hover { border-color: var(--blue); background: #eef3ff; }
+.wt.editing .inline-pen, .wt.editing .inline-caret { opacity: .5; }
