@@ -561,7 +561,7 @@ impl Store {
                 total,
             });
         }
-        result_rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        result_rows.sort_by_key(|a| a.name.to_lowercase());
         Ok(WelderStatsReport {
             level: level.to_string(),
             rows: result_rows,
@@ -651,7 +651,7 @@ impl Store {
             }
         }
         let mut out: Vec<ClientReportRow> = map.into_values().collect();
-        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        out.sort_by_key(|a| a.name.to_lowercase());
         Ok(out)
     }
 
