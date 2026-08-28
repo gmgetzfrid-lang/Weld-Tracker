@@ -3,9 +3,12 @@ import type {
   ClientReportRow,
   CriteriaRow,
   DailyReport,
+  DocumentPackage,
   Drawing,
+  DrawingRevision,
   JobReport,
   Lookups,
+  PdfWindow,
   MonthlyReport,
   NdeComplianceReport,
   PerformanceReport,
@@ -114,7 +117,30 @@ export const api = {
   setDrawingPdf: (id: number, name: string, dataBase64: string, pageCount: number) =>
     invoke<void>("set_drawing_pdf", { id, name, dataBase64, pageCount }),
   getDrawingPdf: (id: number) =>
-    invoke<[string, string] | null>("get_drawing_pdf", { id }),
+    invoke<PdfWindow | null>("get_drawing_pdf", { id }),
+
+  // document control: packages & revisions
+  createPackage: (workOrder: string | null, name: string, dataBase64: string, pageCount: number) =>
+    invoke<number>("create_package", { workOrder, name, dataBase64, pageCount }),
+  listPackages: (workOrder: string) =>
+    invoke<DocumentPackage[]>("list_packages", { workOrder }),
+  getPackagePdf: (id: number) =>
+    invoke<[string, string] | null>("get_package_pdf", { id }),
+  getRevisionPdf: (revId: number) =>
+    invoke<PdfWindow | null>("get_revision_pdf", { revId }),
+  setEffectiveSource: (drawingId: number, packageId: number, pageFrom: number, pageTo: number) =>
+    invoke<void>("set_effective_source", { drawingId, packageId, pageFrom, pageTo }),
+  reviseDrawing: (
+    drawingId: number,
+    newRev: string,
+    reason: string | null,
+    packageId: number | null,
+    pageFrom: number | null,
+    pageTo: number | null
+  ) =>
+    invoke<number>("revise_drawing", { drawingId, newRev, reason, packageId, pageFrom, pageTo }),
+  listDrawingRevisions: (drawingId: number) =>
+    invoke<DrawingRevision[]>("list_drawing_revisions", { drawingId }),
   listDrawingWelds: (drawingId: number) =>
     invoke<Weld[]>("list_drawing_welds", { drawingId }),
   nextWeldNumber: (drawingId: number) =>

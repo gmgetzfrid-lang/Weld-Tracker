@@ -7,6 +7,7 @@ import { Combobox } from "../components/inline";
 import { WeldAnnotator } from "./annotator/WeldAnnotator";
 import { WeldTable } from "../components/WeldTable";
 import { fileToBase64, loadPdf, base64ToBytes } from "../pdf";
+import { docName } from "../docControl";
 
 const STEPS = ["Work Order & Iso", "Weld Map & Fill", "Review & Edit"];
 
@@ -31,8 +32,7 @@ export function DrawingWizard({
 }) {
   const toast = useToast();
   const [step, setStep] = useState(0);
-  const [drawing, setDrawing] = useState<Drawing>({ ...EMPTY, work_order: initialWorkOrder ?? null });
-  const [drawNos, setDrawNos] = useState<string[]>([]);
+  const [drawing, setDrawing] = useState<Drawing>({ ...EMPTY, work_order: initialWorkOrder ?? null, revision: "0" });
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,7 +43,7 @@ export function DrawingWizard({
   useEffect(() => {
     if (drawingId) {
       api.getDrawing(drawingId)
-        .then((d) => { setDrawing(d); setDrawNos(d.drawing_no ? [d.drawing_no] : []); setStep(1); })
+        .then((d) => { setDrawing(d); setStep(1); })
         .catch((e) => setError(errMsg(e)))
         .finally(() => setLoading(false));
     }
@@ -51,33 +51,27 @@ export function DrawingWizard({
 
   const set = <K extends keyof Drawing>(k: K, v: Drawing[K]) => setDrawing((p) => ({ ...p, [k]: v }));
 
-  // Step 0 -> save the header. One drawing per drawing-number (a work order can
-  // have several); annotate the first, the rest wait under the work order.
+  // Step 0 -> save the sheet (drawing # + sheet # + rev). One controlled sheet;
+  // multi-sheet work packages are ingested from the work-order record.
   const saveHeaderAndNext = async () => {
     setError(null);
     setBusy(true);
     try {
-      const nums = drawNos.length ? drawNos : [drawing.drawing_no ?? ""].filter(Boolean);
-      let firstId = drawing.id;
+      let id = drawing.id;
       if (drawing.id) {
-        await api.updateDrawing({ ...drawing, drawing_no: nums[0] ?? drawing.drawing_no ?? null });
+        await api.updateDrawing(drawing);
       } else {
-        firstId = await api.createDrawing({ ...drawing, drawing_no: nums[0] ?? null });
-        for (let i = 1; i < nums.length; i++) {
-          await api.createDrawing({ ...drawing, id: 0, drawing_no: nums[i] });
-        }
+        id = await api.createDrawing(drawing);
       }
       if (pdfFile) {
         const b64 = await fileToBase64(pdfFile);
         let pages = 0;
         try { pages = (await loadPdf(base64ToBytes(b64))).numPages; } catch { /* non-fatal */ }
-        await api.setDrawingPdf(firstId, pdfFile.name, b64, pages);
+        await api.setDrawingPdf(id, pdfFile.name, b64, pages);
       }
-      const fresh = await api.getDrawing(firstId);
+      const fresh = await api.getDrawing(id);
       setDrawing(fresh);
       setPdfFile(null);
-      if (nums.length > 1)
-        toast.push("ok", `${nums.length} drawings created — annotating ${nums[0]}. The rest are ready under this work order.`);
       setStep(1);
     } catch (e) {
       setError(errMsg(e));
@@ -104,7 +98,7 @@ export function DrawingWizard({
         <Stepper steps={STEPS} current={step} />
 
         {step === 0 && (
-          <HeaderStep drawing={drawing} set={set} lookups={lookups} drawNos={drawNos} setDrawNos={setDrawNos} pdfFile={pdfFile} setPdfFile={setPdfFile} error={error} />
+          <HeaderStep drawing={drawing} set={set} lookups={lookups} pdfFile={pdfFile} setPdfFile={setPdfFile} error={error} />
         )}
         {step === 1 && (
           <>
@@ -153,13 +147,11 @@ export function DrawingWizard({
 }
 
 function HeaderStep({
-  drawing, set, lookups, drawNos, setDrawNos, pdfFile, setPdfFile, error,
+  drawing, set, lookups, pdfFile, setPdfFile, error,
 }: {
   drawing: Drawing;
   set: <K extends keyof Drawing>(k: K, v: Drawing[K]) => void;
   lookups: Lookups;
-  drawNos: string[];
-  setDrawNos: (f: (p: string[]) => string[]) => void;
   pdfFile: File | null;
   setPdfFile: (f: File | null) => void;
   error: string | null;
@@ -167,14 +159,7 @@ function HeaderStep({
   const [lineSpecs, setLineSpecs] = useState<string[]>([]);
   useEffect(() => { api.distinctWeldValues("line_spec").then(setLineSpecs).catch(() => {}); }, []);
   const [showBreak, setShowBreak] = useState(!!drawing.line_spec_2);
-  const [noText, setNoText] = useState("");
-
-  const addNo = () => {
-    const v = noText.trim();
-    if (!v) return;
-    setDrawNos((p) => (p.includes(v) ? p : [...p, v]));
-    setNoText("");
-  };
+  const composed = docName(drawing.drawing_no, drawing.sheet_no, drawing.revision);
 
   return (
     <>
@@ -196,27 +181,15 @@ function HeaderStep({
       </div>
 
       <div className="wsection">
-        <div className="wsection-head"><span className="wsection-ico">📐</span><h4>Isometric Details</h4></div>
+        <div className="wsection-head"><span className="wsection-ico">📐</span><h4>Drawing (controlled document)</h4>
+          {composed && <span className="badge badge-blue" style={{ marginLeft: "auto" }}>{composed}</span>}</div>
         <div className="form-grid cols-3">
-          <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Drawing / Iso # <span className="faint">— add one or several (a work order can span many)</span></label>
-            <div className="chip-input">
-              {drawNos.map((n, i) => (
-                <span key={i} className="chip on sm">{n}
-                  <button type="button" onClick={() => setDrawNos((p) => p.filter((_, j) => j !== i))}>×</button>
-                </span>
-              ))}
-              <input
-                value={noText}
-                onChange={(e) => setNoText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addNo(); } }}
-                placeholder={drawNos.length ? "add another…" : "type a drawing #, Enter to add"}
-              />
-              {noText.trim() && <button type="button" className="btn btn-sm" onClick={addNo}>+ Add</button>}
-            </div>
-          </div>
+          <div className="field"><label>Drawing / Iso # *</label>
+            <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} placeholder="e.g. ISO-1042" /></div>
+          <div className="field"><label>Sheet # <span className="faint">(SHT)</span></label>
+            <input value={drawing.sheet_no ?? ""} onChange={(e) => set("sheet_no", e.target.value)} placeholder="e.g. 1" /></div>
           <div className="field"><label>Revision</label>
-            <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} /></div>
+            <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} placeholder="0" /></div>
           <div className="field"><label>Line Spec <span className="faint">(autocompletes)</span></label>
             <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" />
             {!showBreak && (
@@ -245,8 +218,13 @@ function HeaderStep({
       </div>
 
       <div className="wsection">
-        <div className="wsection-head"><span className="wsection-ico">📎</span><h4>Isometric PDF</h4>{drawing.has_pdf && <span className="badge badge-green">attached</span>}</div>
+        <div className="wsection-head"><span className="wsection-ico">📎</span><h4>Controlled copy (this sheet's PDF)</h4>{drawing.has_pdf && <span className="badge badge-green">attached</span>}</div>
         <DropZone file={pdfFile} onFile={setPdfFile} hasExisting={drawing.has_pdf} />
+        <p className="hint" style={{ marginTop: 8 }}>
+          This is one sheet. If your drawings came as a <b>compiled work-package book</b>, skip this and
+          use <b>“Ingest work package”</b> on the work order — upload the book once and split it into
+          sheets by page range. To issue a later revision, use <b>Revise</b> on the sheet.
+        </p>
       </div>
     </>
   );

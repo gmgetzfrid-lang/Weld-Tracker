@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
 import { WeldTable } from "../components/WeldTable";
+import { docName, RevisePanel, RevisionHistory, PackageIngest } from "../docControl";
 
 function blankWeld(workOrder: string): Weld {
   return {
@@ -39,6 +40,9 @@ export function WorkOrderRecord({
   const [owner, setOwner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revise, setRevise] = useState<Drawing | null>(null);
+  const [history, setHistory] = useState<Drawing | null>(null);
+  const [ingest, setIngest] = useState(false);
   // The work order's owner (its creator) or an admin may delete the whole thing.
   const canDeleteWo =
     user != null && (user.role === "admin" || (owner != null && owner === user.username));
@@ -89,6 +93,9 @@ export function WorkOrderRecord({
         <span className="badge badge-gray">{num(welds.length)} welds</span>
         <div className="spacer" />
         {editable && (
+          <button className="btn" title="Upload one compiled work-package book and split it into controlled sheets by page range" onClick={() => setIngest(true)}>📚 Ingest work package</button>
+        )}
+        {editable && (
           <button className="btn btn-accent" onClick={() => onOpenDrawing(null)}>＋ Add Drawing &amp; Welds</button>
         )}
         {canDeleteWo && (
@@ -116,17 +123,23 @@ export function WorkOrderRecord({
                 <div key={d.id} className="drawing-card" onClick={() => onOpenDrawing(d.id)}>
                   <div className="drawing-card-top">
                     <span className="drawing-ico">📐</span>
-                    <strong>{d.drawing_no || "(untitled)"}</strong>
+                    <strong>{d.doc_name || docName(d.drawing_no, d.sheet_no, d.revision)}</strong>
                     {d.has_pdf ? <span className="badge badge-green">PDF</span> : <span className="badge badge-gray">no PDF</span>}
                   </div>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                    {d.line_spec ? `${d.line_spec} · ` : ""}{num(d.weld_count)} welds
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    <span className="badge badge-blue" title="effective revision">Rev {d.revision ?? "0"}</span>
+                    {(d.rev_count ?? 0) > 1 && <span className="badge badge-gray" title="revision history">{d.rev_count} revs</span>}
+                    <span>{d.line_spec ? `${d.line_spec} · ` : ""}{num(d.weld_count)} welds</span>
                   </div>
-                  <div className="drawing-card-foot">
-                    <span className="link">Open weld map ›</span>
-                    {editable && canDeleteDrawing(d) && (
-                      <button className="btn btn-sm btn-danger" title="Delete drawing" onClick={(e) => { e.stopPropagation(); delDrawing(d); }}>✕</button>
-                    )}
+                  <div className="drawing-card-foot" onClick={(e) => e.stopPropagation()}>
+                    <span className="link" onClick={() => onOpenDrawing(d.id)}>Open weld map ›</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {editable && <button className="btn btn-sm" title="Issue a new revision (supersede current)" onClick={() => setRevise(d)}>Revise</button>}
+                      {(d.rev_count ?? 0) > 1 && <button className="btn btn-sm btn-ghost" title="Revision history" onClick={() => setHistory(d)}>History</button>}
+                      {editable && canDeleteDrawing(d) && (
+                        <button className="btn btn-sm btn-danger" title="Delete drawing" onClick={() => delDrawing(d)}>✕</button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -146,6 +159,24 @@ export function WorkOrderRecord({
             onAddWeld={addWeld}
           />
         </>
+      )}
+
+      {revise && (
+        <RevisePanel
+          drawing={revise}
+          onClose={() => setRevise(null)}
+          onDone={() => { setRevise(null); load(); }}
+        />
+      )}
+      {history && (
+        <RevisionHistory drawing={history} onClose={() => setHistory(null)} />
+      )}
+      {ingest && (
+        <PackageIngest
+          workOrder={workOrder}
+          onClose={() => setIngest(false)}
+          onDone={() => { setIngest(false); load(); }}
+        />
       )}
     </div>
   );

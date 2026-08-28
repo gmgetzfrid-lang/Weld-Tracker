@@ -131,10 +131,16 @@ export interface Drawing {
   id: number;
   work_order?: string | null;
   drawing_no?: string | null;
+  sheet_no?: string | null;
   unit?: string | null;
   line_spec?: string | null;
   line_spec_2?: string | null;
   revision?: string | null;
+  current_revision_id?: number | null;
+  rev_status?: string | null;
+  rev_count?: number;
+  /** Composed controlled-document name, e.g. "ISO-1042 SHT 2 Rev A". */
+  doc_name?: string;
   title?: string | null;
   spec_5: boolean;
   spec_10: boolean;
@@ -151,6 +157,36 @@ export interface Drawing {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface DocumentPackage {
+  id: number;
+  work_order?: string | null;
+  name?: string | null;
+  page_count: number;
+  has_pdf: boolean;
+  uploaded_by?: string | null;
+  uploaded_at?: string;
+}
+
+export interface DrawingRevision {
+  id: number;
+  drawing_id: number;
+  rev?: string | null;
+  status: string; // Effective | Superseded
+  package_id?: number | null;
+  page_from?: number | null;
+  page_to?: number | null;
+  reason?: string | null;
+  issued_date?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  superseded_at?: string | null;
+  has_pdf: boolean;
+  page_count: number;
+}
+
+/** (name, base64, page_from, page_to) controlled-copy window. */
+export type PdfWindow = [string, string, number, number];
 
 export interface WeldFilter {
   search?: string;

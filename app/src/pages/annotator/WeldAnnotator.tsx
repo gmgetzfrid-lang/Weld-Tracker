@@ -38,6 +38,9 @@ export function WeldAnnotator({
   const [hasPdf, setHasPdf] = useState(false);
   const [pageNum, setPageNum] = useState(1);
   const [pageCount, setPageCount] = useState(1);
+  // This sheet's controlled-copy window inside its package (1-based, absolute).
+  const [pageFrom, setPageFrom] = useState(1);
+  const [pageTo, setPageTo] = useState(1);
   const [scale, setScale] = useState(1);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -95,8 +98,14 @@ export function WeldAnnotator({
           if (!alive) return;
           docRef.current = doc;
           setPageCount(doc.numPages);
+          // Scope this sheet to its controlled-copy window in the package.
+          const from = Math.max(1, Math.min(pdf[2] || 1, doc.numPages));
+          const to = Math.max(from, Math.min(pdf[3] || doc.numPages, doc.numPages));
+          setPageFrom(from);
+          setPageTo(to);
+          setPageNum((p) => (p >= from && p <= to ? p : from));
           setHasPdf(true);
-          const page = await doc.getPage(1);
+          const page = await doc.getPage(from);
           const vp = page.getViewport({ scale: 1 });
           const cw = (stageRef.current?.clientWidth ?? 900) - 24;
           setScale(Math.max(0.2, Math.min(3, cw / vp.width)));
@@ -277,11 +286,11 @@ export function WeldAnnotator({
         <label className="anno-num">Next&nbsp;<b>W{nextNum}</b></label>
 
         <div className="spacer" />
-        {pageCount > 1 && (
+        {pageTo > pageFrom && (
           <div className="anno-pages">
-            <button className="btn btn-sm" disabled={pageNum <= 1} onClick={() => setPageNum((p) => p - 1)}>‹</button>
-            <span className="muted">Pg {pageNum}/{pageCount}</span>
-            <button className="btn btn-sm" disabled={pageNum >= pageCount} onClick={() => setPageNum((p) => p + 1)}>›</button>
+            <button className="btn btn-sm" disabled={pageNum <= pageFrom} onClick={() => setPageNum((p) => Math.max(pageFrom, p - 1))}>‹</button>
+            <span className="muted">Sheet pg {pageNum - pageFrom + 1}/{pageTo - pageFrom + 1}</span>
+            <button className="btn btn-sm" disabled={pageNum >= pageTo} onClick={() => setPageNum((p) => Math.min(pageTo, p + 1))}>›</button>
           </div>
         )}
         <button className="btn btn-sm" onClick={() => setScale((s) => Math.max(0.2, s - 0.2))}>−</button>
