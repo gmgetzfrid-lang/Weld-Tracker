@@ -1,5 +1,5 @@
 use weldcore::seed::{DEFAULT_ADMIN_PASSWORD, DEFAULT_ADMIN_USERNAME};
-use weldcore::{Drawing, Store, Weld, WeldFilter, Welder};
+use weldcore::{Drawing, Store, Weld, WeldFilter, Welder, WelderCert};
 
 fn store() -> Store {
     Store::open_memory().expect("open memory db")
@@ -562,4 +562,71 @@ fn nde_spec_mismatch_flagged() {
 
     let rep = s.report_nde_compliance().unwrap();
     assert_eq!(rep.spec_mismatch_count, 1);
+}
+
+#[test]
+fn welder_cert_continuity_and_status() {
+    let s = store();
+    let wid = s.create_welder(&mk_welder("K9", "Casey")).unwrap();
+    // today, from the same clock the store's continuity math uses
+    let today: String = s
+        .conn
+        .lock()
+        .unwrap()
+        .query_row("SELECT date('now')", [], |r| r.get(0))
+        .unwrap();
+
+    // cert A: freshly qualified today -> Active even with no welds yet
+    let a = WelderCert {
+        welder_id: wid,
+        alias: "6G GTAW".into(),
+        process: Some("GTAW".into()),
+        qualified_date: Some(today.clone()),
+        ..Default::default()
+    };
+    let aid = s.create_welder_cert(&a, "admin").unwrap();
+    // cert B: qualified long ago, no x-rays -> Inactive
+    let b = WelderCert {
+        welder_id: wid,
+        alias: "2G SMAW".into(),
+        process: Some("SMAW".into()),
+        qualified_date: Some("2001-01-01".into()),
+        ..Default::default()
+    };
+    s.create_welder_cert(&b, "admin").unwrap();
+
+    let certs = s.list_welder_certs(wid).unwrap();
+    assert_eq!(certs.iter().find(|c| c.alias == "6G GTAW").unwrap().status, "Active");
+    assert_eq!(certs.iter().find(|c| c.alias == "2G SMAW").unwrap().status, "Inactive");
+
+    // the log picker offers this welder's aliases
+    let aliases = s.welder_cert_aliases("K9").unwrap();
+    assert!(aliases.contains(&"6G GTAW".to_string()) && aliases.contains(&"2G SMAW".to_string()));
+
+    // an x-ray to cert B today revives it and lands in the continuity log
+    let mut wl = weld("400", "BW", "K9", &today);
+    wl.weld_number = Some("W400".into());
+    wl.cert_alias = Some("2G SMAW".into());
+    wl.nde_types = Some("RT".into());
+    wl.nde_result = Some("Accepted".into());
+    wl.nde_date = Some(today.clone());
+    s.create_weld(&wl, "admin").unwrap();
+
+    let cb2 = s.list_welder_certs(wid).unwrap().into_iter().find(|c| c.alias == "2G SMAW").unwrap();
+    assert_eq!(cb2.status, "Active", "an x-ray within six months revives the cert");
+    assert_eq!(cb2.weld_count, 1);
+    assert_eq!(cb2.last_activity.as_deref(), Some(today.as_str()));
+
+    let cont = s.welder_continuity(wid).unwrap();
+    assert_eq!(cont.stamp, "K9");
+    assert_eq!(cont.events.len(), 1);
+    assert_eq!(cont.events[0].cert_alias, "2G SMAW");
+    assert_eq!(cont.events[0].result, "Accepted");
+
+    // WPQ document round-trip (base64 of "hello")
+    s.set_welder_cert_file(aid, "wpq.pdf", "aGVsbG8=").unwrap();
+    let f = s.get_welder_cert_file(aid).unwrap().unwrap();
+    assert_eq!(f.0, "wpq.pdf");
+    assert_eq!(f.1, "aGVsbG8=");
+    assert!(s.list_welder_certs(wid).unwrap().into_iter().find(|c| c.id == aid).unwrap().has_file);
 }

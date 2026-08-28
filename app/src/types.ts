@@ -27,6 +27,43 @@ export interface Welder {
   updated_at?: string;
 }
 
+export interface WelderCert {
+  id: number;
+  welder_id: number;
+  alias: string;
+  process?: string | null;
+  qualified_date?: string | null;
+  file_name?: string | null;
+  has_file: boolean;
+  notes?: string | null;
+  // computed
+  status: string; // "Active" | "Inactive"
+  last_activity?: string | null;
+  continuous_through?: string | null;
+  weld_count: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ContinuityEvent {
+  date: string;
+  cert_alias: string;
+  process?: string | null;
+  weld_number?: string | null;
+  work_order?: string | null;
+  drawing_no?: string | null;
+  result: string;
+}
+
+export interface WelderContinuity {
+  welder_id: number;
+  stamp: string;
+  name: string;
+  certs: WelderCert[];
+  events: ContinuityEvent[];
+  generated_on: string;
+}
+
 export interface Weld {
   id: number;
   unit?: string | null;
@@ -71,6 +108,7 @@ export interface Weld {
   description?: string | null;
   file_location?: string | null;
   status: string;
+  cert_alias?: string | null;
   nde_percent?: string | null;
   nde_types?: string | null;
   nde_result?: string | null;

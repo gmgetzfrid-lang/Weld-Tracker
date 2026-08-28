@@ -46,6 +46,71 @@ fn default_true() -> bool {
     true
 }
 
+/// A welder qualification (WPQ): a named cert for a process, with the
+/// qualification document stored on the welder's profile. Status/continuity
+/// fields are computed on read, never stored.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WelderCert {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub welder_id: i64,
+    /// The name shown in dropdowns and the roster (e.g. "6G GTAW CS").
+    pub alias: String,
+    #[serde(default)]
+    pub process: Option<String>,
+    #[serde(default)]
+    pub qualified_date: Option<String>,
+    #[serde(default)]
+    pub file_name: Option<String>,
+    /// True when a document is stored (fetched separately).
+    #[serde(default)]
+    pub has_file: bool,
+    #[serde(default)]
+    pub notes: Option<String>,
+    // ---- computed ----
+    /// "Active" or "Inactive" — active when x-rayed to within six months.
+    #[serde(default)]
+    pub status: String,
+    /// Most recent x-ray (RT) date to this cert.
+    #[serde(default)]
+    pub last_activity: Option<String>,
+    /// Continuity holds through this date (anchor + six months).
+    #[serde(default)]
+    pub continuous_through: Option<String>,
+    /// How many welds reference this cert.
+    #[serde(default)]
+    pub weld_count: i64,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+/// One x-ray event that keeps a welder's cert continuous.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContinuityEvent {
+    pub date: String,
+    pub cert_alias: String,
+    pub process: Option<String>,
+    pub weld_number: Option<String>,
+    pub work_order: Option<String>,
+    pub drawing_no: Option<String>,
+    pub result: String, // Accepted | Rejected | ""
+}
+
+/// A welder's continuity record: their certs (with status) plus the x-ray
+/// events, for the on-screen view and PDF export.
+#[derive(Debug, Clone, Serialize)]
+pub struct WelderContinuity {
+    pub welder_id: i64,
+    pub stamp: String,
+    pub name: String,
+    pub certs: Vec<WelderCert>,
+    pub events: Vec<ContinuityEvent>,
+    pub generated_on: String,
+}
+
 /// A full weld-log row. Optional fields map to nullable columns.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Weld {
@@ -135,6 +200,9 @@ pub struct Weld {
     pub file_location: Option<String>,
     #[serde(default)]
     pub status: String,
+    /// Which welder cert (by alias) this weld was welded to — drives continuity.
+    #[serde(default)]
+    pub cert_alias: Option<String>,
     // --- consolidated NDE / heat-treat / pressure test ---
     #[serde(default)]
     pub nde_percent: Option<String>,

@@ -215,6 +215,12 @@ function DetailPanel({
   w: Weld; edit: boolean; editable: boolean; lookups: Lookups;
   save: (w: Weld, c: Partial<Weld>) => void; canDelete: boolean; onRepair: () => void; onDelete: () => void;
 }) {
+  // The welder's cert aliases feed the Cert dropdown (which cert this weld used).
+  const [certAliases, setCertAliases] = useState<string[]>([]);
+  useEffect(() => {
+    if (w.stamp_number) api.welderCertAliases(w.stamp_number).then(setCertAliases).catch(() => setCertAliases([]));
+    else setCertAliases([]);
+  }, [w.stamp_number]);
   const opt = (k: string) => lookups[k] ?? [];
   const F = ({ label, node }: { label: string; node: React.ReactNode }) => (
     <div className="dp-field"><span className="dp-label">{label}</span><span className="dp-val">{node}</span></div>
@@ -230,6 +236,7 @@ function DetailPanel({
         <F label="Old → New" node={edit ? <InlineSelect value={w.old_to_new} options={opt("old_to_new")} onCommit={(v) => save(w, { old_to_new: v })} /> : t(w.old_to_new)} />
         <F label="Groove Type" node={edit ? <InlineSelect value={w.groove_type} options={opt("groove_type")} onCommit={(v) => save(w, { groove_type: v })} /> : t(w.groove_type)} />
         <F label="Process" node={edit ? <InlineSelect value={w.process} options={opt("process")} onCommit={(v) => save(w, { process: v })} /> : t(w.process)} />
+        <F label="Cert (WPQ)" node={edit ? <InlineSelect value={w.cert_alias} options={certAliases} allowCustom onCommit={(v) => save(w, { cert_alias: v })} /> : t(w.cert_alias)} />
         <F label="WPS Number" node={edit ? <InlineText value={w.wps_number} onCommit={(v) => save(w, { wps_number: v })} /> : t(w.wps_number)} />
         <F label="UT Thickness" node={edit ? <InlineText value={w.ut_thickness} onCommit={(v) => save(w, { ut_thickness: v })} /> : t(w.ut_thickness)} />
         <F label="PT/MT Prep" node={edit ? <InlineSelect value={w.pt_mt_prep} options={yn} onCommit={(v) => save(w, { pt_mt_prep: v })} /> : t(w.pt_mt_prep)} />

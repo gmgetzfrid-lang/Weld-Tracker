@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use tauri::State;
 use weldcore::reports::*;
 use weldcore::{
-    CriteriaRow, Drawing, Lookup, PipeRow, Store, User, Weld, WeldFilter, Welder,
-    WorkOrderSummary,
+    CriteriaRow, Drawing, Lookup, PipeRow, Store, User, Weld, WeldFilter, Welder, WelderCert,
+    WelderContinuity, WorkOrderSummary,
 };
 
 pub struct AppState {
@@ -206,6 +206,61 @@ pub fn update_welder(state: State<AppState>, welder: Welder) -> R<()> {
 pub fn delete_welder(state: State<AppState>, id: i64) -> R<()> {
     state.require_editor()?;
     e(state.store.delete_welder(id))
+}
+
+// --------------------------- welder certs / continuity ---------------------
+
+#[tauri::command]
+pub fn list_welder_certs(state: State<AppState>, welder_id: i64) -> R<Vec<WelderCert>> {
+    state.require_login()?;
+    e(state.store.list_welder_certs(welder_id))
+}
+
+#[tauri::command]
+pub fn welder_cert_aliases(state: State<AppState>, stamp: String) -> R<Vec<String>> {
+    state.require_login()?;
+    e(state.store.welder_cert_aliases(&stamp))
+}
+
+#[tauri::command]
+pub fn create_welder_cert(state: State<AppState>, cert: WelderCert) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store.create_welder_cert(&cert, &actor.username))
+}
+
+#[tauri::command]
+pub fn update_welder_cert(state: State<AppState>, cert: WelderCert) -> R<()> {
+    state.require_editor()?;
+    e(state.store.update_welder_cert(&cert))
+}
+
+#[tauri::command]
+pub fn delete_welder_cert(state: State<AppState>, id: i64) -> R<()> {
+    state.require_editor()?;
+    e(state.store.delete_welder_cert(id))
+}
+
+#[tauri::command]
+pub fn set_welder_cert_file(
+    state: State<AppState>,
+    id: i64,
+    name: String,
+    data_base64: String,
+) -> R<()> {
+    state.require_editor()?;
+    e(state.store.set_welder_cert_file(id, &name, &data_base64))
+}
+
+#[tauri::command]
+pub fn get_welder_cert_file(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
+    state.require_login()?;
+    e(state.store.get_welder_cert_file(id))
+}
+
+#[tauri::command]
+pub fn welder_continuity(state: State<AppState>, welder_id: i64) -> R<WelderContinuity> {
+    state.require_login()?;
+    e(state.store.welder_continuity(welder_id))
 }
 
 // --------------------------- welds -----------------------------------------

@@ -6,6 +6,7 @@
 //! be unit-tested on its own.
 
 pub mod auth;
+pub mod certs;
 pub mod drawings;
 pub mod models;
 pub mod pipe;
@@ -107,6 +108,7 @@ impl Store {
             (2, include_str!("migrations/0002_drawings.sql")),
             (3, include_str!("migrations/0003_nde.sql")),
             (4, include_str!("migrations/0004_spec_break.sql")),
+            (5, include_str!("migrations/0005_welder_certs.sql")),
         ];
 
         for (version, sql) in MIGRATIONS {

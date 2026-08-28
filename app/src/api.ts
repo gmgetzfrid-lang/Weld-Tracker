@@ -15,6 +15,8 @@ import type {
   Weld,
   WeldFilter,
   Welder,
+  WelderCert,
+  WelderContinuity,
   WelderStatRow,
   WelderStatsReport,
   WorkOrderSummary,
@@ -61,6 +63,23 @@ export const api = {
   createWelder: (welder: Welder) => invoke<number>("create_welder", { welder }),
   updateWelder: (welder: Welder) => invoke<void>("update_welder", { welder }),
   deleteWelder: (id: number) => invoke<void>("delete_welder", { id }),
+
+  // welder certs (qualifications) + continuity
+  listWelderCerts: (welderId: number) =>
+    invoke<WelderCert[]>("list_welder_certs", { welderId }),
+  welderCertAliases: (stamp: string) =>
+    invoke<string[]>("welder_cert_aliases", { stamp }),
+  createWelderCert: (cert: WelderCert) =>
+    invoke<number>("create_welder_cert", { cert }),
+  updateWelderCert: (cert: WelderCert) =>
+    invoke<void>("update_welder_cert", { cert }),
+  deleteWelderCert: (id: number) => invoke<void>("delete_welder_cert", { id }),
+  setWelderCertFile: (id: number, name: string, dataBase64: string) =>
+    invoke<void>("set_welder_cert_file", { id, name, dataBase64 }),
+  getWelderCertFile: (id: number) =>
+    invoke<[string, string] | null>("get_welder_cert_file", { id }),
+  welderContinuity: (welderId: number) =>
+    invoke<WelderContinuity>("welder_continuity", { welderId }),
 
   // welds
   listWelds: (filter: WeldFilter) => invoke<Weld[]>("list_welds", { filter }),

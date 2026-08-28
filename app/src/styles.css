@@ -556,3 +556,19 @@ tr.wt-detail > td { background: #f5f8ff; padding: 0; }
 /* Dashboard NDE quick-ref */
 .nde-quick { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .nde-quick .nq-fig { font-size: 30px; font-weight: 800; line-height: 1; }
+
+/* ---- Welder qualifications: cert chips & manager ---- */
+.cert-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cert-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+}
+.cert-chip.hasfile { cursor: pointer; }
+.cert-chip.hasfile:hover { border-color: var(--blue); background: #eef3ff; }
+.cert-chip.off { color: var(--text-muted); }
+.cert-chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.cert-chip .dot.green { background: var(--ok); }
+.cert-chip .dot.gray { background: var(--text-faint); }
+.cert-chip .clip { font-size: 11px; opacity: .7; }
+.cert-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.cert-add > input, .cert-add > select { padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13px; }
