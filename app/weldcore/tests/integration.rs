@@ -1117,3 +1117,29 @@ fn rejected_weld_with_repair_is_downgraded() {
     assert!(!ex.by_code.contains_key("result.rejected_unrepaired"));
 }
 
+
+#[test]
+fn repair_links_parent_weld_by_id() {
+    let s = store();
+    let mut rej = weld("700", "BW", "K1", "2026-03-01");
+    rej.weld_number = Some("W1".into());
+    rej.service_category = Some("Normal".into());
+    rej.material_group = Some("Carbon Steel".into());
+    rej.flange_class = Some("300".into());
+    rej.shop_or_field = Some("SHOP".into());
+    rej.nde_percent = Some("5%".into());
+    rej.nde_result = Some("Rejected".into());
+    let id = s.create_weld(&rej, "alice").unwrap();
+    let ids = s.create_repair(id, false, "alice").unwrap();
+    let repair = s.get_weld(ids[0]).unwrap();
+    // The repair points back at the weld it repairs.
+    assert_eq!(repair.parent_weld_id, Some(id));
+    // Even if the repair were renamed off the "W1R1" convention, the exact link
+    // still marks the parent as repaired.
+    let mut r2 = repair.clone();
+    r2.weld_number = Some("XYZ".into());
+    s.update_weld(&r2, "alice").unwrap();
+    let ex = s.weld_exceptions(Some("700")).unwrap();
+    assert!(ex.by_code.contains_key("result.rejected_repaired"));
+    assert!(!ex.by_code.contains_key("result.rejected_unrepaired"));
+}

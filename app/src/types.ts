@@ -153,6 +153,8 @@ export interface Weld {
   expected_nde_blockers?: string | null;
   /** Optimistic-concurrency token; sent back on update to detect a clash. */
   row_version?: number;
+  /** Repair chain: id of the weld this one repairs, if any. */
+  parent_weld_id?: number | null;
   /** Soft-delete: set when the weld is Voided (retained, excluded from counts). */
   voided_at?: string | null;
   voided_by?: string | null;

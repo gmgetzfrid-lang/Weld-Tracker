@@ -75,7 +75,7 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     b31_temp_f, b31_pressure_psig, required_nde_method,
     nde_rule_set, expected_nde_percent, expected_nde_method, expected_nde_note,
     expected_nde_resolved, expected_nde_blockers,
-    voided_at, voided_by, void_reason, row_version,
+    voided_at, voided_by, void_reason, row_version, parent_weld_id,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
 
@@ -96,6 +96,7 @@ const WRITE_COLS: &[&str] = &[
     "nde_rule_set", "expected_nde_percent", "expected_nde_method", "expected_nde_note",
     "expected_nde_resolved", "expected_nde_blockers",
     "drawing_id", "groove_type", "process", "bubble_page", "bubble_x", "bubble_y", "joint_x", "joint_y",
+    "parent_weld_id",
 ];
 
 fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
@@ -138,6 +139,7 @@ fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
         Box::new(w.drawing_id), Box::new(w.groove_type.clone()), Box::new(w.process.clone()),
         Box::new(w.bubble_page), Box::new(w.bubble_x), Box::new(w.bubble_y),
         Box::new(w.joint_x), Box::new(w.joint_y),
+        Box::new(w.parent_weld_id),
     ]
 }
 
@@ -234,6 +236,7 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         voided_by: r.get("voided_by")?,
         void_reason: r.get("void_reason")?,
         row_version: r.get("row_version")?,
+        parent_weld_id: r.get("parent_weld_id")?,
     };
     // Legacy rows saved before migration 0009 have no snapshot — compute it live
     // so the readout is never blank. (New writes always persist the snapshot.)
@@ -500,13 +503,23 @@ impl Store {
         drop(stmt);
         drop(conn);
 
-        // Weld numbers present, to detect repair children (`<base>R<k>`).
+        // Repair children by exact link (parent_weld_id), with a text fallback
+        // (`<base>R<k>`) for repairs logged before the link existed.
+        let repaired_ids: std::collections::HashSet<i64> =
+            welds.iter().filter_map(|w| w.parent_weld_id).collect();
         let numbers: Vec<String> = welds
             .iter()
             .filter_map(|w| w.weld_number.clone())
             .map(|s| s.trim().to_uppercase())
             .collect();
-        let has_repair = |base: &str| {
+        let has_repair = |w: &Weld| {
+            if repaired_ids.contains(&w.id) {
+                return true;
+            }
+            let base = w.weld_number.clone().unwrap_or_default();
+            if base.trim().is_empty() {
+                return false;
+            }
             let prefix = format!("{}R", base.trim().to_uppercase());
             numbers.iter().any(|n| n.starts_with(&prefix))
         };
@@ -519,8 +532,7 @@ impl Store {
             let mut findings = validate::validate_weld(w);
             // Layer the repair-chain rule onto a rejected weld.
             if let Some(pos) = findings.iter().position(|f| f.code == "result.rejected") {
-                let base = w.weld_number.clone().unwrap_or_default();
-                if has_repair(&base) {
+                if has_repair(w) {
                     findings[pos] = Finding {
                         severity: Severity::Advisory,
                         code: "result.rejected_repaired".into(),
@@ -779,6 +791,8 @@ impl Store {
         repair.nde_types = None;
         repair.count_omission = false;
         repair.status = "Required".to_string();
+        repair.parent_weld_id = Some(orig.id); // exact repair-chain link
+        repair.row_version = 0;
         repair.description = Some(format!("Repair of {base}"));
         let mut created = vec![self.create_weld(&repair, actor)?];
 

@@ -141,6 +141,7 @@ impl Store {
             (9, include_str!("migrations/0009_integrity_snapshot.sql")),
             (10, include_str!("migrations/0010_soft_delete_audit.sql")),
             (11, include_str!("migrations/0011_row_version.sql")),
+            (12, include_str!("migrations/0012_repair_chain.sql")),
         ];
 
         let pending: Vec<&(i64, &str)> =

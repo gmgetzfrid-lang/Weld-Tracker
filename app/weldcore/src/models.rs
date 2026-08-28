@@ -313,6 +313,10 @@ pub struct Weld {
     /// trips through the UI so the client always sends back the version it has.
     #[serde(default)]
     pub row_version: i64,
+    /// Repair chain: the id of the weld this one repairs, if any. Set when a
+    /// repair is logged so repair detection is an exact link, not a text decode.
+    #[serde(default)]
+    pub parent_weld_id: Option<i64>,
     /// Soft-delete: when set, the weld is Voided — retained for the record but
     /// excluded from every count (count_omission is also 1). NULL = live.
     #[serde(default)]
