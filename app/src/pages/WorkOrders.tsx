@@ -13,8 +13,11 @@ type View =
   | { kind: "wizard"; drawingId: number | null; wo?: string };
 
 export function WorkOrders() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const toast = useToast();
+  // The work order's owner (its creator) or an admin may delete the whole thing.
+  const canDeleteWo = (r: WorkOrderSummary) =>
+    user != null && (user.role === "admin" || r.owner === user.username);
   const [view, setView] = useState<View>({ kind: "list" });
   const [rows, setRows] = useState<WorkOrderSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +124,7 @@ export function WorkOrders() {
               <tr>
                 <th>Work Order #</th><th>Unit</th>
                 <th className="num">Isometrics</th><th className="num">Welds</th>
-                <th>Last Activity</th><th></th>{can("admin") && <th></th>}
+                <th>Last Activity</th><th></th>{can("editor") && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -133,9 +136,11 @@ export function WorkOrders() {
                   <td className="num">{num(r.weld_count)}</td>
                   <td className="faint">{r.last_activity ?? "—"}</td>
                   <td><span className="btn btn-sm">Open records ›</span></td>
-                  {can("admin") && (
+                  {can("editor") && (
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-sm btn-danger" title="Delete this work order and everything in it (admin)" onClick={(e) => delWorkOrder(r, e)}>🗑</button>
+                      {canDeleteWo(r) && (
+                        <button className="btn btn-sm btn-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => delWorkOrder(r, e)}>🗑</button>
+                      )}
                     </td>
                   )}
                 </tr>

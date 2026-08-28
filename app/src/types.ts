@@ -277,6 +277,8 @@ export interface WorkOrderSummary {
   drawing_count: number;
   weld_count: number;
   last_activity?: string | null;
+  /** Who created the work order. The owner (or an admin) may delete the whole thing. */
+  owner?: string | null;
 }
 
 export interface NdeSpecStat {

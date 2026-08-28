@@ -318,6 +318,9 @@ pub struct WorkOrderSummary {
     pub drawing_count: i64,
     pub weld_count: i64,
     pub last_activity: Option<String>,
+    /// Who created the work order (its first record). The owner — or an admin —
+    /// may delete the whole work order; anyone else only their own records.
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

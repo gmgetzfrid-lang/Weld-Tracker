@@ -36,6 +36,27 @@ fn drawing_from_row(r: &Row) -> rusqlite::Result<Drawing> {
     })
 }
 
+/// The "owner" of a work order: whoever created it. A work order isn't its own
+/// table — it's a grouping — so ownership is derived from its earliest record
+/// (drawing or weld) by created_at. Used to decide who may delete the whole
+/// work order.
+fn work_order_owner_conn(conn: &rusqlite::Connection, work_order: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT created_by FROM (
+            SELECT created_by, created_at FROM welds WHERE work_order = ?1 COLLATE NOCASE
+            UNION ALL
+            SELECT created_by, created_at FROM drawings WHERE work_order = ?1 COLLATE NOCASE
+         )
+         WHERE created_by IS NOT NULL AND created_by <> ''
+         ORDER BY created_at ASC, created_by ASC
+         LIMIT 1",
+        params![work_order],
+        |r| r.get::<_, Option<String>>(0),
+    )
+    .ok()
+    .flatten()
+}
+
 const DRAWING_SELECT: &str = "SELECT id, work_order, drawing_no, unit, line_spec, line_spec_2,
     revision, title, spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
     default_material, pdf_name, (pdf_data IS NOT NULL) AS has_pdf, page_count,
@@ -52,7 +73,13 @@ impl Store {
                     (SELECT unit FROM welds w WHERE w.work_order = wo AND w.unit IS NOT NULL LIMIT 1),
                     (SELECT COUNT(*) FROM drawings d WHERE d.work_order = wo),
                     (SELECT COUNT(*) FROM welds w WHERE w.work_order = wo),
-                    (SELECT MAX(updated_at) FROM welds w WHERE w.work_order = wo)
+                    (SELECT MAX(updated_at) FROM welds w WHERE w.work_order = wo),
+                    (SELECT created_by FROM (
+                        SELECT created_by, created_at FROM welds w WHERE w.work_order = wo
+                        UNION ALL
+                        SELECT created_by, created_at FROM drawings d WHERE d.work_order = wo
+                     ) WHERE created_by IS NOT NULL AND created_by <> ''
+                       ORDER BY created_at ASC, created_by ASC LIMIT 1)
              FROM (
                 SELECT work_order AS wo FROM welds WHERE work_order IS NOT NULL AND work_order <> ''
                 UNION
@@ -67,6 +94,7 @@ impl Store {
                 drawing_count: r.get(2)?,
                 weld_count: r.get(3)?,
                 last_activity: r.get(4)?,
+                owner: r.get(5)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -151,15 +179,23 @@ impl Store {
         Ok(())
     }
 
-    /// Delete an ENTIRE work order — every weld and drawing under it. This is
-    /// destructive across users' records, so it is admin-only; a non-admin who
-    /// wants to remove their own welds deletes them individually. Returns the
-    /// (welds, drawings) removed.
+    /// Who owns a work order (created its first record), if anyone. The owner —
+    /// or an admin — may delete the whole work order.
+    pub fn work_order_owner(&self, work_order: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        Ok(work_order_owner_conn(&conn, work_order))
+    }
+
+    /// Delete an ENTIRE work order — every weld and drawing under it. This wipes
+    /// records across users, so only the work order's OWNER (whoever created it)
+    /// or an admin may do it; anyone else deletes only the individual welds and
+    /// drawings they created themselves. Returns the (welds, drawings) removed.
     pub fn delete_work_order(&self, work_order: &str, actor: &str, role: &str) -> Result<(i64, i64)> {
-        if role != "admin" {
+        let conn = self.conn.lock().unwrap();
+        let owner = work_order_owner_conn(&conn, work_order);
+        if role != "admin" && owner.as_deref() != Some(actor) {
             return Err(Error::PermissionDenied);
         }
-        let conn = self.conn.lock().unwrap();
         let welds = conn.execute(
             "DELETE FROM welds WHERE work_order = ?1 COLLATE NOCASE",
             params![work_order],

@@ -97,6 +97,8 @@ export const api = {
   listWorkOrders: () => invoke<WorkOrderSummary[]>("list_work_orders"),
   deleteWorkOrder: (workOrder: string) =>
     invoke<[number, number]>("delete_work_order", { workOrder }),
+  workOrderOwner: (workOrder: string) =>
+    invoke<string | null>("work_order_owner", { workOrder }),
   listDrawingsForWo: (workOrder: string) =>
     invoke<Drawing[]>("list_drawings_for_wo", { workOrder }),
 

@@ -632,32 +632,46 @@ fn welder_cert_continuity_and_status() {
 }
 
 #[test]
-fn delete_work_order_admin_only() {
+fn delete_work_order_owner_or_admin() {
     let s = store();
-    // WO "900": one drawing + two welds by different people.
+    // WO "900" is created (owned) by alice; bob later adds a weld to it.
     let d = Drawing { work_order: Some("900".into()), drawing_no: Some("D9".into()), ..Default::default() };
-    s.create_drawing(&d, "admin").unwrap();
+    s.create_drawing(&d, "alice").unwrap();
     s.create_weld(&weld("900", "BW", "K1", "2026-06-01"), "alice").unwrap();
     s.create_weld(&weld("900", "SW", "K1", "2026-06-02"), "bob").unwrap();
-    // a different WO that must be left untouched.
-    s.create_weld(&weld("901", "BW", "K1", "2026-06-03"), "alice").unwrap();
+    // WO "901" is owned by dave and must be left untouched by alice's actions.
+    s.create_weld(&weld("901", "BW", "K1", "2026-06-03"), "dave").unwrap();
 
-    // A non-admin cannot delete a whole work order (it spans others' welds).
+    // Ownership is derived from the earliest record's creator.
+    assert_eq!(s.work_order_owner("900").unwrap().as_deref(), Some("alice"));
+    assert_eq!(s.work_order_owner("901").unwrap().as_deref(), Some("dave"));
+    // The records-directory roll-up surfaces the same owner.
+    let summaries = s.list_work_orders().unwrap();
+    let wo900_sum = summaries.iter().find(|r| r.work_order == "900").unwrap();
+    assert_eq!(wo900_sum.owner.as_deref(), Some("alice"));
+
+    let wo900 = || WeldFilter { work_order: Some("900".into()), ..Default::default() };
+    let wo901 = || WeldFilter { work_order: Some("901".into()), ..Default::default() };
+
+    // bob is on the work order but didn't create it — he cannot delete the whole
+    // thing; he may only delete his own welds individually.
     assert!(matches!(
-        s.delete_work_order("900", "alice", "editor"),
+        s.delete_work_order("900", "bob", "editor"),
         Err(weldcore::Error::PermissionDenied)
     ));
-    let wo900 = || WeldFilter { work_order: Some("900".into()), ..Default::default() };
     assert_eq!(s.count_welds(&wo900()).unwrap(), 2);
 
-    // An admin deletes the whole work order — welds + drawings — leaving others.
-    let (w, dr) = s.delete_work_order("900", "carol", "admin").unwrap();
+    // alice OWNS "900" — she can delete the whole work order (welds + drawings),
+    // including bob's weld, and dave's "901" is untouched.
+    let (w, dr) = s.delete_work_order("900", "alice", "editor").unwrap();
     assert_eq!(w, 2);
     assert_eq!(dr, 1);
     assert_eq!(s.count_welds(&wo900()).unwrap(), 0);
     assert!(s.list_drawings_for_wo("900").unwrap().is_empty());
-    assert_eq!(
-        s.count_welds(&WeldFilter { work_order: Some("901".into()), ..Default::default() }).unwrap(),
-        1
-    );
+    assert_eq!(s.count_welds(&wo901()).unwrap(), 1);
+
+    // An admin can delete a work order they don't own.
+    let (w2, _) = s.delete_work_order("901", "carol", "admin").unwrap();
+    assert_eq!(w2, 1);
+    assert_eq!(s.count_welds(&wo901()).unwrap(), 0);
 }

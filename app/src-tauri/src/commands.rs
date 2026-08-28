@@ -365,8 +365,15 @@ pub fn delete_drawing(state: State<AppState>, id: i64) -> R<()> {
 
 #[tauri::command]
 pub fn delete_work_order(state: State<AppState>, work_order: String) -> R<(i64, i64)> {
-    let actor = state.require_admin()?;
+    // Any editor may attempt; the store enforces owner-or-admin.
+    let actor = state.require_editor()?;
     e(state.store.delete_work_order(&work_order, &actor.username, &actor.role))
+}
+
+#[tauri::command]
+pub fn work_order_owner(state: State<AppState>, work_order: String) -> R<Option<String>> {
+    state.require_login()?;
+    e(state.store.work_order_owner(&work_order))
 }
 
 #[tauri::command]

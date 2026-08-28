@@ -36,8 +36,12 @@ export function WorkOrderRecord({
     user != null && (user.role === "admin" || d.created_by === user.username);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [welds, setWelds] = useState<Weld[]>([]);
+  const [owner, setOwner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The work order's owner (its creator) or an admin may delete the whole thing.
+  const canDeleteWo =
+    user != null && (user.role === "admin" || (owner != null && owner === user.username));
 
   const load = useCallback(() => {
     Promise.all([
@@ -47,6 +51,7 @@ export function WorkOrderRecord({
       .then(([d, w]) => { setDrawings(d); setWelds(w); setError(null); })
       .catch((e) => setError(errMsg(e)))
       .finally(() => setLoading(false));
+    api.workOrderOwner(workOrder).then(setOwner).catch(() => setOwner(null));
   }, [workOrder]);
   useEffect(load, [load]);
 
@@ -86,8 +91,8 @@ export function WorkOrderRecord({
         {editable && (
           <button className="btn btn-accent" onClick={() => onOpenDrawing(null)}>＋ Add Drawing &amp; Welds</button>
         )}
-        {can("admin") && (
-          <button className="btn btn-sm btn-danger" title="Delete this entire work order (admin only)" onClick={delWorkOrder}>🗑 Delete work order</button>
+        {canDeleteWo && (
+          <button className="btn btn-sm btn-danger" title="Delete this entire work order (owner or admin)" onClick={delWorkOrder}>🗑 Delete work order</button>
         )}
       </div>
 
