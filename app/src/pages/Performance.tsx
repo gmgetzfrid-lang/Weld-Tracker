@@ -25,11 +25,11 @@ export function Performance() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warn, setWarn] = useState(0.05);
-  const [company, setCompany] = useState("Weld Tracker");
+  const [company, setCompany] = useState("SENTRIX");
 
   useEffect(() => {
     rejectThreshold().then(setWarn);
-    api.getSettings().then((s) => setCompany(s.company_name || s.app_title || "Weld Tracker")).catch(() => {});
+    api.getSettings().then((s) => setCompany(s.company_name || s.app_title || "SENTRIX")).catch(() => {});
   }, []);
 
   const load = useCallback(() => {

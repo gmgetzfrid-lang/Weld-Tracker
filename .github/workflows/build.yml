@@ -1,6 +1,6 @@
 name: Build Windows App
 
-# Builds the Kern Energy Weld Tracker as a per-user Windows installer (no admin
+# Builds SENTRIX — Assurance Console as a per-user Windows installer (no admin
 # rights required to install) plus the raw portable executable. Runs on every
 # push to the app, and publishes a downloadable Release when you push a tag
 # like `v0.1.0`.
@@ -54,31 +54,31 @@ jobs:
         run: |
           mkdir -p dist-out
           cp target/release/bundle/nsis/*-setup.exe dist-out/ || true
-          cp target/release/weld-tracker.exe dist-out/WeldTracker-portable.exe || true
+          cp target/release/weld-tracker.exe dist-out/Sentrix-portable.exe || true
           # Ship a portable marker so the portable exe keeps its database in a
           # data\ folder beside it — drop the exe + this marker on a network
           # share and everyone who runs it shares the same data.
-          printf 'This marker tells WeldTracker-portable.exe to keep its shared database in the data folder next to the exe.\r\n' > dist-out/weld-tracker.portable
+          printf 'This marker tells Sentrix-portable.exe to keep its shared database in the data folder next to the exe.\r\n' > dist-out/sentrix.portable
           cat > dist-out/READ-ME-FIRST.txt <<'TXT'
-          Kern Energy Weld Tracker — how to deploy
+          SENTRIX — Assurance Console — how to deploy
 
           SHARED (a team on a network drive) — recommended:
-            1. Copy WeldTracker-portable.exe and weld-tracker.portable together
-               into a folder on your network drive, e.g. \\server\apps\WeldTracker\
-            2. Everyone runs WeldTracker-portable.exe from that folder.
+            1. Copy Sentrix-portable.exe and sentrix.portable together
+               into a folder on your network drive, e.g. \\server\apps\Sentrix\
+            2. Everyone runs Sentrix-portable.exe from that folder.
             3. The shared database is created in a "data" subfolder beside the exe,
                so every user sees the same work orders, welds and reports.
             4. First run: sign in as admin / password, then set a new password and
                create a login profile for each user (Administration > Users).
 
           Point at a specific shared file instead:
-            Put a file named weld-tracker.json next to the exe containing:
-              { "database_path": "\\\\server\\apps\\WeldTracker\\data\\weldtracker.db" }
-            (or set the WELDTRACKER_DB environment variable to that path.)
+            Put a file named sentrix.json next to the exe containing:
+              { "database_path": "\\\\server\\apps\\Sentrix\\data\\sentrix.db" }
+            (or set the SENTRIX_DB environment variable to that path.)
 
           SINGLE PC:
             Run the ...-setup.exe installer (installs per-user, no admin). Its
-            database stays on that PC only. Delete weld-tracker.portable if you
+            database stays on that PC only. Delete sentrix.portable if you
             copied it and don't want shared mode.
 
           Settings > About shows the exact database file each user is on.
@@ -88,7 +88,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: weld-tracker-windows
+          name: sentrix-windows
           path: app/dist-out/*
           if-no-files-found: error
 

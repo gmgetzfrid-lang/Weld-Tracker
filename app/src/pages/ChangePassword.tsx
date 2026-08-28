@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, errMsg } from "../api";
 import { useAuth } from "../auth";
-import logo from "../assets/kern-energy-logo.png";
+import { SentrixLockup } from "../components/Brand";
 import { ErrorBox, Modal, useToast } from "../components/ui";
 
 /** Shown full-screen when `forced` (first login), otherwise as a modal. */
@@ -84,7 +84,7 @@ export function ChangePassword({
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <img className="auth-logo" src={logo} alt="Kern Energy" />
+        <SentrixLockup />
         <h3 className="auth-title">Set a new password</h3>
         <p className="auth-sub">
           Welcome{user ? `, ${user.display_name || user.username}` : ""}. For

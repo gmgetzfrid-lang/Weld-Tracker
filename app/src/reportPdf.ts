@@ -161,7 +161,7 @@ export function buildPerformancePdf(rep: PerformanceReport, company: string): js
   doc.text("Welder Performance & NDE Compliance", M, 34);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(company || "Weld Tracker", M, 52);
+  doc.text(company || "SENTRIX", M, 52);
   doc.setFontSize(9);
   doc.setTextColor(206, 214, 240);
   doc.text(`Period: ${rep.period_label}`, M, 66);
@@ -333,7 +333,7 @@ export function buildPerformancePdf(rep: PerformanceReport, company: string): js
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text(`${company || "Weld Tracker"} — Welder Performance & NDE Compliance`, M, h - 20);
+    doc.text(`${company || "SENTRIX"} — Welder Performance & NDE Compliance`, M, h - 20);
     doc.text(`Page ${p} of ${pages}`, PAGE_W - M, h - 20, { align: "right" });
   }
 

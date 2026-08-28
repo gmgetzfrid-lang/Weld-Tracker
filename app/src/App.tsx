@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
-import logo from "./assets/kern-energy-logo.png";
+import { SentrixMark } from "./components/Brand";
 import type { Settings } from "./types";
 import { Login } from "./pages/Login";
 import { ChangePassword } from "./pages/ChangePassword";
@@ -126,8 +126,12 @@ export function App() {
     <div className="app">
       <div className="rail-slot">
         <aside className="rail" onMouseLeave={() => setProfileOpen(false)}>
-          <div className="rail-brand" title={settings.app_title || "Weld Tracker"}>
-            <img src={logo} alt="Kern Energy" />
+          <div className="rail-brand" title="SENTRIX — Assurance Console">
+            <SentrixMark size={30} />
+            <div className="rail-brand-text">
+              <span className="rail-word">SENTRIX</span>
+              <span className="rail-tag">Assurance Console</span>
+            </div>
           </div>
           <nav className="rail-nav">
             {groups.map((g) => {

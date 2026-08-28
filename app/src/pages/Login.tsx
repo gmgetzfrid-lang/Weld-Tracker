@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, errMsg } from "../api";
 import { useAuth } from "../auth";
-import logo from "../assets/kern-energy-logo.png";
+import { SentrixLockup } from "../components/Brand";
 import type { Settings } from "../types";
 import { ErrorBox } from "../components/ui";
 
@@ -29,10 +29,9 @@ export function Login({ settings }: { settings: Settings }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <img className="auth-logo" src={logo} alt="Kern Energy" />
+        <SentrixLockup />
         <p className="auth-sub">
-          {settings.app_title || "Weld Tracker"} ·{" "}
-          {settings.company_tagline || "Weld & NDE Quality Tracking"}
+          {settings.company_tagline || "Weld & NDE quality assurance"}
         </p>
         <h3 className="auth-title">Sign in</h3>
         <ErrorBox message={error} />

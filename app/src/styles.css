@@ -1,12 +1,15 @@
 :root {
-  /* Kern Energy brand */
+  /* SENTRIX brand — diamond compass star: blue → green → gold on navy */
   --navy: #0a1f6b;
   --navy-800: #0d2a86;
   --navy-700: #16357f;
-  --blue: #25408f;
-  --teal: #2f9e7e;
-  --gold: #d6b24a;
-  --brand-gradient: linear-gradient(120deg, var(--blue) 0%, var(--teal) 55%, var(--gold) 100%);
+  --blue: #1668d6;        /* readable brand blue for links/accents */
+  --teal: #00a577;        /* brand green (deepened for contrast) */
+  --gold: #d9a400;        /* brand gold (deepened for contrast) */
+  --brand-blue: #1E90FF;  /* exact brand hues for the gradient & mark */
+  --brand-green: #00C78C;
+  --brand-gold: #FFD700;
+  --brand-gradient: linear-gradient(120deg, #1E90FF 0%, #00C78C 55%, #FFD700 100%);
 
   /* neutrals */
   --bg: #f4f6fb;
@@ -57,7 +60,6 @@ button { font-family: inherit; }
   width: 400px; max-width: 100%; background: var(--surface);
   border-radius: 16px; box-shadow: var(--shadow-lg); padding: 34px 32px 28px;
 }
-.auth-logo { display: block; width: 210px; margin: 4px auto 6px; }
 .auth-sub { text-align: center; color: var(--text-muted); margin: 0 0 22px; font-size: 13px; }
 .auth-title { text-align: center; font-size: 18px; margin-bottom: 18px; }
 
@@ -71,8 +73,19 @@ button { font-family: inherit; }
   display: flex; flex-direction: column; z-index: 50; transition: width .16s ease;
 }
 .rail:hover { width: 238px; box-shadow: 10px 0 34px rgba(6,16,58,.30); }
-.rail-brand { height: 54px; flex-shrink: 0; display: flex; align-items: center; padding: 0 17px; border-bottom: 1px solid rgba(255,255,255,.08); }
-.rail-brand img { height: 26px; width: auto; max-width: 190px; object-fit: contain; object-position: left center; filter: brightness(0) invert(1); opacity: .96; }
+.rail-brand { height: 54px; flex-shrink: 0; display: flex; align-items: center; gap: 11px; padding: 0 15px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.rail-brand-text { display: flex; flex-direction: column; line-height: 1.12; overflow: hidden; opacity: 0; transition: opacity .12s; }
+.rail:hover .rail-brand-text { opacity: 1; }
+.rail-word { color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .16em; white-space: nowrap; }
+.rail-tag { color: #8ea1cf; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; white-space: nowrap; }
+/* wordmark + hero lockups (auth screens, elsewhere) */
+.brand-lockup { display: inline-flex; flex-direction: column; }
+.brand-word { color: var(--navy); font-weight: 800; font-size: 20px; letter-spacing: .16em; }
+.brand-tag { color: var(--text-muted); font-size: 10px; letter-spacing: .2em; text-transform: uppercase; }
+.brand-hero { display: flex; align-items: center; gap: 15px; justify-content: center; margin: 4px auto 10px; }
+.brand-hero-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand-hero-word { color: var(--navy); font-weight: 800; font-size: 30px; letter-spacing: .14em; }
+.brand-hero-tag { color: var(--text-muted); font-size: 11px; letter-spacing: .22em; text-transform: uppercase; }
 .rail-nav { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 8px; scrollbar-width: none; }
 .rail-nav::-webkit-scrollbar { display: none; }
 .rail-group + .rail-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.07); }

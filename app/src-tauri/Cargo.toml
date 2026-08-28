@@ -1,8 +1,8 @@
 [package]
 name = "weld-tracker"
 version = "0.1.0"
-description = "Kern Energy Weld Tracker"
-authors = ["Kern Energy"]
+description = "SENTRIX Assurance Console"
+authors = ["Sentrix"]
 edition = "2021"
 
 [build-dependencies]

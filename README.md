@@ -1,10 +1,12 @@
-# Kern Energy Weld Tracker
+# SENTRIX — Assurance Console
 
-A desktop application that replaces the **Weld_Log_Statistics** Excel workbook
-with a proper Windows app. It keeps every capability of the workbook — the weld
-log, welder roster, pipe reference, NDE examination levels and the full suite of
-reports — and adds real logins, role-based access, an enforced data model,
-search, CSV export and an audit trail.
+**SENTRIX** is a weld & NDE quality-assurance desktop app — the Assurance
+Console. Its first module replaces the **Weld_Log_Statistics** Excel workbook
+with a proper Windows app: it keeps every capability of the workbook — the weld
+log, welder roster, isometric weld mapping, pipe reference, EP 5-5-1 Table 4 NDE
+determination and the full suite of reports — and adds real logins, role-based
+access, an enforced data model, document control, search, CSV export and an
+audit trail.
 
 Built with **Tauri v2** (a tiny native Windows shell) + **SQLite** (an embedded,
 file-based database). It installs and runs **without administrator rights** and
@@ -16,10 +18,10 @@ needs no server, no Excel and no internet connection.
 
 You do not need Node, Rust, or admin rights to *use* the app — those are only for
 building it. GitHub Actions builds the Windows binaries automatically: download the
-**`weld-tracker-windows`** artifact from a green *Build Windows App* run (or the
+**`sentrix-windows`** artifact from a green *Build Windows App* run (or the
 published **Release** if you pushed a `v*` tag). It contains:
 
-- `Weld Tracker_x.y.z_x64-setup.exe` — the installer
+- `Sentrix_x.y.z_x64-setup.exe` — the installer
 - `WeldTracker-portable.exe` — the no-install executable
 - `weld-tracker.portable` — a marker that enables shared mode
 - `READ-ME-FIRST.txt` — deployment steps

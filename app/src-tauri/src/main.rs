@@ -10,38 +10,49 @@ use tauri::Manager;
 use weldcore::Store;
 
 /// Decide where the database lives. Priority:
-///   1. `WELDTRACKER_DB` environment variable (shared).
-///   2. `weld-tracker.json` next to the executable with `"database_path"` (shared).
-///   3. `data/weldtracker.db` next to the executable, if a `weld-tracker.portable`
-///      marker file sits beside the exe and that folder is writable (shared —
-///      this is the "drop it on a network drive" mode).
+///   1. `SENTRIX_DB` (or legacy `WELDTRACKER_DB`) environment variable (shared).
+///   2. `sentrix.json` (or legacy `weld-tracker.json`) next to the executable
+///      with `"database_path"` (shared).
+///   3. `data/sentrix.db` next to the executable, if a `sentrix.portable` (or
+///      legacy `weld-tracker.portable`) marker file sits beside the exe and that
+///      folder is writable (shared — the "drop it on a network drive" mode).
 ///   4. Otherwise the per-user app-data directory (local, single user).
-/// Returns (path, shared).
+/// Returns (path, shared). Legacy names are honoured so existing deployments
+/// keep working after the SENTRIX rename.
 fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
-    if let Ok(p) = std::env::var("WELDTRACKER_DB") {
-        if !p.trim().is_empty() {
-            return (PathBuf::from(p), true);
-        }
+    let env_db = std::env::var("SENTRIX_DB")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| std::env::var("WELDTRACKER_DB").ok().filter(|p| !p.trim().is_empty()));
+    if let Some(p) = env_db {
+        return (PathBuf::from(p), true);
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let cfg = dir.join("weld-tracker.json");
-            if let Ok(txt) = fs::read_to_string(&cfg) {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
-                    if let Some(dp) = v.get("database_path").and_then(|x| x.as_str()) {
-                        if !dp.trim().is_empty() {
-                            return (PathBuf::from(dp), true);
+            for name in ["sentrix.json", "weld-tracker.json"] {
+                if let Ok(txt) = fs::read_to_string(dir.join(name)) {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                        if let Some(dp) = v.get("database_path").and_then(|x| x.as_str()) {
+                            if !dp.trim().is_empty() {
+                                return (PathBuf::from(dp), true);
+                            }
                         }
                     }
                 }
             }
-            if dir.join("weld-tracker.portable").exists() {
+            let has_marker = dir.join("sentrix.portable").exists()
+                || dir.join("weld-tracker.portable").exists();
+            if has_marker {
                 let data = dir.join("data");
                 if fs::create_dir_all(&data).is_ok() {
                     let probe = data.join(".write-test");
                     if fs::write(&probe, b"1").is_ok() {
                         let _ = fs::remove_file(&probe);
-                        return (data.join("weldtracker.db"), true);
+                        // Keep an existing legacy db in place; otherwise use the
+                        // SENTRIX name for fresh shared deployments.
+                        let legacy = data.join("weldtracker.db");
+                        let db = if legacy.exists() { legacy } else { data.join("sentrix.db") };
+                        return (db, true);
                     }
                 }
             }
@@ -52,7 +63,9 @@ fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
         .app_data_dir()
         .expect("could not resolve app data dir");
     fs::create_dir_all(&dir).ok();
-    (dir.join("weldtracker.db"), false)
+    let legacy = dir.join("weldtracker.db");
+    let db = if legacy.exists() { legacy } else { dir.join("sentrix.db") };
+    (db, false)
 }
 
 fn main() {

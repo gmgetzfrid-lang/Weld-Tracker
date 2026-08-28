@@ -91,8 +91,9 @@ export function SettingsPage() {
             ))}
           </div>
           <p className="hint">
-            The company logo shown on the sign-in screen and navigation rail is
-            the Kern Energy mark bundled with the app.
+            The SENTRIX mark shown on the sign-in screen and navigation rail is
+            rendered by the app; set a company name and tagline above to brand
+            reports for your facility.
           </p>
         </div>
       )}
@@ -135,7 +136,7 @@ export function SettingsPage() {
       <div className="card card-pad">
         <h3>About</h3>
         <dl className="kv">
-          <dt>Application</dt><dd>Kern Energy Weld Tracker v0.1</dd>
+          <dt>Application</dt><dd>SENTRIX · Assurance Console v0.1</dd>
           <dt>Database mode</dt>
           <dd>
             {db == null ? "…" : db.shared
