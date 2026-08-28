@@ -278,7 +278,7 @@ export function WeldAnnotator({
         <span className="muted" style={{ width: 42, textAlign: "center" }}>{Math.round(scale * 100)}%</span>
         <button className="btn btn-sm" onClick={() => setScale((s) => Math.min(4, s + 0.2))}>+</button>
         {editable && guided === null && ordered.length > 0 && (
-          <button className="btn btn-sm btn-accent" onClick={() => setGuided(0)}>Fill details ▶</button>
+          <button className="btn btn-sm btn-accent" onClick={() => setGuided(0)}>Fill attributes ▶</button>
         )}
         <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
       </div>
@@ -392,7 +392,7 @@ const COACH = [
   { eyebrow: "We know you're new here", title: "Place a weld bubble", body: "Pick a welder, then click the weld joint on the map — a red leader line follows your cursor." },
   { eyebrow: "Step 2", title: "Drop it", body: "Click again where the bubble should sit. The W-number auto-increments and your welder stays selected — keep clicking down the line, no stopping." },
   { eyebrow: "Two welders on one spool?", title: "Swap seamlessly", body: "Switch the active welder anytime — or press number keys 1–9. The weld numbering keeps right on going." },
-  { eyebrow: "The efficient way", title: "Place all, then fill", body: "Get every bubble down first, then hit “Fill details ▶”. The map jumps to each weld and pulses it, so you never lose track of which one is W4." },
+  { eyebrow: "The efficient way", title: "Place all, then fill", body: "Get every bubble down first, then hit “Fill attributes ▶”. The map jumps to each weld and pulses it while a small card pops up right beside it, so you never lose track of which one is W4." },
 ];
 
 function CoachMarks({ onDone }: { onDone: () => void }) {

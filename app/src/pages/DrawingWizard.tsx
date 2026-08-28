@@ -124,7 +124,9 @@ export function DrawingWizard({
               again to drop the bubble. The <b>W-number</b> auto-increments and the
               welder stays selected — keep clicking down the line. Switch welders any
               time (or number keys 1–9). When the bubbles are down, hit{" "}
-              <b>Fill details</b> to walk each weld. Each bubble is a weld in the log.
+              <b>Fill attributes</b> — the map jumps to each weld, pulses it, and pops a small
+              card right beside it so you enter its specifics while looking at the weld. Each
+              bubble is a weld in the log.
             </Coach>
             <WeldAnnotator
               drawing={drawing}
@@ -155,7 +157,7 @@ export function DrawingWizard({
             )}
             {step === 1 && (
               <button className="btn btn-primary" onClick={() => setStep(2)}>
-                Fill attributes →
+                Weld Details table →
               </button>
             )}
             {step === 2 && (
