@@ -10,6 +10,7 @@ import { Exceptions } from "./pages/Exceptions";
 import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
 import { NewEntryChooser } from "./components/NewEntryChooser";
+import { CommandPalette } from "./components/CommandPalette";
 import { Roster } from "./pages/Roster";
 import { Performance } from "./pages/Performance";
 import { Statistics } from "./pages/Statistics";
@@ -92,12 +93,25 @@ export function App() {
   const [entryOpen, setEntryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [woIntent, setWoIntent] = useState<WoIntent>(null);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
   const openNewEntry = () => setEntryOpen(true);
   const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch(() => {});
   }, [user]);
+
+  // Global Ctrl/Cmd+K opens the jump box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setCmdkOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Reset to the dashboard whenever the signed-in user changes, so a non-admin
   // can never land on an admin-only page left over from a previous session.
@@ -198,6 +212,14 @@ export function App() {
             onExisting={(wo) => { setEntryOpen(false); setWoIntent({ kind: "record", wo }); setPage("workorders"); }}
           />
         )}
+        <CommandPalette
+          open={cmdkOpen}
+          onClose={() => setCmdkOpen(false)}
+          onPick={(hit) => {
+            if (hit.work_order) { openWorkOrder(hit.work_order); }
+            else if (hit.kind === "welder") { setPage("roster"); }
+          }}
+        />
       </main>
     </div>
   );

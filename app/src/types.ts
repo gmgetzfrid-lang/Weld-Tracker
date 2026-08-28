@@ -180,6 +180,16 @@ export interface NdeRequirement {
   rule_set: string;
 }
 
+/** One hit from the global (Ctrl+K) search. */
+export interface SearchHit {
+  kind: "work_order" | "welder" | "drawing" | "weld";
+  label: string;
+  sublabel?: string | null;
+  work_order?: string | null;
+  weld_id?: number | null;
+  stamp?: string | null;
+}
+
 /** Validation-engine severity. */
 export type Severity = "error" | "warning" | "advisory";
 

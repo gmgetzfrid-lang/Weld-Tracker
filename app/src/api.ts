@@ -17,6 +17,7 @@ import type {
   PerformanceReport,
   PipeRow,
   QualityFile,
+  SearchHit,
   Settings,
   SummaryReport,
   User,
@@ -108,6 +109,7 @@ export const api = {
     invoke<string[]>("distinct_weld_values", { field }),
   weldExceptions: (workOrder?: string | null) =>
     invoke<ExceptionsSummary>("weld_exceptions", { workOrder: workOrder ?? null }),
+  globalSearch: (query: string) => invoke<SearchHit[]>("global_search", { query }),
 
   // work orders (records directory)
   listWorkOrders: () => invoke<WorkOrderSummary[]>("list_work_orders"),

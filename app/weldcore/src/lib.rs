@@ -19,6 +19,7 @@ pub mod models;
 pub mod nde;
 pub mod pipe;
 pub mod reports;
+pub mod search;
 pub mod seed;
 pub mod validate;
 pub mod welders;

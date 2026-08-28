@@ -1143,3 +1143,24 @@ fn repair_links_parent_weld_by_id() {
     assert!(ex.by_code.contains_key("result.rejected_repaired"));
     assert!(!ex.by_code.contains_key("result.rejected_unrepaired"));
 }
+
+#[test]
+fn global_search_finds_across_entities() {
+    let s = store();
+    s.create_welder(&mk_welder("K9", "Dana Weldsmith")).unwrap();
+    let mut w = weld("ACME-42", "BW", "K9", "2026-04-01");
+    w.weld_number = Some("W-777".into());
+    s.create_weld(&w, "alice").unwrap();
+
+    // Work order by partial.
+    let hits = s.global_search("ACME", 6).unwrap();
+    assert!(hits.iter().any(|h| h.kind == "work_order" && h.work_order.as_deref() == Some("ACME-42")));
+    // Welder by name.
+    let hits = s.global_search("weldsmith", 6).unwrap();
+    assert!(hits.iter().any(|h| h.kind == "welder" && h.stamp.as_deref() == Some("K9")));
+    // Weld by number.
+    let hits = s.global_search("777", 6).unwrap();
+    assert!(hits.iter().any(|h| h.kind == "weld" && h.label == "W-777"));
+    // Empty query → nothing.
+    assert!(s.global_search("   ", 6).unwrap().is_empty());
+}

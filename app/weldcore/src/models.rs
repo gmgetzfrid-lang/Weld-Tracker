@@ -544,6 +544,23 @@ pub struct WeldFilter {
     pub include_voided: bool,
 }
 
+/// One hit from the global (Ctrl+K) search — a work order, welder, drawing, or
+/// weld the palette can jump to.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SearchHit {
+    /// "work_order" | "welder" | "drawing" | "weld".
+    pub kind: String,
+    pub label: String,
+    #[serde(default)]
+    pub sublabel: Option<String>,
+    #[serde(default)]
+    pub work_order: Option<String>,
+    #[serde(default)]
+    pub weld_id: Option<i64>,
+    #[serde(default)]
+    pub stamp: Option<String>,
+}
+
 /// One row of the audit trail (the Activity log), newest-first.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AuditEntry {

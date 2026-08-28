@@ -375,6 +375,13 @@ pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<Stri
     e(state.store.distinct_weld_values(&field))
 }
 
+/// Global (Ctrl+K) search across work orders, welders, drawings, and welds.
+#[tauri::command]
+pub fn global_search(state: State<AppState>, query: String) -> R<Vec<weldcore::SearchHit>> {
+    state.require_login()?;
+    e(state.store.global_search(&query, 6))
+}
+
 /// Run the validation engine across the live weld population and return the
 /// exceptions roll-up (errors / warnings / advisories + the offending welds).
 /// `workOrder` optionally scopes it to one work order.
