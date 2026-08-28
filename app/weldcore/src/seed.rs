@@ -41,8 +41,6 @@ fn seed_lookups(store: &Store) -> Result<()> {
                 "100", "120", "140", "160", "XXH",
             ],
         ),
-        ("shift", &["Day", "Night"]),
-        ("crew", &["WWW", "TIMEC"]),
         (
             "status",
             &["Required", "Requested", "Pending", "PWHT", "Clear"],

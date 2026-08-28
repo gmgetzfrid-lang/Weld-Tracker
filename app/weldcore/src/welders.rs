@@ -8,12 +8,7 @@ fn welder_from_row(r: &Row) -> rusqlite::Result<Welder> {
         id: r.get("id")?,
         stamp: r.get("stamp")?,
         name: r.get("name")?,
-        shift: r.get("shift")?,
-        crew: r.get("crew")?,
         active: r.get::<_, i64>("active")? != 0,
-        process: r.get("process")?,
-        wpqs: r.get("wpqs")?,
-        wpq_status: r.get("wpq_status")?,
         training: r.get("training")?,
         notes: r.get("notes")?,
         created_at: r.get("created_at")?,
@@ -21,7 +16,7 @@ fn welder_from_row(r: &Row) -> rusqlite::Result<Welder> {
     })
 }
 
-const COLS: &str = "id, stamp, name, shift, crew, active, process, wpqs, wpq_status, training, notes, created_at, updated_at";
+const COLS: &str = "id, stamp, name, active, training, notes, created_at, updated_at";
 
 impl Store {
     /// List welders. `include_inactive` false returns only active welders.
@@ -62,11 +57,10 @@ impl Store {
         }
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO welders (stamp, name, shift, crew, active, process, wpqs, wpq_status, training, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO welders (stamp, name, active, training, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
-                w.stamp.trim(), w.name.trim(), w.shift, w.crew, w.active as i64,
-                w.process, w.wpqs, w.wpq_status, w.training, w.notes
+                w.stamp.trim(), w.name.trim(), w.active as i64, w.training, w.notes
             ],
         )
         .map_err(dup_stamp)?;
@@ -80,13 +74,12 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let n = conn
             .execute(
-                "UPDATE welders SET stamp=?1, name=?2, shift=?3, crew=?4, active=?5,
-                    process=?6, wpqs=?7, wpq_status=?8, training=?9, notes=?10,
-                    updated_at=datetime('now')
-                 WHERE id=?11",
+                "UPDATE welders SET stamp=?1, name=?2, active=?3,
+                    training=?4, notes=?5, updated_at=datetime('now')
+                 WHERE id=?6",
                 params![
-                    w.stamp.trim(), w.name.trim(), w.shift, w.crew, w.active as i64,
-                    w.process, w.wpqs, w.wpq_status, w.training, w.notes, w.id
+                    w.stamp.trim(), w.name.trim(), w.active as i64,
+                    w.training, w.notes, w.id
                 ],
             )
             .map_err(dup_stamp)?;

@@ -13,7 +13,7 @@ const BRAND_FIELDS: [string, string][] = [
 ];
 
 const LOOKUP_KINDS = [
-  "joint_type", "material", "schedule", "shift", "crew", "status", "process", "shop_field",
+  "joint_type", "material", "schedule", "status", "process", "shop_field",
 ];
 
 export function SettingsPage() {

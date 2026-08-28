@@ -20,18 +20,10 @@ pub struct Welder {
     pub id: i64,
     pub stamp: String,
     pub name: String,
-    #[serde(default)]
-    pub shift: Option<String>,
-    #[serde(default)]
-    pub crew: Option<String>,
     #[serde(default = "default_true")]
     pub active: bool,
-    #[serde(default)]
-    pub process: Option<String>,
-    #[serde(default)]
-    pub wpqs: Option<String>,
-    #[serde(default)]
-    pub wpq_status: Option<String>,
+    // Process, WPQs and their status are no longer welder-level fields — they
+    // live on each qualification cert (welder_certs). Shift/Crew are gone.
     #[serde(default)]
     pub training: Option<String>,
     #[serde(default)]

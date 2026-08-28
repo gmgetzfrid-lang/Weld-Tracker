@@ -238,7 +238,7 @@ pub struct NdeComplianceReport {
 pub struct ClientReportRow {
     pub stamp: String,
     pub name: String,
-    pub shift: Option<String>,
+    /// The welder's qualified process(es), derived from their certs.
     pub process: Option<String>,
     pub weld_count: i64,
     pub inches: f64,
@@ -574,7 +574,6 @@ impl Store {
                 ClientReportRow {
                     stamp,
                     name: String::new(),
-                    shift: None,
                     process: None,
                     weld_count,
                     inches,
@@ -593,8 +592,7 @@ impl Store {
         for w in self.list_welders(true, "name")? {
             if let Some(row) = map.get_mut(&w.stamp.to_lowercase()) {
                 row.name = w.name.clone();
-                row.shift = w.shift.clone();
-                row.process = w.process.clone();
+                row.process = self.welder_cert_processes(w.id)?;
             }
         }
         let mut out: Vec<ClientReportRow> = map.into_values().collect();

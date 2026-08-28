@@ -42,6 +42,23 @@ impl Store {
         Ok((today, cutoff))
     }
 
+    /// Distinct processes a welder is qualified for, drawn from their cert
+    /// records, comma-joined (for report columns). None if they hold no cert
+    /// naming a process. Process is a sub-category of qualifications now, so it
+    /// is derived from the certs rather than stored on the welder.
+    pub fn welder_cert_processes(&self, welder_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT process FROM welder_certs
+             WHERE welder_id = ?1 AND process IS NOT NULL AND process <> ''
+             ORDER BY process COLLATE NOCASE",
+        )?;
+        let list: Vec<String> = stmt
+            .query_map(params![welder_id], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(if list.is_empty() { None } else { Some(list.join(", ")) })
+    }
+
     /// The welder's certs with computed status, last activity and continuity.
     pub fn list_welder_certs(&self, welder_id: i64) -> Result<Vec<WelderCert>> {
         let (_today, cutoff) = self.today_and_cutoff()?;

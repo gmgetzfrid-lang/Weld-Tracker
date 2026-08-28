@@ -31,9 +31,9 @@ export function ClientReport() {
   const exportCsv = () => {
     if (!rows) return;
     downloadCsv(`client-report-${year}-${month}.csv`, [
-      ["Welder", "Stamp", "Shift", "Process", "Weld Count", "Weld Inches", "RTs", "RT %", "Rejects", "Reject Rate", "Most Recent RT"],
+      ["Welder", "Stamp", "Process", "Weld Count", "Weld Inches", "RTs", "RT %", "Rejects", "Reject Rate", "Most Recent RT"],
       ...rows.map((r) => [
-        r.name, r.stamp, r.shift ?? "", r.process ?? "", r.weld_count,
+        r.name, r.stamp, r.process ?? "", r.weld_count,
         r.inches.toFixed(1), r.rt_count, pct(r.rt_pct), r.rejects,
         pct(r.reject_rate), r.last_rt_date ?? "",
       ]),
@@ -65,7 +65,6 @@ export function ClientReport() {
               <tr>
                 <th>Welder</th>
                 <th>Stamp</th>
-                <th>Shift</th>
                 <th>Process</th>
                 <th className="num">Weld Count</th>
                 <th className="num">Weld Inches</th>
@@ -78,13 +77,12 @@ export function ClientReport() {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={11} className="table-empty">No welds recorded for {MONTHS[month - 1]} {year}.</td></tr>
+                <tr><td colSpan={10} className="table-empty">No welds recorded for {MONTHS[month - 1]} {year}.</td></tr>
               )}
               {rows.map((r) => (
                 <tr key={r.stamp}>
                   <td style={{ fontWeight: 600 }}>{r.name || <span className="faint">(unknown)</span>}</td>
                   <td>{r.stamp}</td>
-                  <td>{r.shift ?? "—"}</td>
                   <td>{r.process ?? "—"}</td>
                   <td className="num">{num(r.weld_count)}</td>
                   <td className="num">{num(r.inches, 1)}</td>

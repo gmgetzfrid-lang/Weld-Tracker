@@ -15,12 +15,8 @@ export interface Welder {
   id: number;
   stamp: string;
   name: string;
-  shift?: string | null;
-  crew?: string | null;
   active: boolean;
-  process?: string | null;
-  wpqs?: string | null;
-  wpq_status?: string | null;
+  // Process / WPQs live on each qualification cert (WelderCert), not the welder.
   training?: string | null;
   notes?: string | null;
   created_at?: string;
@@ -260,7 +256,7 @@ export interface JobReport {
 export interface ClientReportRow {
   stamp: string;
   name: string;
-  shift?: string | null;
+  /** The welder's qualified process(es), derived from their certs. */
   process?: string | null;
   weld_count: number;
   inches: number;
