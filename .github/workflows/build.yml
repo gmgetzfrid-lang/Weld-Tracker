@@ -112,6 +112,8 @@ jobs:
           start = ico.find(b'\x89PNG')
           assert start > 0, 'icon.ico has no PNG image'
           needle = ico[start + 64 : start + 256]
+          # Fingerprint of the RETIRED weld-bubble icon -- must never ship again.
+          old_icon = bytes.fromhex('b188d0d890823b0bf50705c585821b71935010448406a14568e89f0d56dda850')
           exe = None
           for cand in ('target/release/Sentrix.exe', 'target/release/weld-tracker.exe'):
               try:
@@ -122,7 +124,9 @@ jobs:
           assert exe, 'no built exe found'
           if needle not in exe:
               sys.exit('::error::built exe does NOT contain icons/icon.ico -- resource embedding failed (stale build cache?)')
-          print('OK: the exe contains the repo icon image')
+          if old_icon in exe:
+              sys.exit('::error::built exe STILL contains the retired weld-bubble icon')
+          print('OK: exe contains the current icon and none of the retired one')
           PYEOF
           python /tmp/verify_icon.py
 
@@ -188,12 +192,17 @@ jobs:
 
           Settings > About shows the exact database file each user is on.
           TXT
+          {
+            echo "SENTRIX build r${{ github.run_number }}"
+            echo "commit  ${{ github.sha }}"
+            echo "built   $(date -u +%Y-%m-%dT%H:%MZ) (UTC)"
+          } > dist-out/BUILD-INFO.txt
           ls -laR dist-out
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sentrix-windows
+          name: sentrix-windows-r${{ github.run_number }}
           path: app/dist-out/*
           if-no-files-found: error
 
