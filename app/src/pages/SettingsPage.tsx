@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Settings } from "../types";
-import { ErrorBox, useToast } from "../components/ui";
+import { ErrorBox, localTime, useToast } from "../components/ui";
+import { APP_NAME, APP_VERSION } from "../version";
 import { ChangePassword } from "./ChangePassword";
 
 const BRAND_FIELDS: [string, string][] = [
@@ -156,7 +157,7 @@ export function SettingsPage() {
       <div className="card card-pad">
         <h3>About</h3>
         <dl className="kv">
-          <dt>Application</dt><dd>SENTRIX · Assurance Console v0.1</dd>
+          <dt>Application</dt><dd>{APP_NAME} v{APP_VERSION}</dd>
           <dt>Database mode</dt>
           <dd>
             {db == null ? "…" : db.shared
@@ -225,7 +226,7 @@ export function SettingsPage() {
             <div className="activity-log">
               {activity.map((a) => (
                 <div key={a.id} className="activity-row">
-                  <span className="activity-ts">{a.ts}</span>
+                  <span className="activity-ts" title={a.ts + " UTC"}>{localTime(a.ts)}</span>
                   <span className={`activity-action act-${a.action ?? ""}`}>{a.action ?? "—"}</span>
                   <span className="activity-who">{a.username ?? "—"}</span>
                   <span className="activity-what">

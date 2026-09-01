@@ -9,6 +9,7 @@ export function Login({ settings }: { settings: Settings }) {
   const { setUser } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -42,19 +43,29 @@ export function Login({ settings }: { settings: Settings }) {
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="admin"
+              placeholder="your username"
               autoCapitalize="none"
               autoCorrect="off"
             />
           </div>
           <div className="field">
             <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+            <div className="pw-wrap">
+              <input
+                type={showPw ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                className="pw-toggle"
+                onClick={() => setShowPw((v) => !v)}
+                title={showPw ? "Hide password" : "Show password"}
+              >
+                {showPw ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
           <button
             className="btn btn-accent btn-block"

@@ -42,8 +42,8 @@ export function PipeTable() {
           <input placeholder="Filter by nominal size…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>
-          Wall thickness (in) by nominal size &amp; schedule
+        <span className="muted" style={{ fontSize: 12 }} title="Source: converted from the Weld_Log_Statistics workbook's Pipe Table (ASME B36.10M / B36.19M dimensions). Auto-fills weld wall thickness.">
+          Wall thickness (in) by nominal size &amp; schedule · per ASME B36.10M/B36.19M
         </span>
       </div>
       <ErrorBox message={error} />

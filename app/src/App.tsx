@@ -94,11 +94,13 @@ export function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [woIntent, setWoIntent] = useState<WoIntent>(null);
   const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [dbShared, setDbShared] = useState<boolean | null>(null);
   const openNewEntry = () => setEntryOpen(true);
   const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch(logErr("loading settings"));
+    api.dbInfo().then((d) => setDbShared(d.shared)).catch(logErr("loading database info"));
   }, [user]);
 
   // Global Ctrl/Cmd+K opens the jump box.
@@ -194,6 +196,21 @@ export function App() {
       <main className="main">
         <header className="topbar">
           <h2 title={current?.desc}>{title}</h2>
+          <div className="spacer" />
+          {dbShared != null && (
+            <span
+              className={`env-chip ${dbShared ? "shared" : "local"}`}
+              title={dbShared
+                ? "Shared database — everyone on this database sees the same records"
+                : "Local database — changes stay on this PC and are NOT visible to the team"}
+            >
+              {dbShared ? "Shared" : "Local"}
+            </span>
+          )}
+          {!can("editor") && <span className="env-chip viewer" title="Read-only account — you can view everything but not change records">Viewer</span>}
+          <button className="topbar-search" onClick={() => setCmdkOpen(true)} title="Search everything (Ctrl+K)">
+            ⌕ Search <kbd>Ctrl K</kbd>
+          </button>
         </header>
         <div className="content">
           <PageView

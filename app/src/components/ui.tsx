@@ -189,6 +189,12 @@ export function useToast() {
   return useContext(ToastCtx);
 }
 
+/** Render a SQLite UTC timestamp ("YYYY-MM-DD HH:MM:SS") in the user's local time. */
+export function localTime(utc: string): string {
+  const d = new Date(utc.includes("T") ? utc : utc.replace(" ", "T") + "Z");
+  return isNaN(d.getTime()) ? utc : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 /**
  * Download rows as a CSV. When `meta` is given, a provenance block is prepended
  * so an exported record proves which build and rule set produced it, who

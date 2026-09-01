@@ -66,7 +66,7 @@ export function WelderReport() {
                     <th className="num">RT %</th>
                     <th className="num">Reject Rate</th>
                     <th className="num">PT/MT</th>
-                    <th className="num">Brinnel</th>
+                    <th className="num">Brinell</th>
                     <th className="num">Weld Inches</th>
                   </tr>
                 </thead>

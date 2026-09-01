@@ -72,7 +72,7 @@ export function WeldLog({
   };
 
   const exportCsv = () => {
-    const header = ["Weld #", "Work Order", "Drawing", "NDE %", "Joint Type", "Size", "Sched", "Material", "Thk", "Weld In", "Welder", "Date Welded", "NDE", "NDE Result", "NDE Date", "PWHT", "Brinnel", "Pressure", "Status"];
+    const header = ["Weld #", "Work Order", "Drawing", "NDE %", "Joint Type", "Size", "Sched", "Material", "Thk", "Weld Inches", "Welder", "Date Welded", "NDE Methods", "NDE Result", "NDE Date", "PWHT", "Brinell", "Pressure", "Status"];
     const rows = welds.map((w) => [
       w.weld_number ?? "", w.work_order ?? "", w.drawing_no ?? "", w.nde_percent ?? "", w.joint_type ?? "",
       w.size ?? "", w.schedule ?? "", w.material ?? "", w.thickness ?? "", w.weld_inches ?? w.size ?? "",

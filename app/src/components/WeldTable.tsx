@@ -147,10 +147,10 @@ export function WeldTable({
               <th style={{ width: 26 }}></th>
               <th className="sortable" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>Weld # {sortDir === "asc" ? "▲" : "▼"}</th>
               {showWorkOrder && <th>Work Order</th>}
-              <th>Drawings</th><th>NDE %</th><th>Joint Type</th><th className="num">Size</th>
-              <th>Schedule</th><th>Material</th><th className="num">Thk</th><th className="num">Weld In</th>
-              <th>Welder</th><th>Date Welded</th><th>NDE</th><th>NDE Result</th>
-              <th>PWHT</th><th>Brinnel</th><th>Pressure Test</th><th>Status</th>
+              <th>Drawing</th><th title="Assigned NDE coverage — the calculated Table 4 requirement is in the row detail">NDE %</th><th>Joint Type</th><th className="num" title="Nominal pipe size">Size</th>
+              <th>Schedule</th><th>Material</th><th className="num" title="Wall thickness (in.)">Thk</th><th className="num" title="Diameter inches">Weld Inches</th>
+              <th>Welder</th><th>Date Welded</th><th title="NDE methods / passes recorded">Method</th><th>NDE Result</th>
+              <th>PWHT</th><th title="Brinell hardness check">Brinell</th><th>Pressure Test</th><th>Status</th>
             </tr>
           </thead>
           <tbody>
