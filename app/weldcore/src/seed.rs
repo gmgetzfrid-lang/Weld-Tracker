@@ -77,7 +77,7 @@ fn seed_lookups(store: &Store) -> Result<()> {
 fn seed_settings(store: &Store) -> Result<()> {
     let defaults: &[(&str, &str)] = &[
         ("company_name", "Kern Energy"),
-        ("company_tagline", "We Fuel the Future"),
+        ("company_tagline", ""),
         ("app_title", "Weld Tracker"),
         ("primary_color", "#0a1f6b"),
         ("accent_color", "#2f9e7e"),

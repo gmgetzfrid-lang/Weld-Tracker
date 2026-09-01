@@ -58,7 +58,7 @@ button { font-family: inherit; }
 
 /* ---------------- Auth screens ---------------- */
 .auth-wrap {
-  min-height: 100%; display: grid; place-items: center;
+  min-height: 100vh; display: grid; place-items: center;
   background: radial-gradient(1200px 600px at 20% -10%, #12308f 0%, var(--navy) 45%, #06103a 100%);
   padding: 24px;
 }
@@ -68,6 +68,29 @@ button { font-family: inherit; }
 }
 .auth-sub { text-align: center; color: var(--text-muted); margin: 0 0 22px; font-size: 13px; }
 .auth-title { text-align: center; font-size: 18px; margin-bottom: 18px; }
+
+/* Wide screens: brand pane + card side by side so the space carries the
+   identity instead of sitting empty; narrow screens fall back to the
+   original centered card (the pane hides, the card's own lockup returns). */
+.auth-hero { display: flex; align-items: center; gap: 84px; }
+.auth-brandpane { display: none; max-width: 460px; }
+@media (min-width: 980px) {
+  .auth-brandpane { display: block; }
+  .auth-card .brand-hero, .auth-card .auth-sub { display: none; }
+  .auth-card .auth-title { margin-top: 2px; }
+}
+.auth-brandpane .brand-hero { justify-content: flex-start; margin: 0 0 10px; }
+.auth-brandpane .brand-hero-word { color: #fff; font-size: 44px; letter-spacing: .16em; }
+.auth-brandpane .brand-hero-tag { color: #8ea1cf; font-size: 13px; }
+.auth-lead { color: #cdd9f5; font-size: 15px; margin: 6px 0 26px; }
+.auth-points { list-style: none; margin: 0 0 30px; padding: 0; display: flex; flex-direction: column; gap: 13px; }
+.auth-points li { display: flex; align-items: center; gap: 12px; color: #b9c6ea; font-size: 13.5px; }
+.auth-point-ico {
+  flex: 0 0 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 8px;
+  font-size: 14px; color: #e6ecfb; font-style: normal;
+}
+.auth-footline { color: #64749e; font-size: 11.5px; letter-spacing: .04em; }
 
 /* ---------------- Layout: collapsing icon rail ---------------- */
 .app { display: grid; grid-template-columns: 64px 1fr; height: 100%; }

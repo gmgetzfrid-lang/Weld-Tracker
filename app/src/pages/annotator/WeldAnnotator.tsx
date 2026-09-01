@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errMsg, logErr } from "../../api";
 import { useAuth } from "../../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../../types";
@@ -50,6 +50,68 @@ function pickSticky(changes: Partial<Weld>): Partial<Weld> {
   }
   return out;
 }
+
+/**
+ * The bubble layer, memoized. Panning and zooming set state on every pointer
+ * move; re-rendering hundreds of SVG nodes each frame is what made big maps
+ * feel sluggish. None of these props change during a pan/zoom or while the
+ * placement ghost tracks the cursor, so the whole layer skips those renders.
+ */
+const WeldLayer = memo(function WeldLayer({
+  welds, width, height, z, selId, activeId, editable, canGrab, onGrab,
+}: {
+  welds: Weld[]; width: number; height: number; z: number;
+  selId: number | null; activeId: number | null;
+  editable: boolean; canGrab: boolean;
+  onGrab: (w: Weld, mode: "both" | "joint", e: React.MouseEvent) => void;
+}) {
+  const R = 17 * z;
+  return (
+    <>
+      {welds.map((w) => {
+        const cx = (w.bubble_x ?? 0) * width, cy = (w.bubble_y ?? 0) * height;
+        const jx = (w.joint_x ?? w.bubble_x ?? 0) * width, jy = (w.joint_y ?? w.bubble_y ?? 0) * height;
+        const sel = w.id === selId, active = w.id === activeId;
+        const editing = sel && editable;
+        // Disposition glyph at the bubble's shoulder: the examination result
+        // once one exists, else "R" to flag an unexamined repair weld. Voided
+        // welds dim as a whole instead.
+        const voided = !!w.voided_at;
+        const glyph =
+          w.nde_result === "Rejected" ? { t: "!", cls: "bad" } :
+          w.nde_result === "Accepted" ? { t: "✓", cls: "ok" } :
+          w.parent_weld_id != null ? { t: "R", cls: "rep" } : null;
+        return (
+          <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""} ${voided ? "voided" : ""}`}
+            // Modeless (Bluebeam-style): any bubble is directly selectable and
+            // draggable regardless of the active tool, unless a new bubble is
+            // mid-placement.
+            onMouseDown={(e) => { if (canGrab) onGrab(w, "both", e); }}
+            style={{ cursor: canGrab ? "move" : "pointer" }}
+          >
+            <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} style={{ strokeWidth: (sel ? 2.4 : 1.7) * z }} />
+            <circle
+              cx={jx} cy={jy} r={(editing ? 7 : 2.6) * z}
+              className={`anno-joint ${editing ? "handle" : ""}`}
+              onMouseDown={editing ? (e) => onGrab(w, "joint", e) : undefined}
+              style={editing ? { cursor: "crosshair", strokeWidth: 2 * z } : undefined}
+            />
+            <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} style={{ strokeWidth: (active ? 3 : sel ? 2.6 : 1.9) * z }} />
+            <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" style={{ strokeWidth: 1.4 * z }} />
+            <text x={cx} y={cy - R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.stamp_number ?? ""}</text>
+            <text x={cx} y={cy + R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.weld_number ?? ""}</text>
+            {glyph && !voided && (
+              <g className={`wm-glyph ${glyph.cls}`}>
+                <circle cx={cx + R * 0.82} cy={cy - R * 0.82} r={6.4 * z} style={{ strokeWidth: 1.5 * z }} />
+                <text x={cx + R * 0.82} y={cy - R * 0.82} style={{ fontSize: 8.6 * z }}>{glyph.t}</text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+    </>
+  );
+});
 // A drag in progress on a selected weld: "both" translates the bubble + leader
 // together (move the whole thing); "joint" moves only the joint end of the
 // leader (re-extend / re-aim the line).
@@ -536,10 +598,29 @@ export function WeldAnnotator({
     return () => window.removeEventListener("keydown", onEsc);
   }, [fullscreen]);
 
+  // Stable identity so the memoized WeldLayer skips re-rendering during
+  // pans/zooms (which set state on every pointer move) — an inline filter
+  // would hand it a fresh array each render and defeat the memo.
+  const pageWelds = useMemo(
+    () => ordered.filter((w) => (w.bubble_page ?? 1) === pageNum && w.bubble_x != null),
+    [ordered, pageNum],
+  );
+  // Ref-trampolined grab handler: a stable callback for the memoized layer
+  // that always runs the current selection/drag logic.
+  const grabImpl = useRef<(w: Weld, mode: "both" | "joint", e: React.MouseEvent) => void>(() => {});
+  grabImpl.current = (w, mode, e) => {
+    e.stopPropagation();
+    if (mode === "both") { setSelId(w.id); setLegendSel(false); }
+    startDrag(w, mode, e);
+  };
+  const onGrab = useCallback(
+    (w: Weld, mode: "both" | "joint", e: React.MouseEvent) => grabImpl.current(w, mode, e),
+    [],
+  );
+
   if (loading) return <Spinner />;
   if (error) return <div className="error-box">{error}</div>;
 
-  const pageWelds = ordered.filter((w) => (w.bubble_page ?? 1) === pageNum && w.bubble_x != null);
   // Bubbles are drawn in rendered-pixel space, so their size scales with the
   // zoom — zooming out shrinks them (no crowding), zooming in enlarges them.
   // Bubbles live in the rendered-canvas pixel space, so size them by the scale
@@ -582,48 +663,17 @@ export function WeldAnnotator({
           <div className="anno-page" style={{ width: size.w || 800, height: size.h || 600 }}>
             <canvas ref={canvasRef} />
             <svg ref={svgRef} className="anno-svg" width={size.w || 800} height={size.h || 600}>
-              {pageWelds.map((w) => {
-                const cx = (w.bubble_x ?? 0) * size.w, cy = (w.bubble_y ?? 0) * size.h;
-                const jx = (w.joint_x ?? w.bubble_x ?? 0) * size.w, jy = (w.joint_y ?? w.bubble_y ?? 0) * size.h;
-                const sel = w.id === selId, active = w.id === activeId;
-                const editing = sel && editable;
-                // Modeless (Bluebeam-style): any bubble is directly selectable
-                // and draggable regardless of the active tool, unless a new
-                // bubble is mid-placement.
-                const grab = editable && !pending;
-                // Disposition glyph at the bubble's shoulder: the examination
-                // result once one exists, else "R" to flag an unexamined
-                // repair weld. Voided welds dim as a whole instead.
-                const voided = !!w.voided_at;
-                const glyph =
-                  w.nde_result === "Rejected" ? { t: "!", cls: "bad" } :
-                  w.nde_result === "Accepted" ? { t: "✓", cls: "ok" } :
-                  w.parent_weld_id != null ? { t: "R", cls: "rep" } : null;
-                return (
-                  <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""} ${voided ? "voided" : ""}`}
-                    onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); setLegendSel(false); startDrag(w, "both", e); } }}
-                    style={{ cursor: grab ? "move" : "pointer" }}
-                  >
-                    <line x1={jx} y1={jy} x2={cx} y2={cy} className={`anno-leader ${sel ? "sel" : ""}`} style={{ strokeWidth: (sel ? 2.4 : 1.7) * z }} />
-                    <circle
-                      cx={jx} cy={jy} r={(editing ? 7 : 2.6) * z}
-                      className={`anno-joint ${editing ? "handle" : ""}`}
-                      onMouseDown={editing ? (e) => { e.stopPropagation(); startDrag(w, "joint", e); } : undefined}
-                      style={editing ? { cursor: "crosshair", strokeWidth: 2 * z } : undefined}
-                    />
-                    <circle cx={cx} cy={cy} r={R} className={`anno-bubble ${sel ? "sel" : ""} ${active ? "active" : ""}`} style={{ strokeWidth: (active ? 3 : sel ? 2.6 : 1.9) * z }} />
-                    <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" style={{ strokeWidth: 1.4 * z }} />
-                    <text x={cx} y={cy - R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.stamp_number ?? ""}</text>
-                    <text x={cx} y={cy + R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.weld_number ?? ""}</text>
-                    {glyph && !voided && (
-                      <g className={`wm-glyph ${glyph.cls}`}>
-                        <circle cx={cx + R * 0.82} cy={cy - R * 0.82} r={6.4 * z} style={{ strokeWidth: 1.5 * z }} />
-                        <text x={cx + R * 0.82} y={cy - R * 0.82} style={{ fontSize: 8.6 * z }}>{glyph.t}</text>
-                      </g>
-                    )}
-                  </g>
-                );
-              })}
+              <WeldLayer
+                welds={pageWelds}
+                width={size.w}
+                height={size.h}
+                z={z}
+                selId={selId}
+                activeId={activeId}
+                editable={editable}
+                canGrab={editable && !pending}
+                onGrab={onGrab}
+              />
               {pending && cursor && (
                 <>
                   <line x1={pending.x * size.w} y1={pending.y * size.h} x2={cursor.x * size.w} y2={cursor.y * size.h} className="anno-leader" style={{ strokeWidth: 1.7 * z }} />

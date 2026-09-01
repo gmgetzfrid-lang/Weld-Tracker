@@ -1,10 +1,21 @@
-import * as pdfjsLib from "pdfjs-dist";
-// Bundle the worker with Vite so it runs fully offline inside the app.
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import type * as pdfjsTypes from "pdfjs-dist";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+export type PdfDoc = pdfjsTypes.PDFDocumentProxy;
 
-export type PdfDoc = pdfjsLib.PDFDocumentProxy;
+// pdf.js is ~a third of the app bundle but only the annotator/wizard need it.
+// Loading it on demand (once, then cached) keeps app startup fast; the worker
+// is still bundled by Vite so everything runs fully offline.
+let pdfjsOnce: Promise<typeof import("pdfjs-dist")> | null = null;
+function pdfjs(): Promise<typeof import("pdfjs-dist")> {
+  pdfjsOnce ??= Promise.all([
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+  ]).then(([lib, worker]) => {
+    lib.GlobalWorkerOptions.workerSrc = worker.default;
+    return lib;
+  });
+  return pdfjsOnce;
+}
 
 /** Decode a base64 string (as delivered from the Rust side) to bytes. */
 export function base64ToBytes(b64: string): Uint8Array {
@@ -29,5 +40,6 @@ export function fileToBase64(file: Blob): Promise<string> {
 }
 
 export async function loadPdf(bytes: Uint8Array): Promise<PdfDoc> {
-  return pdfjsLib.getDocument({ data: bytes }).promise;
+  const lib = await pdfjs();
+  return lib.getDocument({ data: bytes }).promise;
 }

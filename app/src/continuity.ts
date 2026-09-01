@@ -1,4 +1,5 @@
-import { jsPDF } from "jspdf";
+// jspdf is loaded on demand — continuity exports are rare next to app startup.
+import type { jsPDF } from "jspdf";
 import { api, bytesToB64, errMsg } from "./api";
 import { notify } from "./components/ui";
 import type { WelderContinuity } from "./types";
@@ -65,7 +66,8 @@ function drawTable(
 }
 
 /** Build the continuity-log PDF document. */
-function buildContinuityPdf(c: WelderContinuity): jsPDF {
+async function buildContinuityPdf(c: WelderContinuity): Promise<jsPDF> {
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const M = 40;
   let y = 50;
@@ -108,9 +110,10 @@ function buildContinuityPdf(c: WelderContinuity): jsPDF {
 
 /** Export a welder's continuity log to the SENTRIX Reports folder. */
 export function continuityPdf(c: WelderContinuity) {
-  const doc = buildContinuityPdf(c);
-  api
-    .saveExport(`continuity-${c.stamp}.pdf`, bytesToB64(new Uint8Array(doc.output("arraybuffer"))), "reveal")
+  buildContinuityPdf(c)
+    .then((doc) =>
+      api.saveExport(`continuity-${c.stamp}.pdf`, bytesToB64(new Uint8Array(doc.output("arraybuffer"))), "reveal"),
+    )
     .then((p) => notify("ok", `Saved ${p}`))
     .catch((e) => notify("err", errMsg(e)));
 }
@@ -119,9 +122,10 @@ export function continuityPdf(c: WelderContinuity) {
  * viewer, whose Print button does the rest. (The old print-window approach is
  * impossible here — window.open is blocked inside the hardened WebView.) */
 export function printContinuity(c: WelderContinuity) {
-  const doc = buildContinuityPdf(c);
-  api
-    .saveExport(`continuity-${c.stamp}.pdf`, bytesToB64(new Uint8Array(doc.output("arraybuffer"))), "open")
+  buildContinuityPdf(c)
+    .then((doc) =>
+      api.saveExport(`continuity-${c.stamp}.pdf`, bytesToB64(new Uint8Array(doc.output("arraybuffer"))), "open"),
+    )
     .then((p) => notify("ok", `Opened ${p}`))
     .catch((e) => notify("err", errMsg(e)));
 }

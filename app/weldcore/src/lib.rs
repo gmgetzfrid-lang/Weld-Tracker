@@ -82,6 +82,11 @@ impl Store {
         }
         conn.busy_timeout(std::time::Duration::from_secs(15))?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        // A generous page cache (8 MB) and in-memory temp tables keep repeat
+        // reads and sorts off the disk — which, in shared mode, is a network
+        // share where every avoided page read is real latency.
+        conn.pragma_update(None, "cache_size", -8000)?;
+        conn.pragma_update(None, "temp_store", "MEMORY")?;
         // Fail fast on a corrupt file (a half-written copy on a network share,
         // a truncated download) rather than migrating and reading garbage. On a
         // healthy database quick_check returns the single row "ok".
@@ -144,6 +149,7 @@ impl Store {
             (11, include_str!("migrations/0011_row_version.sql")),
             (12, include_str!("migrations/0012_repair_chain.sql")),
             (13, include_str!("migrations/0013_doc_hashes_nde_batch.sql")),
+            (14, include_str!("migrations/0014_perf_indexes.sql")),
         ];
 
         let pending: Vec<&(i64, &str)> =

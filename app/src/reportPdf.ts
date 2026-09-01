@@ -1,4 +1,5 @@
-import { jsPDF } from "jspdf";
+// jspdf is loaded on demand — report generation is rare next to app startup.
+import type { jsPDF } from "jspdf";
 import { api, bytesToB64 } from "./api";
 import type { PerformanceReport, PerformanceRow } from "./types";
 
@@ -150,7 +151,8 @@ function statTiles(
 }
 
 /** Build the whole report document. */
-export function buildPerformancePdf(rep: PerformanceReport, company: string): jsPDF {
+async function buildPerformancePdf(rep: PerformanceReport, company: string): Promise<jsPDF> {
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
   // ---- Title band ---------------------------------------------------------
@@ -351,15 +353,15 @@ export function pdfB64(doc: jsPDF): string {
  * the file manager. Browser downloads are inert inside the WebView, so the
  * file is written by the backend. Returns the path written.
  */
-export function downloadPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
-  const doc = buildPerformancePdf(rep, company);
+export async function downloadPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
+  const doc = await buildPerformancePdf(rep, company);
   const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
   return api.saveExport(`welder-performance-${tag}.pdf`, pdfB64(doc), "reveal");
 }
 
 /** Generate the PDF and open it in the default viewer (print from there). */
-export function openPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
-  const doc = buildPerformancePdf(rep, company);
+export async function openPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
+  const doc = await buildPerformancePdf(rep, company);
   const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
   return api.saveExport(`welder-performance-${tag}.pdf`, pdfB64(doc), "open");
 }
