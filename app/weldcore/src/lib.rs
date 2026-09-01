@@ -148,39 +148,56 @@ impl Store {
 
         let pending: Vec<&(i64, &str)> =
             MIGRATIONS.iter().filter(|(v, _)| *v > applied).collect();
-        if pending.is_empty() {
-            return Ok(());
-        }
-
-        // Pre-migration backup: before changing the schema of an existing
-        // on-disk database, copy it aside so a botched upgrade is always
-        // recoverable. Best-effort — a fresh (version 0) database has nothing
-        // worth saving, and a backup failure must not block first-run creation.
-        if applied > 0 {
-            if let Some(path) = main_db_path(&conn) {
-                let ts: String = conn
-                    .query_row("SELECT strftime('%Y%m%d-%H%M%S','now')", [], |r| r.get(0))
-                    .unwrap_or_else(|_| "backup".to_string());
-                let dest = format!("{path}.pre-migrate-v{applied}-{ts}.bak");
-                if let Err(e) = conn.backup(rusqlite::DatabaseName::Main, &dest, None) {
-                    eprintln!("warning: pre-migration backup to {dest} failed: {e}");
+        if !pending.is_empty() {
+            // Pre-migration backup: before changing the schema of an existing
+            // on-disk database, copy it aside so a botched upgrade is always
+            // recoverable. Best-effort — a fresh (version 0) database has nothing
+            // worth saving, and a backup failure must not block first-run creation.
+            if applied > 0 {
+                if let Some(path) = main_db_path(&conn) {
+                    let ts: String = conn
+                        .query_row("SELECT strftime('%Y%m%d-%H%M%S','now')", [], |r| r.get(0))
+                        .unwrap_or_else(|_| "backup".to_string());
+                    let dest = format!("{path}.pre-migrate-v{applied}-{ts}.bak");
+                    if let Err(e) = conn.backup(rusqlite::DatabaseName::Main, &dest, None) {
+                        eprintln!("warning: pre-migration backup to {dest} failed: {e}");
+                    }
                 }
             }
-        }
 
-        // Each migration runs in its own transaction together with the row that
-        // records it, so a failed migration rolls back cleanly and the version
-        // counter never gets ahead of the schema.
-        for (version, sql) in pending {
-            let tx = conn.transaction()?;
-            tx.execute_batch(sql)?;
-            tx.execute(
-                "INSERT INTO schema_migrations (version) VALUES (?1)",
-                [version],
-            )?;
-            tx.commit()?;
+            // Each migration runs in its own IMMEDIATE transaction together
+            // with the row that records it, so a failed migration rolls back
+            // cleanly and the version counter never gets ahead of the schema.
+            // The write lock is taken up front and the version re-checked
+            // inside it: two machines upgrading against the shared drive the
+            // same morning must not both run the same ALTER (the loser would
+            // crash on "duplicate column"). The 15s busy timeout makes the
+            // second arrival wait, then skip what the first already applied.
+            for (version, sql) in pending {
+                let tx = conn
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                let already: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM schema_migrations WHERE version = ?1",
+                    [version],
+                    |r| r.get(0),
+                )?;
+                if already > 0 {
+                    continue; // dropped tx rolls back the no-op
+                }
+                tx.execute_batch(sql)?;
+                tx.execute(
+                    "INSERT INTO schema_migrations (version) VALUES (?1)",
+                    [version],
+                )?;
+                tx.commit()?;
+            }
         }
-        backfill_file_hashes(&conn)?;
+        // Runs on EVERY open, not just after a fresh migration: an interrupted
+        // backfill (crash, kill mid-hash) then self-heals on the next launch.
+        // Best-effort — a hash gap must never brick startup.
+        if let Err(e) = backfill_file_hashes(&conn) {
+            eprintln!("warning: file-hash backfill incomplete (will retry next launch): {e}");
+        }
         Ok(())
     }
 
@@ -275,16 +292,22 @@ fn backfill_file_hashes(conn: &Connection) -> Result<()> {
         ("welder_certs", "file_data", "file_sha256"),
     ];
     for (table, blob_col, hash_col) in targets {
-        let sql = format!(
-            "SELECT id, {blob_col} FROM {table}
-             WHERE {hash_col} IS NULL AND {blob_col} IS NOT NULL"
-        );
-        let rows: Vec<(i64, Vec<u8>)> = {
-            let mut stmt = conn.prepare(&sql)?;
-            let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        // Ids first, then one blob at a time: these stores hold whole PDF
+        // books, so materializing every un-hashed blob at once could swallow
+        // gigabytes of RAM on the first launch after the upgrade.
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id FROM {table} WHERE {hash_col} IS NULL AND {blob_col} IS NOT NULL"
+            ))?;
+            let it = stmt.query_map([], |r| r.get(0))?;
             it.collect::<rusqlite::Result<_>>()?
         };
-        for (id, bytes) in rows {
+        for id in ids {
+            let bytes: Vec<u8> = conn.query_row(
+                &format!("SELECT {blob_col} FROM {table} WHERE id = ?1"),
+                rusqlite::params![id],
+                |r| r.get(0),
+            )?;
             conn.execute(
                 &format!("UPDATE {table} SET {hash_col} = ?1 WHERE id = ?2"),
                 rusqlite::params![sha256_hex(&bytes), id],

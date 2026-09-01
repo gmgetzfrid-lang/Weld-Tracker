@@ -9,7 +9,7 @@
 
 use crate::{ContinuityEvent, Error, Result, Store, WelderCert, WelderContinuity};
 use base64::Engine;
-use rusqlite::{params, Row};
+use rusqlite::{params, Row, OptionalExtension};
 
 fn cert_base_from_row(r: &Row) -> rusqlite::Result<WelderCert> {
     Ok(WelderCert {
@@ -200,7 +200,7 @@ impl Store {
                 params![id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .ok();
+            .optional()?;
         match row {
             Some((name, Some(bytes))) => {
                 let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);

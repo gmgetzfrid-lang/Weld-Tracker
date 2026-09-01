@@ -10,7 +10,7 @@ use crate::{
     WorkOrderSummary,
 };
 use base64::Engine;
-use rusqlite::{params, Row};
+use rusqlite::{params, Row, OptionalExtension};
 
 fn drawing_from_row(r: &Row) -> rusqlite::Result<Drawing> {
     let drawing_no: Option<String> = r.get("drawing_no")?;
@@ -236,7 +236,19 @@ impl Store {
     /// records across users, so only the work order's OWNER (whoever created it)
     /// or an admin may do it; anyone else deletes only the individual welds and
     /// drawings they created themselves. Returns the (welds, drawings) removed.
-    pub fn delete_work_order(&self, work_order: &str, actor: &str, role: &str) -> Result<(i64, i64)> {
+    pub fn delete_work_order(
+        &self,
+        work_order: &str,
+        actor: &str,
+        role: &str,
+        reason: &str,
+    ) -> Result<(i64, i64)> {
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(Error::Invalid(
+                "a reason is required to delete a work order".into(),
+            ));
+        }
         let conn = self.conn.lock().unwrap();
         let owner = work_order_owner_conn(&conn, work_order);
         if role != "admin" && owner.as_deref() != Some(actor) {
@@ -251,7 +263,13 @@ impl Store {
             params![work_order],
         )? as i64;
         drop(conn);
-        self.audit(actor, "delete", "work_order", work_order, &format!("{welds} welds, {draws} drawings"));
+        self.audit(
+            actor,
+            "delete",
+            "work_order",
+            work_order,
+            &format!("{welds} welds, {draws} drawings — {reason}"),
+        );
         Ok((welds, draws))
     }
 
@@ -312,7 +330,7 @@ impl Store {
                 params![id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .ok();
+            .optional()?;
         match row {
             Some((name, Some(bytes))) => Ok(Some((
                 name.unwrap_or_default(),
@@ -336,7 +354,7 @@ impl Store {
                 params![pkg_id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .ok();
+            .optional()?;
         match row {
             Some((name, Some(bytes), pc)) => {
                 let pc = pc.max(1);
@@ -364,7 +382,7 @@ impl Store {
                 params![id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .ok();
+            .optional()?;
         drop(conn);
         match rev {
             Some((pkg, pf, pt)) => self.package_window(pkg, pf, pt),
@@ -381,7 +399,7 @@ impl Store {
                 params![rev_id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .ok();
+            .optional()?;
         drop(conn);
         match rev {
             Some((Some(pkg), pf, pt)) => self.package_window(pkg, pf, pt),
@@ -517,8 +535,13 @@ impl Store {
     }
 
     pub fn list_drawing_welds(&self, drawing_id: i64) -> Result<Vec<Weld>> {
-        let f = crate::WeldFilter::default();
-        let all = self.list_welds(&crate::WeldFilter { limit: Some(5000), ..f })?;
+        // Voided welds are included: the weld map renders them dimmed (the
+        // record still exists) instead of making the bubble silently vanish.
+        let all = self.list_welds(&crate::WeldFilter {
+            limit: Some(5000),
+            include_voided: true,
+            ..crate::WeldFilter::default()
+        })?;
         Ok(all
             .into_iter()
             .filter(|w| w.drawing_id == Some(drawing_id))

@@ -64,7 +64,24 @@ export function WeldTable({
   const [edit, setEdit] = useState(!!initialEdit && editable);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [open, setOpen] = useState<Set<number>>(new Set());
-  useEffect(() => setRows(welds), [welds]);
+  // Optimistic-concurrency bookkeeping. `latestVer` holds the newest row_version
+  // the server has confirmed for each weld, so a burst of quick single-field
+  // edits doesn't conflict with itself; `chain` serializes saves per weld so
+  // they apply in order, each seeing the previous one's committed version.
+  const latestVer = useRef<Map<number, number>>(new Map());
+  const chain = useRef<Map<number, Promise<void>>>(new Map());
+  useEffect(() => {
+    setRows(welds);
+    // Reconcile the confirmed-version cache with the incoming rows: an
+    // out-of-band update (Record NDE, void/restore, another view's save)
+    // bumps row_version on the server, and saving against the older cached
+    // value would manufacture a false "someone else changed this" conflict.
+    for (const w of welds) {
+      const cached = latestVer.current.get(w.id);
+      const incoming = w.row_version ?? 0;
+      if (cached != null && incoming > cached) latestVer.current.set(w.id, incoming);
+    }
+  }, [welds]);
 
   // Column visibility: the grid shows a working set by default; secondary
   // derived/heat-treat columns hide behind the Columns menu (persisted).
@@ -87,6 +104,9 @@ export function WeldTable({
   // Visible autosave state: a QC user must never wonder whether an edit stuck.
   const [pendingSaves, setPendingSaves] = useState(0);
   const [savedOnce, setSavedOnce] = useState(false);
+  // Sticky failure flag: "All changes saved" must never show after a save
+  // failed — it clears only when a later save succeeds.
+  const [saveFailed, setSaveFailed] = useState(false);
 
   // Void / purge run through a proper confirm dialog, not browser prompt().
   const [confirmAct, setConfirmAct] = useState<{ kind: "void" | "purge"; w: Weld } | null>(null);
@@ -104,13 +124,6 @@ export function WeldTable({
     return r;
   }, [rows, sortDir]);
 
-  // Optimistic-concurrency bookkeeping. `latestVer` holds the newest row_version
-  // the server has confirmed for each weld, so a burst of quick single-field
-  // edits doesn't conflict with itself; `chain` serializes saves per weld so
-  // they apply in order, each seeing the previous one's committed version.
-  const latestVer = useRef<Map<number, number>>(new Map());
-  const chain = useRef<Map<number, Promise<void>>>(new Map());
-
   const save = (w: Weld, changes: Partial<Weld>) => {
     setRows((prev) => prev.map((x) => (x.id === w.id ? { ...x, ...changes } : x)));
     setPendingSaves((n) => n + 1);
@@ -122,8 +135,10 @@ export function WeldTable({
         const fresh = await api.updateWeld(updated);
         latestVer.current.set(w.id, fresh.row_version ?? version + 1);
         setRows((prev) => prev.map((x) => (x.id === w.id ? fresh : x)));
+        setSaveFailed(false);
         onChanged?.();
       } catch (e) {
+        setSaveFailed(true);
         const msg = errMsg(e);
         if (/changed by someone else|conflict/i.test(msg)) {
           // Someone else saved first — reload the row and keep the newest
@@ -189,8 +204,12 @@ export function WeldTable({
       <div className="wt-bar">
         <span className="muted" style={{ fontSize: 12 }}>{rows.length} welds</span>
         {editable && (pendingSaves > 0 || savedOnce) && (
-          <span className={`wt-savestate ${pendingSaves > 0 ? "busy" : ""}`}>
-            {pendingSaves > 0 ? `Saving ${pendingSaves} change${pendingSaves > 1 ? "s" : ""}…` : "All changes saved ✓"}
+          <span className={`wt-savestate ${pendingSaves > 0 ? "busy" : saveFailed ? "failed" : ""}`}>
+            {pendingSaves > 0
+              ? `Saving ${pendingSaves} change${pendingSaves > 1 ? "s" : ""}…`
+              : saveFailed
+              ? "⚠ Last change didn't save — the row was reloaded"
+              : "All changes saved ✓"}
           </span>
         )}
         <div className="spacer" />

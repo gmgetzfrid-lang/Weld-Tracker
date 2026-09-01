@@ -776,14 +776,14 @@ fn delete_work_order_owner_or_admin() {
     // bob is on the work order but didn't create it — he cannot delete the whole
     // thing; he may only delete his own welds individually.
     assert!(matches!(
-        s.delete_work_order("900", "bob", "editor"),
+        s.delete_work_order("900", "bob", "editor", "cleanup"),
         Err(weldcore::Error::PermissionDenied)
     ));
     assert_eq!(s.count_welds(&wo900()).unwrap(), 2);
 
     // alice OWNS "900" — she can delete the whole work order (welds + drawings),
     // including bob's weld, and dave's "901" is untouched.
-    let (w, dr) = s.delete_work_order("900", "alice", "editor").unwrap();
+    let (w, dr) = s.delete_work_order("900", "alice", "editor", "job cancelled").unwrap();
     assert_eq!(w, 2);
     assert_eq!(dr, 1);
     assert_eq!(s.count_welds(&wo900()).unwrap(), 0);
@@ -791,7 +791,7 @@ fn delete_work_order_owner_or_admin() {
     assert_eq!(s.count_welds(&wo901()).unwrap(), 1);
 
     // An admin can delete a work order they don't own.
-    let (w2, _) = s.delete_work_order("901", "carol", "admin").unwrap();
+    let (w2, _) = s.delete_work_order("901", "carol", "admin", "duplicate entry").unwrap();
     assert_eq!(w2, 1);
     assert_eq!(s.count_welds(&wo901()).unwrap(), 0);
 }
@@ -1235,4 +1235,76 @@ fn search_ignores_id_separators() {
     assert!(hits.iter().any(|h| h.kind == "work_order" && h.work_order.as_deref() == Some("302719")));
     let hits = s.global_search("W1042", 6).unwrap();
     assert!(hits.iter().any(|h| h.kind == "weld" && h.label == "W-1042"));
+}
+
+#[test]
+fn search_treats_wildcards_literally() {
+    let s = store();
+    let mut w = weld("500100", "BW", "K1", "2026-05-01");
+    w.weld_number = Some("W1".into());
+    s.create_weld(&w, "alice").unwrap();
+    // A bare % (or an all-separator query) must not match everything.
+    assert!(s.global_search("%", 6).unwrap().is_empty());
+    assert!(s.global_search("%%%", 6).unwrap().is_empty());
+    assert!(s.global_search("-", 6).unwrap().is_empty());
+    // Sanity: the real id still matches.
+    assert!(!s.global_search("500100", 6).unwrap().is_empty());
+}
+
+#[test]
+fn record_nde_batch_is_atomic() {
+    let s = store();
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let mut w = weld("915", "BW", "K1", "2026-05-01");
+        w.weld_number = Some(format!("W{i}"));
+        s.create_weld(&w, "alice").unwrap();
+        ids.push(s.list_welds(&WeldFilter { work_order: Some("915".into()), ..Default::default() })
+            .unwrap().iter().find(|x| x.weld_number.as_deref() == Some(&format!("W{i}"))).unwrap().id);
+    }
+    // Void the LAST weld — the batch must refuse it and stamp NOTHING.
+    s.void_weld(ids[2], "alice", "editor", "placed in error").unwrap();
+    let entries = vec![
+        (ids[0], "Accepted".to_string()),
+        (ids[1], "Accepted".to_string()),
+        (ids[2], "Accepted".to_string()),
+    ];
+    assert!(s.record_nde_batch(&entries, "RT", "2026-05-02", Some("RT-9"), "alice").is_err());
+    // Earlier entries were not stamped: all-or-nothing.
+    let w0 = s.get_weld(ids[0]).unwrap();
+    assert_eq!(w0.nde_result, None);
+    assert_eq!(w0.nde_report_no, None);
+}
+
+#[test]
+fn void_bumps_row_version_so_stale_saves_conflict() {
+    let s = store();
+    s.create_weld(&weld("916", "BW", "K1", "2026-05-01"), "alice").unwrap();
+    let w = s.list_welds(&WeldFilter { work_order: Some("916".into()), ..Default::default() })
+        .unwrap().pop().unwrap();
+    // Another user voids the weld while this editor holds a stale copy.
+    s.void_weld(w.id, "alice", "editor", "duplicate").unwrap();
+    let mut stale = w.clone();
+    stale.stamp_number = Some("Z9".into());
+    assert!(matches!(s.update_weld(&stale, "alice"), Err(weldcore::Error::Conflict)));
+}
+
+#[test]
+fn repair_fallback_does_not_cross_work_orders() {
+    let s = store();
+    // WO-A: W12 rejected, never repaired. WO-B: unrelated W12R1 exists.
+    let mut a = weld("920", "BW", "K1", "2026-05-01");
+    a.weld_number = Some("W12".into());
+    a.nde_result = Some("Rejected".into());
+    s.create_weld(&a, "alice").unwrap();
+    let mut b = weld("921", "BW", "K1", "2026-05-01");
+    b.weld_number = Some("W12R1".into());
+    s.create_weld(&b, "alice").unwrap();
+    let sum = s.weld_exceptions(None).unwrap();
+    let exc = sum.welds.iter()
+        .find(|e| e.work_order.as_deref() == Some("920"))
+        .expect("rejected weld flagged");
+    // The unrelated W12R1 on WO 921 must NOT downgrade WO 920's reject.
+    assert!(exc.findings.iter().any(|f| f.code == "result.rejected_unrepaired"));
+    assert!(!exc.findings.iter().any(|f| f.code == "result.rejected_repaired"));
 }

@@ -121,8 +121,8 @@ export const api = {
 
   // work orders (records directory)
   listWorkOrders: () => invoke<WorkOrderSummary[]>("list_work_orders"),
-  deleteWorkOrder: (workOrder: string) =>
-    invoke<[number, number]>("delete_work_order", { workOrder }),
+  deleteWorkOrder: (workOrder: string, reason: string) =>
+    invoke<[number, number]>("delete_work_order", { workOrder, reason }),
   workOrderOwner: (workOrder: string) =>
     invoke<string | null>("work_order_owner", { workOrder }),
   listDrawingsForWo: (workOrder: string) =>
@@ -233,7 +233,18 @@ export const api = {
       schedule?: string | null;
       material?: string | null;
     }
-  ) => invoke<void>("apply_weld_attributes", { ids, ...attrs }),
+  ) =>
+    // Tauri v2 exposes Rust snake_case parameters as camelCase invoke keys;
+    // spreading the snake_case attrs would silently drop joint/groove type.
+    invoke<void>("apply_weld_attributes", {
+      ids,
+      size: attrs.size ?? null,
+      jointType: attrs.joint_type ?? null,
+      grooveType: attrs.groove_type ?? null,
+      process: attrs.process ?? null,
+      schedule: attrs.schedule ?? null,
+      material: attrs.material ?? null,
+    }),
 
   // reference data
   listPipe: () => invoke<PipeRow[]>("list_pipe"),

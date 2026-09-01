@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errMsg, logErr } from "../../api";
 import { useAuth } from "../../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../../types";
-import { Spinner, useToast } from "../../components/ui";
+import { ConfirmDialog, Spinner, useToast } from "../../components/ui";
 import { Combobox, InlineMulti } from "../../components/inline";
 import { base64ToBytes, loadPdf, type PdfDoc } from "../../pdf";
 
@@ -253,7 +253,7 @@ export function WeldAnnotator({
       const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName ?? "");
       if (e.key === "Escape") { setPending(null); setCursor(null); setSelId(null); setLegendSel(false); }
       if ((e.key === "Delete" || e.key === "Backspace") && !typing && editable) {
-        if (selId != null) { e.preventDefault(); delWeld(selId); }
+        if (selId != null) { e.preventDefault(); askDelete(selId); }
         else if (legendSel) { e.preventDefault(); setLegendOn(false); setLegendSel(false); persistLegend(legendPos, false); }
       }
       if (/^[1-9]$/.test(e.key) && !typing) {
@@ -411,6 +411,13 @@ export function WeldAnnotator({
     if (!w || !stamp) return;
     try { await api.updateWeld({ ...w, stamp_number: stamp }); await refreshWelds(); } catch (e) { toast.push("err", errMsg(e)); }
   };
+  // Deleting is confirmed first — one stray Delete keypress must never
+  // destroy a weld record. The dialog warns harder when data is on the weld.
+  const [confirmDel, setConfirmDel] = useState<Weld | null>(null);
+  const askDelete = (id: number) => {
+    const w = welds.find((x) => x.id === id);
+    if (w) setConfirmDel(w);
+  };
   const delWeld = async (id: number) => {
     try { await api.deleteWeld(id); setSelId(null); await refreshWelds(); } catch (e) { toast.push("err", errMsg(e)); }
   };
@@ -442,12 +449,26 @@ export function WeldAnnotator({
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [welds]);
 
-  // guided fill: pan the active bubble to the centre of the stage
+  // If the walk's list shrinks under us (a weld voided or deleted from
+  // another view), clamp the index so the drawer never silently vanishes
+  // while guided mode stays on with no way out.
   useEffect(() => {
-    if (guided === null) return;
+    if (guided !== null && guided >= fillable.length) {
+      setGuided(fillable.length > 0 ? fillable.length - 1 : null);
+    }
+  }, [guided, fillable]);
+
+  // guided fill: pan the active bubble to the centre of the stage — once per
+  // weld. The welds list refreshes after every save (and after bubble drags),
+  // and re-centering on each refresh would yank the view mid-drag.
+  const lastCenteredRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (guided === null) { lastCenteredRef.current = null; return; }
     const w = fillable[guided];
     if (!w || w.bubble_x == null) return;
     if ((w.bubble_page ?? 1) !== pageNum) setPageNum(w.bubble_page ?? 1);
+    if (lastCenteredRef.current === w.id) return;
+    lastCenteredRef.current = w.id;
     centerOn(w.bubble_x ?? 0.5, w.bubble_y ?? 0.5, DRAWER_W);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guided, fillable, size.w, size.h, pageNum]);
@@ -674,7 +695,7 @@ export function WeldAnnotator({
               stamp={stamp}
               onRenumber={renumber}
               onReassign={() => reassign(selWeld.id)}
-              onDelete={() => delWeld(selWeld.id)}
+              onDelete={() => askDelete(selWeld.id)}
               onClose={() => setSelId(null)}
             />
           </div>
@@ -695,11 +716,19 @@ export function WeldAnnotator({
             sticky={stickyRef.current}
             onSaveNext={async (changes) => {
               const w = fillable[guided];
-              stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
+              // Advance ONLY after the save lands. On a failed save (a
+              // conflict from another user, a locked network DB) the walk
+              // stays on this weld with the typed data intact — silently
+              // discarding a form and toasting success would be data loss.
               try {
                 await api.updateWeld({ ...w, ...changes });
-                await refreshWelds();
-              } catch (e) { toast.push("err", errMsg(e)); }
+              } catch (e) {
+                toast.push("err", errMsg(e));
+                await refreshWelds(); // pick up the fresh row_version for a retry
+                return;
+              }
+              stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
+              await refreshWelds();
               if (guided + 1 >= fillable.length) {
                 setGuided(null);
                 toast.push("ok", "All welds filled — review & save");
@@ -714,6 +743,21 @@ export function WeldAnnotator({
             onExit={() => setGuided(null)}
           />
           </aside>
+        )}
+
+        {confirmDel && (
+          <ConfirmDialog
+            title={`Delete weld ${confirmDel.weld_number ?? `#${confirmDel.id}`}`}
+            body={
+              confirmDel.nde_result || confirmDel.date_welded
+                ? "This weld already carries recorded data — deleting permanently destroys the record and its history. To exclude it while keeping the record, use Void in the weld grid instead."
+                : "Removes the bubble and its weld record from the drawing. This cannot be undone."
+            }
+            confirmLabel="Delete weld"
+            danger
+            onConfirm={() => { const w = confirmDel; setConfirmDel(null); if (w) delWeld(w.id); }}
+            onClose={() => setConfirmDel(null)}
+          />
         )}
       </div>
     </div>
@@ -874,7 +918,8 @@ function GuidedPopup({
 }: {
   weld: Weld; index: number; total: number; welders: Welder[]; lookups: Lookups; sizes: number[];
   specOptions: string[]; sticky: Partial<Weld>;
-  onSaveNext: (c: Partial<Weld>) => void; onBack: () => void; onSkip: () => void; onExit: () => void;
+  onSaveNext: (c: Partial<Weld>) => void | Promise<void>;
+  onBack: () => void; onSkip: () => void; onExit: () => void;
 }) {
   // Seed each field from the weld's own value, falling back to the carried-
   // forward value from the previous weld, so repeated data isn't re-typed.
@@ -968,10 +1013,18 @@ function GuidedPopup({
   // silent one: the walk won't advance until the reason is on record.
   const overrideMissing = !!mismatch && !f.nde_override_reason.trim();
   const canSave = missing.length === 0 && !reqBlocked && !overrideMissing;
-  const save = () => {
-    if (!canSave) return;
-    // The reason lives only while the deviation does — meeting spec clears it.
-    onSaveNext({ ...changes(), nde_override_reason: mismatch ? f.nde_override_reason.trim() || null : null });
+  // In-flight guard: a double-tap on Save (or Enter) must not fire two saves
+  // with the same row_version — the second would spuriously conflict.
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!canSave || busy) return;
+    setBusy(true);
+    try {
+      // The reason lives only while the deviation does — meeting spec clears it.
+      await onSaveNext({ ...changes(), nde_override_reason: mismatch ? f.nde_override_reason.trim() || null : null });
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Which fields were seeded from the previous weld (own value empty, sticky
@@ -1175,7 +1228,7 @@ function GuidedPopup({
             Document below-spec reason
           </span>
         )}
-        <button className="btn btn-accent btn-sm" onClick={save} disabled={!canSave}
+        <button className="btn btn-accent btn-sm" onClick={save} disabled={!canSave || busy}
           title={
             missing.length > 0
               ? `Fill out all required fields: ${missing.map((m) => m.label).join(", ")}`
@@ -1185,7 +1238,7 @@ function GuidedPopup({
               ? "NDE % is below the requirement — document the deviation reason first"
               : ""
           }>
-          {index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}
+          {busy ? "Saving…" : index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}
         </button>
       </div>
     </div>

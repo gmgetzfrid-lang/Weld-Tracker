@@ -40,8 +40,30 @@ impl AppState {
     /// The signed-in user, but only once they have cleared the forced
     /// password change. Every data/report/admin command goes through here so
     /// a default-credential session cannot act until the password is changed.
+    ///
+    /// The user row is re-read from the database on every call so a disable
+    /// or demotion done from another machine (the shared-drive deployment)
+    /// takes effect on the next action, not only after that session restarts.
+    /// One indexed single-row SELECT — negligible next to the command's work.
     fn require_login(&self) -> Result<User, String> {
-        let u = self.session_user()?;
+        let cached = self.session_user()?;
+        let u = match self.store.get_user(cached.id) {
+            Ok(fresh) => {
+                *self.session.lock().unwrap() = Some(fresh.clone());
+                fresh
+            }
+            // The account row is gone — the session no longer represents anyone.
+            Err(weldcore::Error::NotFound) => {
+                *self.session.lock().unwrap() = None;
+                return Err("your account no longer exists — signed out".into());
+            }
+            // Transient DB trouble: fall back to the cached user rather than
+            // locking out a live session over a momentary read failure.
+            Err(_) => cached,
+        };
+        if !u.active {
+            return Err("your account has been disabled".into());
+        }
         if u.must_change_password {
             return Err("you must change your password before continuing".into());
         }
@@ -499,10 +521,13 @@ pub fn delete_drawing(state: State<AppState>, id: i64) -> R<()> {
 }
 
 #[tauri::command]
-pub fn delete_work_order(state: State<AppState>, work_order: String) -> R<(i64, i64)> {
-    // Any editor may attempt; the store enforces owner-or-admin.
+pub fn delete_work_order(state: State<AppState>, work_order: String, reason: String) -> R<(i64, i64)> {
+    // Any editor may attempt; the store enforces owner-or-admin. The typed
+    // reason from the confirm dialog lands in the audit trail.
     let actor = state.require_editor()?;
-    e(state.store.delete_work_order(&work_order, &actor.username, &actor.role))
+    e(state
+        .store
+        .delete_work_order(&work_order, &actor.username, &actor.role, &reason))
 }
 
 #[tauri::command]

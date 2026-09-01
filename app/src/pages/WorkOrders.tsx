@@ -47,9 +47,9 @@ export function WorkOrders({
 
   const load = () => api.listWorkOrders().then(setRows).catch((e) => setError(errMsg(e)));
 
-  const delWorkOrder = async (r: WorkOrderSummary) => {
+  const delWorkOrder = async (r: WorkOrderSummary, reason: string) => {
     try {
-      const [welds, draws] = await api.deleteWorkOrder(r.work_order);
+      const [welds, draws] = await api.deleteWorkOrder(r.work_order, reason);
       toast.push("ok", `Deleted ${r.work_order}: ${welds} weld(s), ${draws} drawing(s)`);
       load();
     } catch (err) {
@@ -167,7 +167,7 @@ export function WorkOrders({
           danger
           requireReason
           reasonLabel="Reason for deleting this work order"
-          onConfirm={() => { const r = confirmDel; setConfirmDel(null); if (r) delWorkOrder(r); }}
+          onConfirm={(reason) => { const r = confirmDel; setConfirmDel(null); if (r) delWorkOrder(r, reason ?? ""); }}
           onClose={() => setConfirmDel(null)}
         />
       )}

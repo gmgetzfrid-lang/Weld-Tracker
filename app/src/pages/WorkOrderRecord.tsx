@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Drawing, ExceptionsSummary, Lookups, Weld, Welder } from "../types";
@@ -55,26 +55,43 @@ export function WorkOrderRecord({
   const canDeleteWo =
     user != null && (user.role === "admin" || (owner != null && owner === user.username));
 
+  // Monotonic request token: only the NEWEST load may write state, so a slow
+  // response can't overwrite a fresher one (rapid autosaves, or switching to
+  // another work order while this component stays mounted).
+  const loadSeq = useRef(0);
   const load = useCallback(() => {
+    const seq = ++loadSeq.current;
     Promise.all([
       api.listDrawingsForWo(workOrder),
       api.listWelds({ work_order: workOrder, limit: 2000 }),
     ])
-      .then(([d, w]) => { setDrawings(d); setWelds(w); setError(null); })
-      .catch((e) => setError(errMsg(e)))
-      .finally(() => setLoading(false));
-    api.workOrderOwner(workOrder).then(setOwner).catch((e) => { logErr("loading work-order owner")(e); setOwner(null); });
-    api.weldExceptions(workOrder).then(setExc).catch(logErr("loading WO exceptions"));
+      .then(([d, w]) => {
+        if (seq !== loadSeq.current) return;
+        setDrawings(d); setWelds(w); setError(null);
+      })
+      .catch((e) => { if (seq === loadSeq.current) setError(errMsg(e)); })
+      .finally(() => { if (seq === loadSeq.current) setLoading(false); });
+    api.workOrderOwner(workOrder)
+      .then((o) => { if (seq === loadSeq.current) setOwner(o); })
+      .catch((e) => { logErr("loading work-order owner")(e); if (seq === loadSeq.current) setOwner(null); });
+    api.weldExceptions(workOrder)
+      .then((x) => { if (seq === loadSeq.current) setExc(x); })
+      .catch(logErr("loading WO exceptions"));
   }, [workOrder]);
   useEffect(load, [load]);
+  // Switching to a different WO while mounted: show a spinner, not the old
+  // WO's records under the new header.
+  useEffect(() => {
+    setLoading(true); setExc(null); setTab("overview");
+  }, [workOrder]);
 
-  const runDelete = async () => {
+  const runDelete = async (reason?: string) => {
     if (!confirmDel) return;
     const act = confirmDel;
     setConfirmDel(null);
     try {
       if (act.kind === "wo") {
-        const [w, d] = await api.deleteWorkOrder(workOrder);
+        const [w, d] = await api.deleteWorkOrder(workOrder, reason ?? "");
         toast.push("ok", `Deleted ${workOrder}: ${w} weld(s), ${d} drawing(s)`);
         onBack();
       } else {
@@ -314,7 +331,7 @@ export function WorkOrderRecord({
           danger
           requireReason
           reasonLabel="Reason for deleting this work order"
-          onConfirm={() => runDelete()}
+          onConfirm={(reason) => runDelete(reason)}
           onClose={() => setConfirmDel(null)}
         />
       ) : (

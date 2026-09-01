@@ -6,7 +6,7 @@
 
 use crate::{Error, QualityFile, Result, Store};
 use base64::Engine;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 /// The categories a quality-package file can be filed under.
 pub const CATEGORIES: &[&str] = &[
@@ -88,7 +88,7 @@ impl Store {
                 params![id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .ok();
+            .optional()?;
         match row {
             Some((name, mime, Some(bytes))) => Ok(Some((
                 name.unwrap_or_default(),

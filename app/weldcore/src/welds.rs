@@ -324,6 +324,55 @@ fn weld_change_detail(old: &Weld, new: &Weld) -> String {
     parts.join("; ")
 }
 
+/// The transactional core of a weld update: snapshot-diff, optimistic version
+/// guard, the UPDATE itself, and its field-level audit row — all inside the
+/// caller's transaction, so single saves and multi-weld batches share one
+/// code path and an aborted batch rolls back whole. `w` must already carry
+/// derived fields (`apply_derived`); its `row_version` is bumped on success.
+fn update_weld_in_tx(tx: &rusqlite::Transaction, w: &mut Weld, actor: &str) -> Result<()> {
+    let set = WRITE_COLS.iter().map(|c| format!("{c}=?")).collect::<Vec<_>>().join(", ");
+    let expected_version = w.row_version;
+    let new_version = expected_version + 1;
+    let sql = format!(
+        "UPDATE welds SET {set}, row_version=?, updated_at=datetime('now')
+         WHERE id=? AND row_version=?"
+    );
+    // Snapshot the row as it was, to diff against the new values and to
+    // detect a concurrent change.
+    let old = {
+        let mut stmt = tx.prepare(&format!("SELECT {COLS} FROM welds WHERE id = ?1"))?;
+        let mut rows = stmt.query(params![w.id])?;
+        match rows.next()? {
+            Some(r) => weld_from_row(r)?,
+            None => return Err(Error::NotFound),
+        }
+    };
+    if old.row_version != expected_version {
+        return Err(Error::Conflict);
+    }
+    let mut vals = weld_write_values(w);
+    vals.push(Box::new(new_version));
+    vals.push(Box::new(w.id));
+    vals.push(Box::new(expected_version));
+    let n = tx.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
+    if n == 0 {
+        // The version guard in the WHERE clause didn't match — a concurrent
+        // writer slipped in. Fail closed rather than lose their change.
+        return Err(Error::Conflict);
+    }
+    let mut detail = weld_change_detail(&old, w);
+    if detail.is_empty() {
+        detail = "no tracked fields changed".to_string();
+    }
+    tx.execute(
+        "INSERT INTO audit_log (username, action, entity, entity_id, detail)
+         VALUES (?1, 'update', 'weld', ?2, ?3)",
+        params![actor, w.id.to_string(), detail],
+    )?;
+    w.row_version = new_version;
+    Ok(())
+}
+
 impl Store {
     /// Recompute derived fields (weld inches, wall thickness) the way the
     /// workbook formulas did.
@@ -508,14 +557,24 @@ impl Store {
         drop(conn);
 
         // Repair children by exact link (parent_weld_id), with a text fallback
-        // (`<base>R<k>`) for repairs logged before the link existed.
+        // (`<base>R<k>`) for repairs logged before the link existed. Weld
+        // numbers are only sequential per drawing, so the fallback matches
+        // strictly within the same work order AND drawing — a W12R1 on another
+        // job must never clear a rejected W12 here.
         let repaired_ids: std::collections::HashSet<i64> =
             welds.iter().filter_map(|w| w.parent_weld_id).collect();
-        let numbers: Vec<String> = welds
-            .iter()
-            .filter_map(|w| w.weld_number.clone())
-            .map(|s| s.trim().to_uppercase())
-            .collect();
+        let wo_key =
+            |w: &Weld| w.work_order.as_deref().unwrap_or("").trim().to_uppercase();
+        let mut numbers_by_scope: std::collections::HashMap<(String, Option<i64>), Vec<String>> =
+            std::collections::HashMap::new();
+        for w in &welds {
+            if let Some(n) = w.weld_number.as_deref().filter(|s| !s.trim().is_empty()) {
+                numbers_by_scope
+                    .entry((wo_key(w), w.drawing_id))
+                    .or_default()
+                    .push(n.trim().to_uppercase());
+            }
+        }
         let has_repair = |w: &Weld| {
             if repaired_ids.contains(&w.id) {
                 return true;
@@ -525,7 +584,10 @@ impl Store {
                 return false;
             }
             let prefix = format!("{}R", base.trim().to_uppercase());
-            numbers.iter().any(|n| n.starts_with(&prefix))
+            numbers_by_scope
+                .get(&(wo_key(w), w.drawing_id))
+                .map(|ns| ns.iter().any(|n| n.starts_with(&prefix)))
+                .unwrap_or(false)
         };
 
         let mut summary = validate::ExceptionsSummary {
@@ -617,50 +679,10 @@ impl Store {
     pub fn update_weld(&self, w: &Weld, actor: &str) -> Result<Weld> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
-        let set = WRITE_COLS.iter().map(|c| format!("{c}=?")).collect::<Vec<_>>().join(", ");
-        let expected_version = w.row_version;
-        let new_version = expected_version + 1;
-        let sql = format!(
-            "UPDATE welds SET {set}, row_version=?, updated_at=datetime('now')
-             WHERE id=? AND row_version=?"
-        );
-
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
-        // Snapshot the row as it was, to diff against the new values and to
-        // detect a concurrent change.
-        let old = {
-            let mut stmt = tx.prepare(&format!("SELECT {COLS} FROM welds WHERE id = ?1"))?;
-            let mut rows = stmt.query(params![w.id])?;
-            match rows.next()? {
-                Some(r) => weld_from_row(r)?,
-                None => return Err(Error::NotFound),
-            }
-        };
-        if old.row_version != expected_version {
-            return Err(Error::Conflict);
-        }
-        let mut vals = weld_write_values(&w);
-        vals.push(Box::new(new_version));
-        vals.push(Box::new(w.id));
-        vals.push(Box::new(expected_version));
-        let n = tx.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
-        if n == 0 {
-            // The version guard in the WHERE clause didn't match — a concurrent
-            // writer slipped in. Fail closed rather than lose their change.
-            return Err(Error::Conflict);
-        }
-        let mut detail = weld_change_detail(&old, &w);
-        if detail.is_empty() {
-            detail = "no tracked fields changed".to_string();
-        }
-        tx.execute(
-            "INSERT INTO audit_log (username, action, entity, entity_id, detail)
-             VALUES (?1, 'update', 'weld', ?2, ?3)",
-            params![actor, w.id.to_string(), detail],
-        )?;
+        update_weld_in_tx(&tx, &mut w, actor)?;
         tx.commit()?;
-        w.row_version = new_version;
         Ok(w)
     }
 
@@ -691,7 +713,7 @@ impl Store {
         let n = conn.execute(
             "UPDATE welds SET status = 'Void', count_omission = 1,
                  voided_at = datetime('now'), voided_by = ?2, void_reason = ?3,
-                 updated_at = datetime('now')
+                 row_version = row_version + 1, updated_at = datetime('now')
              WHERE id = ?1 AND voided_at IS NULL",
             params![id, actor, reason],
         )?;
@@ -710,7 +732,7 @@ impl Store {
         let n = conn.execute(
             "UPDATE welds SET status = 'Required', count_omission = 0,
                  voided_at = NULL, voided_by = NULL, void_reason = NULL,
-                 updated_at = datetime('now')
+                 row_version = row_version + 1, updated_at = datetime('now')
              WHERE id = ?1 AND voided_at IS NOT NULL",
             params![id],
         )?;
@@ -746,28 +768,43 @@ impl Store {
         if date.trim().is_empty() {
             return Err(Error::Invalid("NDE date is required".into()));
         }
-        let mut n = 0;
+        // Prepare every weld first (reads and derived-field computation take
+        // their own short locks), then commit the whole report in ONE
+        // transaction — a failure on any weld records nothing, so "the batch
+        // errored" always means "nothing was stamped", never "some were".
+        let mut prepared: Vec<Weld> = Vec::with_capacity(entries.len());
         for (id, result) in entries {
             let mut w = self.get_weld(*id)?;
+            if w.voided_at.is_some() {
+                return Err(Error::Invalid(format!(
+                    "weld {} is void — restore it before recording NDE",
+                    w.weld_number.as_deref().unwrap_or("?")
+                )));
+            }
             w.nde_types = Some(types.trim().to_string());
             w.nde_date = Some(date.trim().to_string());
             w.nde_result = Some(result.trim().to_string());
             if let Some(r) = report_no.map(str::trim).filter(|s| !s.is_empty()) {
                 w.nde_report_no = Some(r.to_string());
             }
-            self.update_weld(&w, actor)?;
-            n += 1;
+            self.apply_derived(&mut w)?;
+            prepared.push(w);
         }
-        self.audit(
-            actor,
-            "nde_batch",
-            "weld",
-            "",
-            &format!(
-                "report {} · {types} · {date} → {n} welds",
-                report_no.unwrap_or("—")
-            ),
-        );
+        let n = prepared.len();
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for w in &mut prepared {
+            update_weld_in_tx(&tx, w, actor)?;
+        }
+        tx.execute(
+            "INSERT INTO audit_log (username, action, entity, entity_id, detail)
+             VALUES (?1, 'nde_batch', 'weld', '', ?2)",
+            params![
+                actor,
+                format!("report {} · {types} · {date} → {n} welds", report_no.unwrap_or("—"))
+            ],
+        )?;
+        tx.commit()?;
         Ok(n)
     }
 

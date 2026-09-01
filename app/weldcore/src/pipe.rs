@@ -1,7 +1,7 @@
 //! Pipe schedule lookup and other reference data (lookups, settings, legend).
 
 use crate::{CriteriaRow, Lookup, PipeRow, Result, Store};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use std::collections::HashMap;
 
 impl Store {
@@ -16,7 +16,7 @@ impl Store {
                 params![nps, schedule],
                 |r| r.get(0),
             )
-            .ok();
+            .optional()?;
         Ok(wall)
     }
 
