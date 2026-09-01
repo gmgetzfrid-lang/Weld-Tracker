@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, errMsg } from "../../api";
+import { api, errMsg, logErr } from "../../api";
 import { useAuth } from "../../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../../types";
 import { Spinner, useToast } from "../../components/ui";
@@ -383,7 +383,14 @@ export function WeldAnnotator({
     if (!d || !d.moved) return; // a click that only selected — nothing to persist
     const w = welds.find((x) => x.id === d.id);
     if (w && w.bubble_x != null && w.bubble_y != null) {
-      try { await api.setWeldBubble(d.id, pageNum, w.bubble_x, w.bubble_y, w.joint_x ?? w.bubble_x, w.joint_y ?? w.bubble_y); } catch { /* ignore */ }
+      try {
+        await api.setWeldBubble(d.id, pageNum, w.bubble_x, w.bubble_y, w.joint_x ?? w.bubble_x, w.joint_y ?? w.bubble_y);
+      } catch (e) {
+        // The canvas already shows the moved bubble — if the save failed, the
+        // DB still has the old position. Reload to the truth and say so.
+        toast.push("err", `Could not save the bubble position for ${w.weld_number ?? "this weld"} — reloaded. ${errMsg(e)}`);
+        await refreshWelds();
+      }
     }
   };
 
@@ -920,7 +927,7 @@ function GuidedPopup({
     if (!driversReady) { setReq(null); return; }
     let live = true;
     const id = setTimeout(() => {
-      api.computeNde({ ...weld, ...changes() }).then((r) => { if (live) setReq(r); }).catch(() => {});
+      api.computeNde({ ...weld, ...changes() }).then((r) => { if (live) setReq(r); }).catch(logErr("computing NDE requirement"));
     }, 120);
     return () => { live = false; clearTimeout(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

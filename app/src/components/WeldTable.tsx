@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import type { Lookups, Weld, Welder } from "../types";
 import { useAuth } from "../auth";
 import { StatusBadge, useToast } from "./ui";
@@ -275,7 +275,7 @@ function DetailPanel({
   // The welder's cert aliases feed the Cert dropdown (which cert this weld used).
   const [certAliases, setCertAliases] = useState<string[]>([]);
   useEffect(() => {
-    if (w.stamp_number) api.welderCertAliases(w.stamp_number).then(setCertAliases).catch(() => setCertAliases([]));
+    if (w.stamp_number) api.welderCertAliases(w.stamp_number).then(setCertAliases).catch((e) => { logErr("loading cert aliases")(e); setCertAliases([]); });
     else setCertAliases([]);
   }, [w.stamp_number]);
   const opt = (k: string) => lookups[k] ?? [];

@@ -39,11 +39,12 @@ impl Store {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| Error::Invalid(format!("invalid file data: {e}")))?;
+        let sha = crate::sha256_hex(&bytes);
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO wo_files (work_order, category, name, mime, data, note, uploaded_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![wo, category, name, mime, bytes, note, actor],
+            "INSERT INTO wo_files (work_order, category, name, mime, data, note, uploaded_by, sha256)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![wo, category, name, mime, bytes, note, actor, sha],
         )?;
         let id = conn.last_insert_rowid();
         drop(conn);
@@ -57,7 +58,7 @@ impl Store {
         let mut stmt = conn.prepare(
             "SELECT id, work_order, category, name, mime, note,
                     (data IS NOT NULL) AS has_file, COALESCE(LENGTH(data), 0) AS size,
-                    uploaded_by, uploaded_at
+                    uploaded_by, uploaded_at, sha256
              FROM wo_files WHERE work_order = ?1 COLLATE NOCASE ORDER BY id DESC",
         )?;
         let rows = stmt.query_map(params![work_order], |r| {
@@ -72,6 +73,7 @@ impl Store {
                 size: r.get(7)?,
                 uploaded_by: r.get(8)?,
                 uploaded_at: r.get(9)?,
+                sha256: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

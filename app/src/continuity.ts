@@ -157,7 +157,7 @@ export function printContinuity(c: WelderContinuity) {
       .ok{color:#16a34a;font-weight:700;} .off{color:#b91c1c;font-weight:700;}
       @media print{.noprint{display:none;}}
     </style></head><body>
-    <button class="noprint" onclick="window.print()" style="float:right;padding:8px 14px;">Print</button>
+    <button class="noprint" id="print-btn" style="float:right;padding:8px 14px;">Print</button>
     <h1>Welder Continuity Log</h1>
     <p class="sub">${esc(c.name)} · Stamp ${esc(c.stamp)} · generated ${esc(c.generated_on)}</p>
     <h2>Qualifications</h2>
@@ -168,6 +168,9 @@ export function printContinuity(c: WelderContinuity) {
     <tbody>${eventRows || '<tr><td colspan="7">none</td></tr>'}</tbody></table>
     </body></html>`);
   w.document.close();
+  // Wire the button from the opener side — an inline onclick would be blocked
+  // by the app's Content Security Policy, which the child window inherits.
+  w.document.getElementById("print-btn")?.addEventListener("click", () => w.print());
   w.focus();
   setTimeout(() => w.print(), 300);
 }

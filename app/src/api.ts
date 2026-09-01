@@ -103,6 +103,14 @@ export const api = {
   recentActivity: (entity: string | null, limit?: number) =>
     invoke<AuditEntry[]>("recent_activity", { entity, limit }),
   backupDatabase: () => invoke<string>("backup_database"),
+  openLogFolder: () => invoke<string>("open_log_folder"),
+  /** Record one NDE report's results across many welds at once. */
+  recordNdeBatch: (
+    entries: { id: number; result: string }[],
+    types: string,
+    date: string,
+    reportNo?: string | null,
+  ) => invoke<number>("record_nde_batch", { entries, types, date, reportNo: reportNo ?? null }),
   createRepair: (weldId: number, includeTracers: boolean) =>
     invoke<number[]>("create_repair", { weldId, includeTracers }),
   distinctWeldValues: (field: string) =>
@@ -270,11 +278,20 @@ export function rejectThreshold(): Promise<number> {
       const p = parseFloat(s.reject_rate_warn_pct || "5");
       return isFinite(p) ? p / 100 : 0.05;
     })
-    .catch(() => 0.05);
+    .catch((e) => { logErr("loading reject threshold")(e); return 0.05; });
 }
 
 export function errMsg(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;
   return String(e);
+}
+
+/**
+ * Catch handler for background/optional loads that must not block the page but
+ * must never fail invisibly either: logs what failed (visible in the webview
+ * console and support diagnostics) instead of swallowing it.
+ */
+export function logErr(what: string): (e: unknown) => void {
+  return (e: unknown) => console.warn(`[sentrix] ${what} failed:`, errMsg(e));
 }

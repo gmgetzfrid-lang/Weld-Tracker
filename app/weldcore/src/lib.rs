@@ -143,6 +143,7 @@ impl Store {
             (10, include_str!("migrations/0010_soft_delete_audit.sql")),
             (11, include_str!("migrations/0011_row_version.sql")),
             (12, include_str!("migrations/0012_repair_chain.sql")),
+            (13, include_str!("migrations/0013_doc_hashes_nde_batch.sql")),
         ];
 
         let pending: Vec<&(i64, &str)> =
@@ -179,6 +180,7 @@ impl Store {
             )?;
             tx.commit()?;
         }
+        backfill_file_hashes(&conn)?;
         Ok(())
     }
 
@@ -252,6 +254,44 @@ impl Store {
         self.backup_to(&dest)?;
         Ok(dest)
     }
+}
+
+/// Hex SHA-256 of a byte slice — the integrity fingerprint stored beside every
+/// controlled / evidence file so its content can be proven unchanged later.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    let out = h.finalize();
+    out.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Fill in SHA-256 for any stored file that predates the hash columns
+/// (migration 0013). Runs after migrations; cheap when nothing is missing.
+fn backfill_file_hashes(conn: &Connection) -> Result<()> {
+    let targets: [(&str, &str, &str); 3] = [
+        ("document_packages", "pdf_data", "sha256"),
+        ("wo_files", "data", "sha256"),
+        ("welder_certs", "file_data", "file_sha256"),
+    ];
+    for (table, blob_col, hash_col) in targets {
+        let sql = format!(
+            "SELECT id, {blob_col} FROM {table}
+             WHERE {hash_col} IS NULL AND {blob_col} IS NOT NULL"
+        );
+        let rows: Vec<(i64, Vec<u8>)> = {
+            let mut stmt = conn.prepare(&sql)?;
+            let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            it.collect::<rusqlite::Result<_>>()?
+        };
+        for (id, bytes) in rows {
+            conn.execute(
+                &format!("UPDATE {table} SET {hash_col} = ?1 WHERE id = ?2"),
+                rusqlite::params![sha256_hex(&bytes), id],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// The on-disk file backing the `main` database, or `None` for an in-memory or

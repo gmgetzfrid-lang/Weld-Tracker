@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, logErr } from "./api";
 import { useAuth } from "./auth";
 import { SentrixMark } from "./components/Brand";
 import type { Settings } from "./types";
@@ -98,7 +98,7 @@ export function App() {
   const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
 
   useEffect(() => {
-    api.getSettings().then(setSettings).catch(() => {});
+    api.getSettings().then(setSettings).catch(logErr("loading settings"));
   }, [user]);
 
   // Global Ctrl/Cmd+K opens the jump box.

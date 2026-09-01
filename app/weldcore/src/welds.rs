@@ -75,6 +75,7 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     b31_temp_f, b31_pressure_psig, required_nde_method,
     nde_rule_set, expected_nde_percent, expected_nde_method, expected_nde_note,
     expected_nde_resolved, expected_nde_blockers,
+    nde_report_no, nde_override_reason,
     voided_at, voided_by, void_reason, row_version, parent_weld_id,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
@@ -96,7 +97,7 @@ const WRITE_COLS: &[&str] = &[
     "nde_rule_set", "expected_nde_percent", "expected_nde_method", "expected_nde_note",
     "expected_nde_resolved", "expected_nde_blockers",
     "drawing_id", "groove_type", "process", "bubble_page", "bubble_x", "bubble_y", "joint_x", "joint_y",
-    "parent_weld_id",
+    "parent_weld_id", "nde_report_no", "nde_override_reason",
 ];
 
 fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
@@ -139,7 +140,8 @@ fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
         Box::new(w.drawing_id), Box::new(w.groove_type.clone()), Box::new(w.process.clone()),
         Box::new(w.bubble_page), Box::new(w.bubble_x), Box::new(w.bubble_y),
         Box::new(w.joint_x), Box::new(w.joint_y),
-        Box::new(w.parent_weld_id),
+        Box::new(w.parent_weld_id), Box::new(w.nde_report_no.clone()),
+        Box::new(w.nde_override_reason.clone()),
     ]
 }
 
@@ -237,6 +239,8 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         void_reason: r.get("void_reason")?,
         row_version: r.get("row_version")?,
         parent_weld_id: r.get("parent_weld_id")?,
+        nde_report_no: r.get("nde_report_no")?,
+        nde_override_reason: r.get("nde_override_reason")?,
     };
     // Legacy rows saved before migration 0009 have no snapshot — compute it live
     // so the readout is never blank. (New writes always persist the snapshot.)
@@ -716,6 +720,55 @@ impl Store {
         }
         self.audit(actor, "restore", "weld", &id.to_string(), "");
         Ok(())
+    }
+
+    /// Record one NDE report's results across many welds at once — the way
+    /// results actually arrive (one RT report covering a dozen welds), instead
+    /// of editing rows one by one. Each weld gets the shared method(s), date and
+    /// report number plus its own Accepted/Rejected disposition, and goes
+    /// through `update_weld` so the field-level audit trail, requirement
+    /// snapshot, and optimistic-concurrency versioning all apply. Returns how
+    /// many welds were stamped.
+    pub fn record_nde_batch(
+        &self,
+        entries: &[(i64, String)],
+        types: &str,
+        date: &str,
+        report_no: Option<&str>,
+        actor: &str,
+    ) -> Result<usize> {
+        if entries.is_empty() {
+            return Err(Error::Invalid("no welds selected".into()));
+        }
+        if types.trim().is_empty() {
+            return Err(Error::Invalid("NDE method is required".into()));
+        }
+        if date.trim().is_empty() {
+            return Err(Error::Invalid("NDE date is required".into()));
+        }
+        let mut n = 0;
+        for (id, result) in entries {
+            let mut w = self.get_weld(*id)?;
+            w.nde_types = Some(types.trim().to_string());
+            w.nde_date = Some(date.trim().to_string());
+            w.nde_result = Some(result.trim().to_string());
+            if let Some(r) = report_no.map(str::trim).filter(|s| !s.is_empty()) {
+                w.nde_report_no = Some(r.to_string());
+            }
+            self.update_weld(&w, actor)?;
+            n += 1;
+        }
+        self.audit(
+            actor,
+            "nde_batch",
+            "weld",
+            "",
+            &format!(
+                "report {} · {types} · {date} → {n} welds",
+                report_no.unwrap_or("—")
+            ),
+        );
+        Ok(n)
     }
 
     /// Permanently delete a weld (hard purge). Prefer `void_weld`, which retains

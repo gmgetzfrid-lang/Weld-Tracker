@@ -151,6 +151,10 @@ export interface Weld {
   expected_nde_resolved?: boolean;
   /** Snapshot: semicolon-joined missing / unrecognized drivers when unresolved. */
   expected_nde_blockers?: string | null;
+  /** NDE report number the examination came back under. */
+  nde_report_no?: string | null;
+  /** Why the entered NDE % deliberately differs from the calculated requirement. */
+  nde_override_reason?: string | null;
   /** Optimistic-concurrency token; sent back on update to detect a clash. */
   row_version?: number;
   /** Repair chain: id of the weld this one repairs, if any. */
@@ -245,6 +249,8 @@ export interface QualityFile {
   size: number;
   uploaded_by?: string | null;
   uploaded_at: string;
+  /** SHA-256 of the stored bytes — integrity fingerprint. */
+  sha256?: string | null;
 }
 
 export interface Drawing {
@@ -286,6 +292,8 @@ export interface DocumentPackage {
   has_pdf: boolean;
   uploaded_by?: string | null;
   uploaded_at?: string;
+  /** SHA-256 of the stored PDF — proves the controlled copy is unchanged. */
+  sha256?: string | null;
 }
 
 export interface DrawingRevision {

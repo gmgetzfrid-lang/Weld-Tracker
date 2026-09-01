@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Settings } from "../types";
 import { ErrorBox, useToast } from "../components/ui";
@@ -26,7 +26,7 @@ export function SettingsPage() {
   const [kind, setKind] = useState("joint_type");
   const [newVal, setNewVal] = useState("");
   const [db, setDb] = useState<{ path: string; shared: boolean } | null>(null);
-  useEffect(() => { api.dbInfo().then(setDb).catch(() => {}); }, []);
+  useEffect(() => { api.dbInfo().then(setDb).catch(logErr("loading database info")); }, []);
 
   // Admin: backup + activity log.
   const [backingUp, setBackingUp] = useState(false);
@@ -35,7 +35,7 @@ export function SettingsPage() {
   // The activity trail is visible to everyone (transparency), newest first;
   // backup stays admin-only.
   useEffect(() => {
-    api.recentActivity(null, 100).then(setActivity).catch(() => {});
+    api.recentActivity(null, 100).then(setActivity).catch(logErr("loading activity"));
   }, []);
   const runBackup = async () => {
     setBackingUp(true);
@@ -43,12 +43,12 @@ export function SettingsPage() {
       const path = await api.backupDatabase();
       setLastBackup(path);
       toast.push("ok", "Backup written");
-      api.recentActivity(null, 100).then(setActivity).catch(() => {});
+      api.recentActivity(null, 100).then(setActivity).catch(logErr("refreshing activity"));
     } catch (e) { toast.push("err", errMsg(e)); }
     finally { setBackingUp(false); }
   };
 
-  const loadLookups = () => api.lookupsGrouped().then(setLookups).catch(() => {});
+  const loadLookups = () => api.lookupsGrouped().then(setLookups).catch(logErr("loading lookups"));
   useEffect(() => {
     api.getSettings().then(setSettings).catch((e) => setError(errMsg(e)));
     loadLookups();
@@ -177,6 +177,20 @@ export function SettingsPage() {
             shared location. See the README.
           </p>
         )}
+      </div>
+
+      <div className="card card-pad">
+        <h3>Support</h3>
+        <p className="hint" style={{ marginTop: 0 }}>
+          The app writes a per-user diagnostic log (startup, database path,
+          errors). Attach it when reporting a problem.
+        </p>
+        <button
+          className="btn"
+          onClick={() => api.openLogFolder().catch((e) => toast.push("err", errMsg(e)))}
+        >
+          Open log folder
+        </button>
       </div>
 
       {can("admin") && (

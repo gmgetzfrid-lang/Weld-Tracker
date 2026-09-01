@@ -177,11 +177,13 @@ impl Store {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| Error::Invalid(format!("invalid document data: {e}")))?;
+        let sha = crate::sha256_hex(&bytes);
         let conn = self.conn.lock().unwrap();
         let n = conn.execute(
-            "UPDATE welder_certs SET file_name=?1, file_data=?2, updated_at=datetime('now')
-             WHERE id=?3",
-            params![name, bytes, id],
+            "UPDATE welder_certs SET file_name=?1, file_data=?2, file_sha256=?3,
+                    updated_at=datetime('now')
+             WHERE id=?4",
+            params![name, bytes, sha, id],
         )?;
         if n == 0 {
             return Err(Error::NotFound);

@@ -270,11 +270,12 @@ impl Store {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| Error::Invalid(format!("invalid PDF data: {e}")))?;
+        let sha = crate::sha256_hex(&bytes);
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO document_packages (work_order, name, pdf_data, page_count, uploaded_by)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![work_order, name, bytes, page_count.max(1), actor],
+            "INSERT INTO document_packages (work_order, name, pdf_data, page_count, uploaded_by, sha256)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![work_order, name, bytes, page_count.max(1), actor, sha],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -284,7 +285,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, work_order, name, page_count, (pdf_data IS NOT NULL) AS has_pdf,
-                    uploaded_by, uploaded_at
+                    uploaded_by, uploaded_at, sha256
              FROM document_packages WHERE work_order = ?1 COLLATE NOCASE ORDER BY id DESC",
         )?;
         let rows = stmt.query_map(params![work_order], |r| {
@@ -296,6 +297,7 @@ impl Store {
                 has_pdf: r.get::<_, i64>(4)? != 0,
                 uploaded_by: r.get(5)?,
                 uploaded_at: r.get(6)?,
+                sha256: r.get(7)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

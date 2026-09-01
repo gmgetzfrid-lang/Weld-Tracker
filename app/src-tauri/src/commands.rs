@@ -16,15 +16,17 @@ pub struct AppState {
     pub session: Mutex<Option<User>>,
     pub db_path: String,
     pub db_shared: bool,
+    pub log_dir: String,
 }
 
 impl AppState {
-    pub fn new(store: Store, db_path: String, db_shared: bool) -> Self {
+    pub fn new(store: Store, db_path: String, db_shared: bool, log_dir: String) -> Self {
         AppState {
             store,
             session: Mutex::new(None),
             db_path,
             db_shared,
+            log_dir,
         }
     }
     fn current(&self) -> Option<User> {
@@ -336,6 +338,26 @@ pub fn recent_activity(
         .recent_activity(entity.as_deref(), limit.unwrap_or(100)))
 }
 
+/// Open the per-user support-log folder in the OS file manager. The path is
+/// fixed by the app (never user input), so this cannot be steered elsewhere.
+#[tauri::command]
+pub fn open_log_folder(state: State<AppState>) -> R<String> {
+    state.require_login()?;
+    let dir = state.log_dir.clone();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create log folder: {e}"))?;
+    #[cfg(target_os = "windows")]
+    let cmd = "explorer";
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let cmd = "xdg-open";
+    std::process::Command::new(cmd)
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("cannot open log folder: {e}"))?;
+    Ok(dir)
+}
+
 /// Write a timestamped backup of the database beside the live file (in a
 /// `backups` folder) and return the path written. Admin only.
 #[tauri::command]
@@ -373,6 +395,34 @@ pub fn create_repair(
 pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<String>> {
     state.require_login()?;
     e(state.store.distinct_weld_values(&field))
+}
+
+/// One weld's disposition inside a batch NDE recording.
+#[derive(serde::Deserialize)]
+pub struct NdeEntry {
+    pub id: i64,
+    pub result: String,
+}
+
+/// Record one NDE report's results across many welds at once (shared method,
+/// date and report number; per-weld Accepted/Rejected). Editor and up.
+#[tauri::command]
+pub fn record_nde_batch(
+    state: State<AppState>,
+    entries: Vec<NdeEntry>,
+    types: String,
+    date: String,
+    report_no: Option<String>,
+) -> R<usize> {
+    let actor = state.require_editor()?;
+    let pairs: Vec<(i64, String)> = entries.into_iter().map(|e| (e.id, e.result)).collect();
+    e(state.store.record_nde_batch(
+        &pairs,
+        &types,
+        &date,
+        report_no.as_deref(),
+        &actor.username,
+    ))
 }
 
 /// Global (Ctrl+K) search across work orders, welders, drawings, and welds.

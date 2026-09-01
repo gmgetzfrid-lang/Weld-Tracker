@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { QualityFile } from "../types";
 import { useToast } from "../components/ui";
@@ -40,7 +40,7 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
-    api.listWoFiles(workOrder).then(setFiles).catch(() => setFiles([]));
+    api.listWoFiles(workOrder).then(setFiles).catch((e) => { logErr("loading quality package")(e); setFiles([]); });
   }, [workOrder]);
   useEffect(load, [load]);
 

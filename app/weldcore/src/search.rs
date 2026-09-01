@@ -5,31 +5,45 @@
 use crate::{Result, Store};
 use rusqlite::params;
 
+/// SQL expression stripping the separators people type inconsistently in
+/// industrial IDs ("302-719" vs "302719", "ISO 1042" vs "ISO-1042").
+fn flat(col: &str) -> String {
+    format!("REPLACE(REPLACE(REPLACE(REPLACE({col},'-',''),' ',''),'_',''),'/','')")
+}
+
 impl Store {
     /// Search work orders, welders, drawings, and welds for `query` (a
-    /// case-insensitive substring). Returns at most `per_kind` hits of each kind.
+    /// case-insensitive substring; separators like -, space, _ and / are
+    /// ignored on both sides). Returns at most `per_kind` hits of each kind.
     pub fn global_search(&self, query: &str, per_kind: i64) -> Result<Vec<crate::SearchHit>> {
         let q = query.trim();
         if q.is_empty() {
             return Ok(Vec::new());
         }
         let like = format!("%{q}%");
+        // Separator-insensitive form: "302-719" also matches "302719".
+        let flat_q: String = q.chars().filter(|c| !"-_ /".contains(*c)).collect();
+        let flat_like = format!("%{flat_q}%");
         let per_kind = per_kind.clamp(1, 25);
         let conn = self.conn.lock().unwrap();
         let mut hits: Vec<crate::SearchHit> = Vec::new();
 
         // Work orders (from welds and drawings).
         {
-            let mut stmt = conn.prepare(
+            let wo_flat = flat("work_order");
+            let mut stmt = conn.prepare(&format!(
                 "SELECT wo FROM (
                      SELECT DISTINCT work_order AS wo FROM welds
-                       WHERE work_order LIKE ?1 AND work_order IS NOT NULL AND work_order <> ''
+                       WHERE (work_order LIKE ?1 OR {wo_flat} LIKE ?3)
+                         AND work_order IS NOT NULL AND work_order <> ''
                      UNION
                      SELECT DISTINCT work_order AS wo FROM drawings
-                       WHERE work_order LIKE ?1 AND work_order IS NOT NULL AND work_order <> ''
-                 ) ORDER BY wo LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![like, per_kind], |r| r.get::<_, String>(0))?;
+                       WHERE (work_order LIKE ?1 OR {wo_flat} LIKE ?3)
+                         AND work_order IS NOT NULL AND work_order <> ''
+                 ) ORDER BY wo LIMIT ?2"
+            ))?;
+            let rows =
+                stmt.query_map(params![like, per_kind, flat_like], |r| r.get::<_, String>(0))?;
             for wo in rows.flatten() {
                 hits.push(crate::SearchHit {
                     kind: "work_order".into(),
@@ -42,12 +56,13 @@ impl Store {
 
         // Welders.
         {
-            let mut stmt = conn.prepare(
+            let stamp_flat = flat("stamp");
+            let mut stmt = conn.prepare(&format!(
                 "SELECT stamp, name FROM welders
-                   WHERE stamp LIKE ?1 OR name LIKE ?1
-                   ORDER BY active DESC, name LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![like, per_kind], |r| {
+                   WHERE stamp LIKE ?1 OR name LIKE ?1 OR {stamp_flat} LIKE ?3
+                   ORDER BY active DESC, name LIMIT ?2"
+            ))?;
+            let rows = stmt.query_map(params![like, per_kind, flat_like], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
             })?;
             for (stamp, name) in rows.flatten() {
@@ -63,12 +78,13 @@ impl Store {
 
         // Drawings.
         {
-            let mut stmt = conn.prepare(
+            let no_flat = flat("drawing_no");
+            let mut stmt = conn.prepare(&format!(
                 "SELECT drawing_no, title, work_order FROM drawings
-                   WHERE drawing_no LIKE ?1 OR title LIKE ?1
-                   ORDER BY drawing_no LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![like, per_kind], |r| {
+                   WHERE drawing_no LIKE ?1 OR title LIKE ?1 OR {no_flat} LIKE ?3
+                   ORDER BY drawing_no LIMIT ?2"
+            ))?;
+            let rows = stmt.query_map(params![like, per_kind, flat_like], |r| {
                 Ok((
                     r.get::<_, Option<String>>(0)?,
                     r.get::<_, Option<String>>(1)?,
@@ -88,12 +104,13 @@ impl Store {
 
         // Welds (by number), excluding voided.
         {
-            let mut stmt = conn.prepare(
+            let num_flat = flat("weld_number");
+            let mut stmt = conn.prepare(&format!(
                 "SELECT id, weld_number, work_order FROM welds
-                   WHERE weld_number LIKE ?1 AND voided_at IS NULL
-                   ORDER BY id DESC LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![like, per_kind], |r| {
+                   WHERE (weld_number LIKE ?1 OR {num_flat} LIKE ?3) AND voided_at IS NULL
+                   ORDER BY id DESC LIMIT ?2"
+            ))?;
+            let rows = stmt.query_map(params![like, per_kind, flat_like], |r| {
                 Ok((
                     r.get::<_, i64>(0)?,
                     r.get::<_, Option<String>>(1)?,

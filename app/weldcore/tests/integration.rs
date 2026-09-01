@@ -1164,3 +1164,75 @@ fn global_search_finds_across_entities() {
     // Empty query → nothing.
     assert!(s.global_search("   ", 6).unwrap().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Migration 0013: document hashes, batch NDE recording, search normalization.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stored_files_carry_sha256() {
+    let s = store();
+    let bytes = b"not a real pdf, but stable bytes";
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let expect = weldcore::sha256_hex(bytes);
+
+    let _pkg = s.create_package(Some("900"), "book.pdf", &b64, 3, "admin").unwrap();
+    let pkgs = s.list_packages("900").unwrap();
+    assert_eq!(pkgs[0].sha256.as_deref(), Some(expect.as_str()));
+
+    let _f = s
+        .add_wo_file("900", Some("NDE Report"), "rt-1042.pdf", Some("application/pdf"), &b64, None, "admin")
+        .unwrap();
+    let files = s.list_wo_files("900").unwrap();
+    assert_eq!(files[0].sha256.as_deref(), Some(expect.as_str()));
+}
+
+#[test]
+fn record_nde_batch_stamps_report_across_welds() {
+    let s = store();
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let mut w = weld("910", "BW", "K1", "2026-05-01");
+        w.weld_number = Some(format!("W{i}"));
+        w.service_category = Some("Normal".into());
+        w.material_group = Some("Carbon Steel".into());
+        w.flange_class = Some("300".into());
+        w.shop_or_field = Some("SHOP".into());
+        w.nde_percent = Some("5%".into());
+        ids.push(s.create_weld(&w, "alice").unwrap());
+    }
+    let entries = vec![
+        (ids[0], "Accepted".to_string()),
+        (ids[1], "Accepted".to_string()),
+        (ids[2], "Rejected".to_string()),
+    ];
+    let n = s
+        .record_nde_batch(&entries, "RT", "2026-05-02", Some("RT-1042"), "alice")
+        .unwrap();
+    assert_eq!(n, 3);
+    let w0 = s.get_weld(ids[0]).unwrap();
+    assert_eq!(w0.nde_result.as_deref(), Some("Accepted"));
+    assert_eq!(w0.nde_types.as_deref(), Some("RT"));
+    assert_eq!(w0.nde_report_no.as_deref(), Some("RT-1042"));
+    // Legacy RT mirror fields derive too.
+    assert_eq!(w0.rt_accepted.as_deref(), Some("Y"));
+    let w2 = s.get_weld(ids[2]).unwrap();
+    assert_eq!(w2.nde_result.as_deref(), Some("Rejected"));
+    assert_eq!(w2.rt_rejected.as_deref(), Some("Y"));
+    // Missing method/date rejected.
+    assert!(s.record_nde_batch(&entries, " ", "2026-05-02", None, "alice").is_err());
+    assert!(s.record_nde_batch(&entries, "RT", " ", None, "alice").is_err());
+}
+
+#[test]
+fn search_ignores_id_separators() {
+    let s = store();
+    let mut w = weld("302719", "BW", "K1", "2026-05-01");
+    w.weld_number = Some("W-1042".into());
+    s.create_weld(&w, "alice").unwrap();
+    // Dashed query finds the undashed work order, and vice versa for welds.
+    let hits = s.global_search("302-719", 6).unwrap();
+    assert!(hits.iter().any(|h| h.kind == "work_order" && h.work_order.as_deref() == Some("302719")));
+    let hits = s.global_search("W1042", 6).unwrap();
+    assert!(hits.iter().any(|h| h.kind == "weld" && h.label == "W-1042"));
+}

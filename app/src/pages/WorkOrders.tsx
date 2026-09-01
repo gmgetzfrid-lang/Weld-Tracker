@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WorkOrderSummary } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
@@ -58,9 +58,9 @@ export function WorkOrders({
   };
   useEffect(() => {
     load();
-    api.listWelders(true, "name").then(setWelders).catch(() => {});
-    api.lookupsGrouped().then(setLookups).catch(() => {});
-    api.pipeSizes().then(setSizes).catch(() => {});
+    api.listWelders(true, "name").then(setWelders).catch(logErr("loading welders"));
+    api.lookupsGrouped().then(setLookups).catch(logErr("loading lookups"));
+    api.pipeSizes().then(setSizes).catch(logErr("loading pipe sizes"));
   }, []);
 
   if (view.kind === "wizard") {

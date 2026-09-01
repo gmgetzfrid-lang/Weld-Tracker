@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, logErr } from "../api";
 import type { SearchHit } from "../types";
 
 const KIND_META: Record<SearchHit["kind"], { icon: string; label: string }> = {
@@ -51,7 +51,7 @@ export function CommandPalette({
     const t = setTimeout(() => {
       api.globalSearch(query)
         .then((r) => { if (live) { setHits(r); setActive(0); } })
-        .catch(() => { if (live) setHits([]); })
+        .catch((e) => { logErr("global search")(e); if (live) setHits([]); })
         .finally(() => { if (live) setLoading(false); });
     }, 140);
     return () => { live = false; clearTimeout(t); };

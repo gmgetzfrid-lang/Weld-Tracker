@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, num, useToast } from "../components/ui";
@@ -56,7 +56,7 @@ export function WorkOrderRecord({
       .then(([d, w]) => { setDrawings(d); setWelds(w); setError(null); })
       .catch((e) => setError(errMsg(e)))
       .finally(() => setLoading(false));
-    api.workOrderOwner(workOrder).then(setOwner).catch(() => setOwner(null));
+    api.workOrderOwner(workOrder).then(setOwner).catch((e) => { logErr("loading work-order owner")(e); setOwner(null); });
   }, [workOrder]);
   useEffect(load, [load]);
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Weld, WeldFilter, Welder } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, useToast } from "../components/ui";
@@ -38,9 +38,9 @@ export function WeldLog({
   const [sizes, setSizes] = useState<number[]>([]);
 
   useEffect(() => {
-    api.listWelders(true, "name").then(setWelders).catch(() => {});
-    api.lookupsGrouped().then(setLookups).catch(() => {});
-    api.pipeSizes().then(setSizes).catch(() => {});
+    api.listWelders(true, "name").then(setWelders).catch(logErr("loading welders"));
+    api.lookupsGrouped().then(setLookups).catch(logErr("loading lookups"));
+    api.pipeSizes().then(setSizes).catch(logErr("loading pipe sizes"));
   }, []);
 
   const load = useCallback(() => {

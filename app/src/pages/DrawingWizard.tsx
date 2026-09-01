@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
 import { ErrorBox, Spinner, useToast } from "../components/ui";
 import { Coach, Stepper } from "../components/Stepper";
@@ -38,7 +38,7 @@ export function DrawingWizard({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!!drawingId);
   const [sizes, setSizes] = useState<number[]>([]);
-  useEffect(() => { api.pipeSizes().then(setSizes).catch(() => {}); }, []);
+  useEffect(() => { api.pipeSizes().then(setSizes).catch(logErr("loading pipe sizes")); }, []);
 
   useEffect(() => {
     if (drawingId) {
@@ -128,7 +128,7 @@ export function DrawingWizard({
             welders={welders}
             lookups={lookups}
             sizes={sizes}
-            onChange={() => api.getDrawing(drawing.id).then(setDrawing).catch(() => {})}
+            onChange={() => api.getDrawing(drawing.id).then(setDrawing).catch(logErr("refreshing drawing"))}
             onComplete={() => setStep(2)}
           />
         )}

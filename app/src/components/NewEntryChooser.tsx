@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, logErr } from "../api";
 import type { WorkOrderSummary } from "../types";
 import { Modal, num } from "./ui";
 
@@ -19,7 +19,7 @@ export function NewEntryChooser({
   const [q, setQ] = useState("");
 
   useEffect(() => {
-    if (mode === "existing") api.listWorkOrders().then(setWos).catch(() => {});
+    if (mode === "existing") api.listWorkOrders().then(setWos).catch(logErr("loading work orders"));
   }, [mode]);
 
   const shown = wos.filter((w) => !q || w.work_order.toLowerCase().includes(q.toLowerCase()));

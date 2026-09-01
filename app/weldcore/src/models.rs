@@ -308,6 +308,15 @@ pub struct Weld {
     /// false (semicolon-joined), so the entry form can name each blocker.
     #[serde(default)]
     pub expected_nde_blockers: Option<String>,
+    /// NDE report number the examination came back under (one report usually
+    /// covers many welds; the batch recorder stamps them all).
+    #[serde(default)]
+    pub nde_report_no: Option<String>,
+    /// Why the entered NDE % deliberately differs from the calculated Table 4
+    /// requirement — the workbook-era "manual adjustment", captured explicitly
+    /// so the record shows both the calculated basis and the reason.
+    #[serde(default)]
+    pub nde_override_reason: Option<String>,
     /// Optimistic-concurrency token. Incremented on every update; a save must
     /// carry the version it last read or it is rejected as a conflict. Round-
     /// trips through the UI so the client always sends back the version it has.
@@ -353,6 +362,9 @@ pub struct QualityFile {
     pub uploaded_by: Option<String>,
     #[serde(default)]
     pub uploaded_at: String,
+    /// SHA-256 of the stored bytes — proves the evidence file is unchanged.
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 /// An isometric drawing that welds are placed on.
@@ -452,6 +464,9 @@ pub struct DocumentPackage {
     pub uploaded_by: Option<String>,
     #[serde(default)]
     pub uploaded_at: String,
+    /// SHA-256 of the stored PDF — proves the controlled copy is unchanged.
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 /// One issued revision of a sheet. Exactly one is Effective; the rest are

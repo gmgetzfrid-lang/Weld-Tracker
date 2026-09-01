@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { NdeComplianceReport, SummaryReport } from "../types";
 import { BarChart, ErrorBox, Spinner, StatCard, num, pct } from "../components/ui";
@@ -13,7 +13,7 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
 
   useEffect(() => {
     api.reportSummary().then(setRep).catch((e) => setError(errMsg(e)));
-    api.reportNdeCompliance().then(setNde).catch(() => {});
+    api.reportNdeCompliance().then(setNde).catch(logErr("loading NDE compliance"));
     api.listDrawings().then((d) => setDrawingCount(d.length)).catch(() => {});
   }, []);
 

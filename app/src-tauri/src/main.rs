@@ -68,20 +68,59 @@ fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
     (db, false)
 }
 
+/// Append one timestamped line to the per-user support log. Best-effort — the
+/// log must never take the app down.
+fn app_log(log_dir: &std::path::Path, line: &str) {
+    use std::io::Write;
+    let _ = fs::create_dir_all(log_dir);
+    if let Ok(mut f) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("sentrix.log"))
+    {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{ts}] {line}");
+    }
+}
+
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Per-user support log: startup facts (version, DB path, mode) so a
+            // failed deployment can be diagnosed from Settings → Open log folder.
+            let log_dir = app
+                .path()
+                .app_data_dir()
+                .map(|d| d.join("logs"))
+                .unwrap_or_else(|_| PathBuf::from("logs"));
             let (db_path, shared) = resolve_db_path(app);
+            app_log(
+                &log_dir,
+                &format!(
+                    "startup v{} · db={} · mode={}",
+                    env!("CARGO_PKG_VERSION"),
+                    db_path.display(),
+                    if shared { "shared" } else { "local" }
+                ),
+            );
             if let Some(parent) = db_path.parent() {
                 fs::create_dir_all(parent).ok();
             }
-            let store = Store::open(&db_path, shared).expect("failed to open database");
+            let store = match Store::open(&db_path, shared) {
+                Ok(s) => s,
+                Err(e) => {
+                    app_log(&log_dir, &format!("FATAL open database failed: {e}"));
+                    panic!("failed to open database: {e}");
+                }
+            };
             app.manage(AppState::new(
                 store,
                 db_path.to_string_lossy().to_string(),
                 shared,
+                log_dir.to_string_lossy().to_string(),
             ));
             Ok(())
         })
@@ -119,10 +158,12 @@ fn main() {
             restore_weld,
             recent_activity,
             backup_database,
+            open_log_folder,
             create_repair,
             distinct_weld_values,
             weld_exceptions,
             global_search,
+            record_nde_batch,
             list_drawings,
             list_work_orders,
             list_drawings_for_wo,

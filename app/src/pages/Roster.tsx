@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WelderCert, WelderContinuity } from "../types";
 import { ErrorBox, Modal, Spinner, downloadCsv, useToast } from "../components/ui";
@@ -22,7 +22,7 @@ export function Roster() {
   const [lookups, setLookups] = useState<Lookups>({});
 
   useEffect(() => {
-    api.lookupsGrouped().then(setLookups).catch(() => {});
+    api.lookupsGrouped().then(setLookups).catch(logErr("loading lookups"));
   }, []);
 
   const load = useCallback(() => {
@@ -32,7 +32,7 @@ export function Roster() {
       .then(async (ws) => {
         setRows(ws);
         const pairs = await Promise.all(
-          ws.map(async (w) => [w.id, await api.listWelderCerts(w.id).catch(() => [])] as const)
+          ws.map(async (w) => [w.id, await api.listWelderCerts(w.id).catch((e) => { logErr("loading welder certs")(e); return []; })] as const)
         );
         setCerts(Object.fromEntries(pairs));
       })
@@ -261,7 +261,7 @@ function CertManager({
   });
 
   const load = useCallback(() => {
-    api.listWelderCerts(welderId).then(setCerts).catch(() => {}).finally(() => setLoading(false));
+    api.listWelderCerts(welderId).then(setCerts).catch(logErr("loading certs")).finally(() => setLoading(false));
   }, [welderId]);
   useEffect(load, [load]);
 
