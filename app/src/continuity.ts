@@ -1,7 +1,7 @@
 // jspdf is loaded on demand — continuity exports are rare next to app startup.
 import type { jsPDF } from "jspdf";
 import { api, bytesToB64, errMsg } from "./api";
-import { notify } from "./components/ui";
+import { certLabel, notify } from "./components/ui";
 import type { WelderContinuity } from "./types";
 
 /**
@@ -89,8 +89,8 @@ async function buildContinuityPdf(c: WelderContinuity): Promise<jsPDF> {
   y += 6;
   y = drawTable(
     doc, M, y + 6,
-    ["Cert (alias)", "Process", "Status", "Qualified", "Last X-ray", "Continuous thru"],
-    c.certs.map((ct) => [ct.alias, ct.process ?? "", ct.status, ct.qualified_date ?? "", ct.last_activity ?? "", ct.continuous_through ?? ""]),
+    ["Cert (alias)", "Process", "Continuity", "Qualified", "Last X-ray", "Continuous thru"],
+    c.certs.map((ct) => [ct.alias, ct.process ?? "", certLabel(ct.status), ct.qualified_date ?? "", ct.last_activity ?? "", ct.continuous_through ?? ""]),
     [120, 70, 60, 75, 75, 95],
   );
   y += 24;

@@ -1,4 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+/**
+ * Fixed categorical palette for per-welder series (CVD-validated ordering —
+ * assign in this order, never cycle). Past eight series, fold into "Other".
+ */
+export const SERIES_COLORS = [
+  "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948",
+];
+export const OTHER_COLOR = "#898781";
 
 /**
  * Small chart kit for the report pages — the manager-facing "how much and how
@@ -203,6 +212,150 @@ export function Columns({ points }: { points: ColumnPoint[] }) {
         {points.map((p) => <span key={p.key}>{p.label}</span>)}
       </div>
       <Tip tip={tip} />
+    </div>
+  );
+}
+
+export interface LineSeries {
+  key: string;
+  label: string;
+  color: string;
+  /** One value per bucket; null = nothing to plot there (the line gaps). */
+  values: (number | null)[];
+}
+
+/**
+ * Multi-series lines over time buckets — one colored line per welder, a
+ * legend for identity, and a crosshair that snaps to the nearest bucket and
+ * reads out EVERY series at that point (values lead, names follow).
+ */
+export function MultiLine({
+  series, buckets, fmt, bucketLabel,
+}: {
+  series: LineSeries[];
+  buckets: string[];
+  fmt: (v: number) => string;
+  bucketLabel: (b: string) => string;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(720);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth || 720));
+    ro.observe(el);
+    setW(el.clientWidth || 720);
+    return () => ro.disconnect();
+  }, []);
+
+  const H = 240, PADL = 46, PADR = 14, PADT = 10, PADB = 24;
+  const n = buckets.length;
+  const max = niceMax(Math.max(...series.flatMap((s) => s.values.filter((v): v is number => v != null)), 0));
+  const x = (i: number) => (n <= 1 ? (PADL + w - PADR) / 2 : PADL + (i / (n - 1)) * (w - PADL - PADR));
+  const y = (v: number) => PADT + (1 - v / max) * (H - PADT - PADB);
+  const fmtTick = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k` : String(Math.round(v * 100) / 100));
+
+  if (series.length === 0 || n === 0) {
+    return <p className="muted chart-empty">No welds with a welder and date in this period.</p>;
+  }
+
+  // Thin the x labels so they never collide: at most ~8 shown.
+  const stepLab = Math.max(1, Math.ceil(n / 8));
+
+  // Split each series into contiguous segments (gaps where value is null).
+  const segs = series.map((s) => {
+    const out: { xs: number; pts: [number, number][] }[] = [];
+    let cur: [number, number][] = [];
+    s.values.forEach((v, i) => {
+      if (v == null) {
+        if (cur.length) { out.push({ xs: 0, pts: cur }); cur = []; }
+      } else cur.push([x(i), y(v)]);
+    });
+    if (cur.length) out.push({ xs: 0, pts: cur });
+    return out;
+  });
+
+  const onMove = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    if (n <= 1) { setHoverIdx(0); return; }
+    const idx = Math.round(((mx - PADL) / (w - PADL - PADR)) * (n - 1));
+    setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
+  };
+
+  const hover = hoverIdx != null ? hoverIdx : null;
+  const hoverRows = hover != null
+    ? series
+        .map((s) => ({ s, v: s.values[hover] }))
+        .filter((r) => r.v != null)
+        .sort((a, b) => (b.v as number) - (a.v as number))
+    : [];
+
+  return (
+    <div className="chart-body" ref={hostRef} onMouseLeave={() => setHoverIdx(null)}>
+      <div className="chart-legend">
+        {series.map((s) => (
+          <span key={s.key} className="chart-legend-item">
+            <span className="chart-legend-line" style={{ background: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+      <svg width={w} height={H} onMouseMove={onMove} style={{ display: "block" }}>
+        {[0.25, 0.5, 0.75, 1].map((t) => (
+          <g key={t}>
+            <line x1={PADL} x2={w - PADR} y1={y(max * t)} y2={y(max * t)} className="ml-grid" />
+            <text x={PADL - 6} y={y(max * t) + 3.5} className="ml-tick">{fmtTick(max * t)}</text>
+          </g>
+        ))}
+        <line x1={PADL} x2={w - PADR} y1={y(0)} y2={y(0)} className="ml-axis" />
+        {buckets.map((b, i) =>
+          i % stepLab === 0 || i === n - 1 ? (
+            <text key={b} x={x(i)} y={H - 6} className="ml-xlab">{bucketLabel(b)}</text>
+          ) : null,
+        )}
+        {hover != null && n > 0 && (
+          <line x1={x(hover)} x2={x(hover)} y1={PADT} y2={H - PADB} className="ml-crosshair" />
+        )}
+        {segs.map((sg, si) => (
+          <g key={series[si].key}>
+            {sg.map((seg, gi) =>
+              seg.pts.length === 1 ? (
+                <circle key={gi} cx={seg.pts[0][0]} cy={seg.pts[0][1]} r={4} fill={series[si].color} stroke="var(--surface)" strokeWidth={2} />
+              ) : (
+                <polyline
+                  key={gi}
+                  points={seg.pts.map(([px, py]) => `${px},${py}`).join(" ")}
+                  fill="none"
+                  stroke={series[si].color}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ),
+            )}
+            {hover != null && series[si].values[hover] != null && (
+              <circle cx={x(hover)} cy={y(series[si].values[hover] as number)} r={4} fill={series[si].color} stroke="var(--surface)" strokeWidth={2} />
+            )}
+          </g>
+        ))}
+      </svg>
+      {hover != null && hoverRows.length > 0 && (
+        <div
+          className="chart-tip"
+          style={{ left: Math.min(x(hover) + 14, w - 200), top: 34 }}
+        >
+          <div className="chart-tip-title">{bucketLabel(buckets[hover])}</div>
+          {hoverRows.map(({ s, v }) => (
+            <div key={s.key} className="chart-tip-row">
+              <span><span className="chart-legend-line" style={{ background: s.color }} /> {s.label}</span>
+              <b>{fmt(v as number)}</b>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

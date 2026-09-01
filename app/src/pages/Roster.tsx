@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WelderCert, WelderContinuity } from "../types";
-import { ConfirmDialog, ErrorBox, Modal, Spinner, downloadCsv, useToast } from "../components/ui";
+import { ConfirmDialog, ErrorBox, Modal, Spinner, certLabel, downloadCsv, useToast } from "../components/ui";
 import { fileToBase64 } from "../pdf";
 import { continuityPdf, printContinuity } from "../continuity";
 
@@ -43,13 +43,13 @@ export function Roster() {
   useEffect(load, [load]);
 
   const exportCsv = () => {
-    const header = ["Stamp", "Name", "Active", "Cert (alias)", "Process", "Status", "Qualified", "Last X-ray", "Continuous through"];
+    const header = ["Stamp", "Name", "On Roster", "Cert (alias)", "Process", "Continuity", "Qualified", "Last X-ray", "Continuous through"];
     const out: (string | number)[][] = [header];
     for (const w of rows) {
       const cs = certs[w.id] ?? [];
       if (cs.length === 0) out.push([w.stamp, w.name, w.active ? "Yes" : "No", "", "", "", "", "", ""]);
       for (const c of cs)
-        out.push([w.stamp, w.name, w.active ? "Yes" : "No", c.alias, c.process ?? "", c.status, c.qualified_date ?? "", c.last_activity ?? "", c.continuous_through ?? ""]);
+        out.push([w.stamp, w.name, w.active ? "Yes" : "No", c.alias, c.process ?? "", certLabel(c.status), c.qualified_date ?? "", c.last_activity ?? "", c.continuous_through ?? ""]);
     }
     downloadCsv("welder-roster.csv", out);
   };
@@ -72,7 +72,7 @@ export function Roster() {
         </div>
         <label className="checkline" style={{ margin: 0 }}>
           <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
-          Show inactive
+          Show off-roster
         </label>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>{rows.length} welders</span>
@@ -93,8 +93,8 @@ export function Roster() {
               <tr>
                 <th>Stamp</th>
                 <th>Name</th>
-                <th>Qualifications (cert · status · file)</th>
-                <th>Active</th>
+                <th>Qualifications (cert · continuity · file)</th>
+                <th>On roster</th>
                 <th></th>
               </tr>
             </thead>
@@ -117,7 +117,7 @@ export function Roster() {
                             <span
                               key={c.id}
                               className={`cert-chip ${c.status === "Active" ? "on" : "off"} ${c.has_file ? "hasfile" : ""}`}
-                              title={`${c.process ? c.process + " · " : ""}${c.status}${c.continuous_through ? " · continuous thru " + c.continuous_through : ""}${c.has_file ? " · click to open the WPQ" : " · no file"}`}
+                              title={`${c.process ? c.process + " · " : ""}${certLabel(c.status)}${c.continuous_through ? " · continuous thru " + c.continuous_through : ""}${c.has_file ? " · click to open the WPQ" : " · no file"}`}
                               onClick={(e) => { e.stopPropagation(); openCertFile(c); }}
                             >
                               <span className={`dot ${c.status === "Active" ? "green" : "gray"}`} />
@@ -129,7 +129,7 @@ export function Roster() {
                       )}
                     </td>
                     <td>
-                      {w.active ? <span className="badge badge-green">Active</span> : <span className="badge badge-gray">Inactive</span>}
+                      {w.active ? <span className="badge badge-green">On roster</span> : <span className="badge badge-gray">Off roster</span>}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <button className="btn btn-sm" onClick={() => setContinuity(w)}>Continuity</button>
@@ -238,7 +238,7 @@ function WelderEditor({
         </div>
         <label className="checkline" style={{ marginTop: 26 }}>
           <input type="checkbox" disabled={!editable} checked={w.active} onChange={(e) => set("active", e.target.checked)} />
-          Active welder
+          On the active roster
         </label>
       </div>
 
@@ -344,15 +344,15 @@ function CertManager({
     <div className="field">
       <label>Qualifications — WPQ Certs</label>
       <p className="hint" style={{ marginTop: 0 }}>
-        Each cert is a named qualification for a process, with its WPQ document. Status is automatic:
-        <b> Active</b> when x-rayed to within six months, else <b>Inactive</b>. These aliases are what you
-        pick per weld in the Weld Log.
+        Each cert is a named qualification for a process, with its WPQ document. Continuity is automatic:
+        <b> Current</b> when X-rayed or qualified within the last six months, else <b>Lapsed</b>. These
+        aliases are what you pick per weld in the Weld Log.
       </p>
       {loading ? <Spinner /> : (
         <div className="table-wrap" style={{ marginBottom: 10 }}>
           <table className="data">
             <thead>
-              <tr><th>Alias</th><th>Process</th><th>Qualified</th><th>Status</th><th>Last X-ray</th><th>Document</th><th></th></tr>
+              <tr><th>Alias</th><th>Process</th><th>Qualified</th><th>Continuity</th><th>Last X-ray</th><th>Document</th><th></th></tr>
             </thead>
             <tbody>
               {certs.length === 0 && <tr><td colSpan={7} className="table-empty">No certs yet.</td></tr>}
@@ -373,7 +373,7 @@ function CertManager({
                     {editable ? <input type="date" defaultValue={c.qualified_date ?? ""} onChange={(e) => saveField(c, { qualified_date: e.target.value || null })} /> : (c.qualified_date ?? "—")}
                   </td>
                   <td>
-                    <span className={`badge ${c.status === "Active" ? "badge-green" : "badge-gray"}`} title={c.continuous_through ? `continuous through ${c.continuous_through}` : "no continuity yet"}>{c.status}</span>
+                    <span className={`badge ${c.status === "Active" ? "badge-green" : "badge-gray"}`} title={c.continuous_through ? `continuous through ${c.continuous_through}` : "no continuity yet"}>{certLabel(c.status)}</span>
                   </td>
                   <td>{c.last_activity ?? <span className="faint">—</span>}</td>
                   <td>
@@ -463,14 +463,14 @@ function ContinuityModal({ welder, onClose }: { welder: Welder; onClose: () => v
           <h4 style={{ marginTop: 0 }}>Qualifications</h4>
           <div className="table-wrap" style={{ marginBottom: 16 }}>
             <table className="data">
-              <thead><tr><th>Cert</th><th>Process</th><th>Status</th><th>Qualified</th><th>Last X-ray</th><th>Continuous thru</th><th className="num">Welds</th></tr></thead>
+              <thead><tr><th>Cert</th><th>Process</th><th>Continuity</th><th>Qualified</th><th>Last X-ray</th><th>Continuous thru</th><th className="num">Welds</th></tr></thead>
               <tbody>
                 {c.certs.length === 0 && <tr><td colSpan={7} className="table-empty">No certs.</td></tr>}
                 {c.certs.map((ct) => (
                   <tr key={ct.id}>
                     <td style={{ fontWeight: 600 }}>{ct.alias}</td>
                     <td>{ct.process ?? "—"}</td>
-                    <td><span className={`badge ${ct.status === "Active" ? "badge-green" : "badge-gray"}`}>{ct.status}</span></td>
+                    <td><span className={`badge ${ct.status === "Active" ? "badge-green" : "badge-gray"}`}>{certLabel(ct.status)}</span></td>
                     <td>{ct.qualified_date ?? "—"}</td>
                     <td>{ct.last_activity ?? "—"}</td>
                     <td>{ct.continuous_through ?? "—"}</td>

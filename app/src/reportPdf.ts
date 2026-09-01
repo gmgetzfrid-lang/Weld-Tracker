@@ -5,6 +5,7 @@ import type { PerformanceReport, PerformanceRow } from "./types";
 
 // Brand palette (matches the app navy).
 const NAVY: [number, number, number] = [10, 31, 107];
+const BLUE: [number, number, number] = [42, 120, 214];
 const GREEN: [number, number, number] = [22, 128, 61];
 const AMBER: [number, number, number] = [176, 84, 8];
 const RED: [number, number, number] = [176, 28, 28];
@@ -150,6 +151,45 @@ function statTiles(
   return y + rows * (h + gap);
 }
 
+/**
+ * Ranked horizontal bars — the manager's "who put down the inches" view,
+ * mirroring the on-screen chart. Value labels sit at each bar tip so the
+ * chart needs no axis.
+ */
+function barChart(
+  doc: jsPDF,
+  y0: number,
+  rows: { label: string; value: number; display: string }[],
+): number {
+  const rowH = 16;
+  const labelW = 150;
+  const valueW = 64;
+  const trackW = CONTENT_W - labelW - valueW;
+  const max = Math.max(...rows.map((r) => r.value), 1e-9);
+  const pageH = doc.internal.pageSize.getHeight();
+  let y = y0;
+  doc.setFontSize(8.5);
+  rows.forEach((r) => {
+    if (y + rowH > pageH - 46) {
+      doc.addPage();
+      y = 54;
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...INK);
+    doc.text(r.label.slice(0, 32), M, y + 9);
+    doc.setFillColor(...ZEBRA);
+    doc.rect(M + labelW, y + 2, trackW, rowH - 6, "F");
+    const bw = Math.max((r.value / max) * trackW, r.value > 0 ? 2 : 0);
+    doc.setFillColor(...BLUE);
+    doc.rect(M + labelW, y + 2, bw, rowH - 6, "F");
+    doc.setFont("helvetica", "bold");
+    doc.text(r.display, M + labelW + trackW + valueW - 2, y + 9, { align: "right" });
+    y += rowH;
+  });
+  doc.setFont("helvetica", "normal");
+  return y;
+}
+
 /** Build the whole report document. */
 async function buildPerformancePdf(rep: PerformanceReport, company: string): Promise<jsPDF> {
   const { jsPDF } = await import("jspdf");
@@ -197,6 +237,28 @@ async function buildPerformancePdf(rep: PerformanceReport, company: string): Pro
     { label: "Reject rate", value: pctF(rep.fleet_reject_rate) },
   ]);
   y += 12;
+
+  // ---- Welder output in weld inches --------------------------------------
+  const topInches = [...rep.rows].sort((a, b) => b.weld_inches - a.weld_inches).slice(0, 12);
+  if (topInches.length) {
+    y = sectionTitle(doc, y, "Welder Output — Weld Inches");
+    y = barChart(
+      doc, y,
+      topInches.map((r) => ({
+        label: r.name ? `${r.name} (${r.stamp})` : r.stamp,
+        value: r.weld_inches,
+        display: `${n1(r.weld_inches)} in`,
+      })),
+    );
+    if (rep.rows.length > topInches.length) {
+      doc.setFontSize(8);
+      doc.setTextColor(...MUTED);
+      doc.text(`Top ${topInches.length} of ${rep.rows.length} welders — the full population is in the table below.`, M, y + 10);
+      doc.setTextColor(...INK);
+      y += 14;
+    }
+    y += 20;
+  }
 
   // ---- Fleet NDE coverage by spec ----------------------------------------
   if (rep.by_spec.length) {

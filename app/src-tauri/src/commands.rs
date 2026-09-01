@@ -145,6 +145,21 @@ pub struct DbInfo {
     pub shared: bool,
 }
 
+/// Per-welder output over time (day/week/month/year buckets) for the
+/// performance chart.
+#[tauri::command]
+pub fn welder_output_series(
+    state: State<AppState>,
+    from: Option<String>,
+    to: Option<String>,
+    bucket: String,
+) -> R<Vec<OutputSeries>> {
+    state.require_login()?;
+    e(state
+        .store()?
+        .welder_output_series(from.as_deref(), to.as_deref(), &bucket))
+}
+
 /// Startup gate for the frontend splash: "starting" while the background
 /// open runs, "ready" once commands can serve, "failed: …" if the database
 /// could not be opened (shown on screen instead of a dead process).

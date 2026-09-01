@@ -357,11 +357,30 @@ export interface JointStat {
   reject_rate: number;
 }
 
+export interface OutputSeriesPoint {
+  /** "2026-05-14" (day), "2026-W19" (week), "2026-05" (month), "2026" (year). */
+  bucket: string;
+  welds: number;
+  inches: number;
+  examined: number;
+  rejects: number;
+}
+
+export interface OutputSeries {
+  stamp: string;
+  name: string;
+  total_welds: number;
+  total_inches: number;
+  points: OutputSeriesPoint[];
+}
+
 export interface SummaryReport {
   by_joint: JointStat[];
   total: JointStat;
   welder_count: number;
   active_welder_count: number;
+  /** Welders with at least one current (six-month continuity) qualification. */
+  current_cert_welder_count: number;
 }
 
 export interface WelderStatRow {

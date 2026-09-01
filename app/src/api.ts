@@ -10,6 +10,7 @@ import type {
   ExceptionsSummary,
   JobReport,
   Lookups,
+  OutputSeries,
   PdfWindow,
   MonthlyReport,
   NdeComplianceReport,
@@ -106,6 +107,9 @@ export const api = {
     invoke<AuditEntry[]>("recent_activity", { entity, limit }),
   /** "starting" | "ready" | "failed: …" — the splash polls this until ready. */
   bootStatus: () => invoke<string>("boot_status"),
+  /** Per-welder output over day/week/month/year buckets for the performance chart. */
+  welderOutputSeries: (from: string | null, to: string | null, bucket: "day" | "week" | "month" | "year") =>
+    invoke<OutputSeries[]>("welder_output_series", { from, to, bucket }),
   backupDatabase: () => invoke<string>("backup_database"),
   openLogFolder: () => invoke<string>("open_log_folder"),
   /**

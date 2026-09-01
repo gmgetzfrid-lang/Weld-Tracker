@@ -83,11 +83,34 @@ fn read_aggs(r: &Row, joint_col: Option<usize>, agg_start: usize) -> rusqlite::R
 }
 
 #[derive(Debug, Serialize)]
+pub struct OutputSeriesPoint {
+    /// Bucket key: "2026-05-14" (day), "2026-W19" (week), "2026-05" (month)
+    /// or "2026" (year) — lexicographic order is chronological.
+    pub bucket: String,
+    pub welds: i64,
+    pub inches: f64,
+    pub examined: i64,
+    pub rejects: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OutputSeries {
+    pub stamp: String,
+    pub name: String,
+    pub total_welds: i64,
+    pub total_inches: f64,
+    pub points: Vec<OutputSeriesPoint>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SummaryReport {
     pub by_joint: Vec<JointStat>,
     pub total: JointStat,
     pub welder_count: i64,
     pub active_welder_count: i64,
+    /// Welders holding at least one CURRENT qualification (an X-ray or fresh
+    /// qualification within the six-month continuity window).
+    pub current_cert_welder_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -343,12 +366,98 @@ impl Store {
                 conn.query_row("SELECT COUNT(*) FROM welders WHERE active = 1", [], |r| r.get(0))?;
             (all, act)
         };
+        // Current-cert welders: continuity status is computed per cert, so
+        // walk the roster (small) rather than duplicating the six-month rule.
+        let mut current_cert_welder_count = 0i64;
+        for w in self.list_welders(true, "name")? {
+            if self
+                .list_welder_certs(w.id)?
+                .iter()
+                .any(|c| c.status == "Active")
+            {
+                current_cert_welder_count += 1;
+            }
+        }
         Ok(SummaryReport {
             by_joint,
             total,
             welder_count,
             active_welder_count,
+            current_cert_welder_count,
         })
+    }
+
+    /// Per-welder output over time for the performance chart: welds, weld
+    /// inches, examinations and rejects grouped into day/week/month/year
+    /// buckets of `date_welded` within the window. One entry per welder,
+    /// points sorted by bucket; the frontend colors and plots them.
+    pub fn welder_output_series(
+        &self,
+        from: Option<&str>,
+        to: Option<&str>,
+        bucket: &str,
+    ) -> Result<Vec<OutputSeries>> {
+        let bexpr = match bucket {
+            "day" => "substr(w.date_welded, 1, 10)",
+            "week" => "strftime('%Y-W%W', w.date_welded)",
+            "year" => "substr(w.date_welded, 1, 4)",
+            _ => "substr(w.date_welded, 1, 7)", // month
+        };
+        let mut sql = format!(
+            "SELECT w.stamp_number, COALESCE(r.name, ''), {bexpr} AS b,
+                    COUNT(*) AS welds,
+                    COALESCE(SUM(w.weld_inches), 0) AS inches,
+                    SUM(CASE WHEN (w.nde_result IS NOT NULL AND TRIM(w.nde_result) <> '')
+                              OR (w.rt_date IS NOT NULL AND TRIM(w.rt_date) <> '') THEN 1 ELSE 0 END) AS examined,
+                    SUM(CASE WHEN w.nde_result = 'Rejected' OR w.rt_rejected = 'Y' THEN 1 ELSE 0 END) AS rejects
+             FROM welds w
+             LEFT JOIN welders r ON r.stamp = w.stamp_number COLLATE NOCASE
+             WHERE w.count_omission = 0 AND w.voided_at IS NULL
+               AND w.stamp_number IS NOT NULL AND TRIM(w.stamp_number) <> ''
+               AND w.date_welded IS NOT NULL AND w.date_welded <> ''"
+        );
+        let mut args: Vec<Value> = Vec::new();
+        if let Some(f) = from {
+            sql.push_str(" AND w.date_welded >= ?");
+            args.push(Value::from(f.to_string()));
+        }
+        if let Some(t) = to {
+            sql.push_str(" AND w.date_welded <= ?");
+            args.push(Value::from(t.to_string()));
+        }
+        sql.push_str(" GROUP BY w.stamp_number, b ORDER BY w.stamp_number COLLATE NOCASE, b");
+
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&sql)?;
+        let mut out: Vec<OutputSeries> = Vec::new();
+        let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, f64>(4)?,
+                r.get::<_, i64>(5)?,
+                r.get::<_, i64>(6)?,
+            ))
+        })?;
+        for row in rows {
+            let (stamp, name, bucket, welds, inches, examined, rejects) = row?;
+            if out.last().map(|s: &OutputSeries| s.stamp != stamp).unwrap_or(true) {
+                out.push(OutputSeries {
+                    stamp: stamp.clone(),
+                    name,
+                    total_welds: 0,
+                    total_inches: 0.0,
+                    points: Vec::new(),
+                });
+            }
+            let s = out.last_mut().unwrap();
+            s.total_welds += welds;
+            s.total_inches += inches;
+            s.points.push(OutputSeriesPoint { bucket, welds, inches, examined, rejects });
+        }
+        Ok(out)
     }
 
     // ---- Job report (Job Report) -------------------------------------------

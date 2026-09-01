@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, errMsg, rejectThreshold } from "../api";
-import type { PerformanceReport } from "../types";
+import { api, errMsg, logErr, rejectThreshold } from "../api";
+import type { OutputSeries, OutputSeriesPoint, PerformanceReport } from "../types";
 import { ErrorBox, Spinner, StatCard, downloadCsv, num, pct, useToast } from "../components/ui";
-import { RankedBars, type BarRow } from "../components/charts";
+import { MultiLine, OTHER_COLOR, RankedBars, SERIES_COLORS, type BarRow, type LineSeries } from "../components/charts";
 import { downloadPerformancePdf, openPerformancePdf } from "../reportPdf";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+type Metric = "welds" | "inches" | "rate";
+type Bucket = "day" | "week" | "month" | "year";
 
 type Mode = "month" | "year" | "all";
 
@@ -27,6 +31,10 @@ export function Performance() {
   const [error, setError] = useState<string | null>(null);
   const [warn, setWarn] = useState(0.05);
   const [company, setCompany] = useState("SENTRIX");
+  // Output-over-time chart: what to plot and how finely to bucket it.
+  const [metric, setMetric] = useState<Metric>("inches");
+  const [bucket, setBucket] = useState<Bucket>("day");
+  const [series, setSeries] = useState<OutputSeries[] | null>(null);
 
   useEffect(() => {
     rejectThreshold().then(setWarn);
@@ -43,6 +51,16 @@ export function Performance() {
       .finally(() => setLoading(false));
   }, [mode, month, year]);
   useEffect(load, [load]);
+
+  // A sensible default granularity for each window; the user can still switch.
+  useEffect(() => {
+    setBucket(mode === "month" ? "day" : "month");
+  }, [mode]);
+
+  useEffect(() => {
+    const [from, to] = windowFor(mode, month, year);
+    api.welderOutputSeries(from, to, bucket).then(setSeries).catch(logErr("loading output series"));
+  }, [mode, month, year, bucket]);
 
   const exportCsv = () => {
     if (!rep) return;
@@ -73,16 +91,16 @@ export function Performance() {
   const TOP = 12;
   const outputRows: BarRow[] = rep
     ? [...rep.rows]
-        .sort((a, b) => b.weld_count - a.weld_count)
+        .sort((a, b) => b.weld_inches - a.weld_inches)
         .slice(0, TOP)
         .map((r) => ({
           key: r.stamp,
           label: r.name || r.stamp,
           sub: r.stamp,
-          value: r.weld_count,
-          display: num(r.weld_count),
+          value: r.weld_inches,
+          display: `${num(r.weld_inches, 1)} in`,
           detail: [
-            ["Weld inches", num(r.weld_inches, 1)],
+            ["Welds", num(r.weld_count)],
             ["Examined", `${num(r.inspected)} (${pct(r.rt_pct)})`],
             ["Rejects", num(r.rejects)],
           ],
@@ -104,6 +122,65 @@ export function Performance() {
         ["Welds this period", num(r.weld_count)],
       ],
     }));
+
+  // Output-over-time lines: one color per welder, assigned by total output so
+  // colors stay put when the metric toggles. Past the palette, the tail folds
+  // into a single gray "Other" line so every weld still shows up somewhere.
+  const buckets = series
+    ? [...new Set(series.flatMap((s) => s.points.map((p) => p.bucket)))].sort()
+    : [];
+  let lineSeries: LineSeries[] = [];
+  if (series && buckets.length) {
+    const bIdx = new Map(buckets.map((b, i) => [b, i] as const));
+    const ordered = [...series].sort(
+      (a, b) => b.total_inches - a.total_inches || b.total_welds - a.total_welds || a.stamp.localeCompare(b.stamp),
+    );
+    const fold = ordered.length > SERIES_COLORS.length;
+    const named = fold ? ordered.slice(0, SERIES_COLORS.length - 1) : ordered;
+    const rest = fold ? ordered.slice(SERIES_COLORS.length - 1) : [];
+
+    // A missing bucket is a real zero for output metrics; a rate needs at
+    // least one examined weld, so it gaps (null) instead of faking 0%.
+    const valuesFor = (pts: Map<number, OutputSeriesPoint>): (number | null)[] =>
+      buckets.map((_, i) => {
+        const p = pts.get(i);
+        if (metric === "rate") return p && p.examined > 0 ? (p.rejects / p.examined) * 100 : null;
+        if (!p) return 0;
+        return metric === "welds" ? p.welds : p.inches;
+      });
+
+    lineSeries = named.map((s, si) => {
+      const pts = new Map<number, OutputSeriesPoint>();
+      s.points.forEach((p) => pts.set(bIdx.get(p.bucket)!, p));
+      return { key: s.stamp, label: s.name || s.stamp, color: SERIES_COLORS[si], values: valuesFor(pts) };
+    });
+    if (rest.length) {
+      const agg = new Map<number, OutputSeriesPoint>();
+      rest.forEach((s) =>
+        s.points.forEach((p) => {
+          const i = bIdx.get(p.bucket)!;
+          const a = agg.get(i) ?? { bucket: p.bucket, welds: 0, inches: 0, examined: 0, rejects: 0 };
+          a.welds += p.welds;
+          a.inches += p.inches;
+          a.examined += p.examined;
+          a.rejects += p.rejects;
+          agg.set(i, a);
+        }),
+      );
+      lineSeries.push({ key: "__other", label: `Other (${rest.length})`, color: OTHER_COLOR, values: valuesFor(agg) });
+    }
+  }
+
+  const bucketLabel = (b: string): string => {
+    if (bucket === "day" || bucket === "week") return b.slice(5); // "05-14" / "W19"
+    if (bucket === "month") {
+      const m = MONTHS3[Number(b.slice(5, 7)) - 1] ?? b;
+      return mode === "all" ? `${m} ${b.slice(2, 4)}` : m;
+    }
+    return b; // year
+  };
+  const fmtValue = (v: number): string =>
+    metric === "welds" ? num(v) : metric === "inches" ? `${num(v, 1)} in` : `${v.toFixed(1)}%`;
 
   return (
     <div>
@@ -169,11 +246,42 @@ export function Performance() {
             <StatCard label="Reject rate" value={<span style={{ color: rep.fleet_reject_rate > warn ? "var(--danger)" : undefined }}>{pct(rep.fleet_reject_rate)}</span>} />
           </div>
 
+          <div className="card card-pad chart-card" style={{ marginBottom: 18 }}>
+            <div className="chart-controls">
+              <h4 style={{ margin: 0 }}>Welder output over time</h4>
+              <div className="spacer" />
+              <div className="pill-tabs">
+                <button className={metric === "welds" ? "active" : ""} onClick={() => setMetric("welds")}>Welds</button>
+                <button className={metric === "inches" ? "active" : ""} onClick={() => setMetric("inches")}>Weld inches</button>
+                <button className={metric === "rate" ? "active" : ""} onClick={() => setMetric("rate")}>Reject rate</button>
+              </div>
+              <div className="pill-tabs">
+                <button className={bucket === "day" ? "active" : ""} onClick={() => setBucket("day")}>Day</button>
+                <button className={bucket === "week" ? "active" : ""} onClick={() => setBucket("week")}>Week</button>
+                <button className={bucket === "month" ? "active" : ""} onClick={() => setBucket("month")}>Month</button>
+                <button className={bucket === "year" ? "active" : ""} onClick={() => setBucket("year")}>Year</button>
+              </div>
+            </div>
+            <p className="chart-sub">
+              {metric === "rate"
+                ? "Share of examined welds rejected per welder — gaps mean nothing was examined that "
+                : metric === "welds"
+                  ? "Welds made per welder each "
+                  : "Weld inches per welder each "}
+              {bucket} — every welder is a color; hover to read all lines at a point
+            </p>
+            {series ? (
+              <MultiLine series={lineSeries} buckets={buckets} fmt={fmtValue} bucketLabel={bucketLabel} />
+            ) : (
+              <Spinner />
+            )}
+          </div>
+
           {rep.rows.length > 0 && (
             <div className="chart-grid">
               <div className="card card-pad chart-card">
                 <h4>Output by welder</h4>
-                <p className="chart-sub">Welds made this period — hover a bar for inches and examinations</p>
+                <p className="chart-sub">Weld inches this period — hover a bar for weld count and examinations</p>
                 <RankedBars rows={outputRows} totalCount={rep.rows.length} />
               </div>
               <div className="card card-pad chart-card">

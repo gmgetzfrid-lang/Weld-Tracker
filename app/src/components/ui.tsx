@@ -263,6 +263,16 @@ export function useToast() {
   return useContext(ToastCtx);
 }
 
+/**
+ * Cert continuity label. The backend stores "Active"/"Inactive", but on
+ * screen a qualification is "Current" (X-rayed or qualified within six
+ * months) or "Lapsed" — so it never collides with the welder's own
+ * on-roster Active flag, which means something different.
+ */
+export function certLabel(status: string): "Current" | "Lapsed" {
+  return status === "Active" ? "Current" : "Lapsed";
+}
+
 /** Render a SQLite UTC timestamp ("YYYY-MM-DD HH:MM:SS") in the user's local time. */
 export function localTime(utc: string): string {
   const d = new Date(utc.includes("T") ? utc : utc.replace(" ", "T") + "Z");

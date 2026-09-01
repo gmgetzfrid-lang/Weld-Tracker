@@ -131,9 +131,17 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
           onClick={() => onNavigate("statistics")}
         />
         <StatCard
-          label="Welders"
-          value={num(rep.active_welder_count)}
-          sub={`${num(rep.welder_count)} on roster`}
+          label="Welders — current certs"
+          value={
+            <span style={{ color: rep.current_cert_welder_count < rep.active_welder_count ? "var(--danger)" : "var(--ok)" }}>
+              {num(rep.current_cert_welder_count)}
+            </span>
+          }
+          sub={`of ${num(rep.active_welder_count)} on the active roster${
+            rep.active_welder_count > rep.current_cert_welder_count
+              ? ` · ${num(rep.active_welder_count - rep.current_cert_welder_count)} lapsed`
+              : ""
+          }`}
           onClick={() => onNavigate("roster")}
         />
       </div>
