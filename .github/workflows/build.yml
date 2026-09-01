@@ -118,9 +118,11 @@ jobs:
           else echo "::error::no portable exe found in target/release"; ls -la target/release; exit 1
           fi
           cp "$portable" dist-out/portable/Sentrix.exe
-          # The marker beside the exe switches it to shared mode: database in a
-          # data\ folder next to the exe, one set of records for everyone.
-          printf 'This marker tells Sentrix.exe to keep its shared database in the data folder next to the exe.\r\n' > dist-out/portable/sentrix.portable
+          # The data folder beside the exe IS the switch: when Sentrix.exe sees
+          # it, it keeps the shared database inside it (data\sentrix.db) — one
+          # set of records for everyone who runs the exe from this folder.
+          mkdir -p dist-out/portable/data
+          printf 'The shared SENTRIX database lives in this folder (sentrix.db appears on first run).\r\nKeep this folder next to Sentrix.exe, and back it up.\r\n' > dist-out/portable/data/README.txt
           sed -e 's/^          //' -e 's/$/\r/' <<'TXT' > dist-out/READ-ME-FIRST.txt
           SENTRIX — Assurance Console — how to deploy
 
@@ -129,11 +131,11 @@ jobs:
           SHARED (a team on a network drive) — recommended:
             1. Copy the whole "portable" folder onto your network drive and
                rename it, e.g.  \\server\apps\Sentrix\
-               (it must contain Sentrix.exe and sentrix.portable, side by side)
             2. Everyone runs Sentrix.exe from that folder — make a desktop
                shortcut to it. No install, no admin rights.
-            3. The shared database is created in a "data" subfolder beside the
-               exe, so every user sees the same work orders, welds and reports.
+            3. The "data" folder next to the exe holds the shared database —
+               keep them together and every user sees the same work orders,
+               welds and reports. Back up the data folder.
             4. First run: sign in as admin / password, set a new password, then
                create a login for each user (Administration > Users).
 

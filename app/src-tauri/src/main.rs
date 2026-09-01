@@ -13,8 +13,9 @@ use weldcore::Store;
 ///   1. `SENTRIX_DB` (or legacy `WELDTRACKER_DB`) environment variable (shared).
 ///   2. `sentrix.json` (or legacy `weld-tracker.json`) next to the executable
 ///      with `"database_path"` (shared).
-///   3. `data/sentrix.db` next to the executable, if a `sentrix.portable` (or
-///      legacy `weld-tracker.portable`) marker file sits beside the exe and that
+///   3. `data/sentrix.db` next to the executable, if a `data` folder sits
+///      beside the exe (how the portable zip ships) or a legacy
+///      `sentrix.portable` / `weld-tracker.portable` marker does, and the
 ///      folder is writable (shared — the "drop it on a network drive" mode).
 ///   4. Otherwise the per-user app-data directory (local, single user).
 ///
@@ -41,10 +42,14 @@ fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
                     }
                 }
             }
-            let has_marker = dir.join("sentrix.portable").exists()
+            // Shared mode: a `data` folder sitting beside the exe (that's how
+            // the portable zip ships), or the older sentrix.portable marker.
+            // Either way the shared database is data\sentrix.db next to the exe.
+            let data = dir.join("data");
+            let shared_here = data.is_dir()
+                || dir.join("sentrix.portable").exists()
                 || dir.join("weld-tracker.portable").exists();
-            if has_marker {
-                let data = dir.join("data");
+            if shared_here {
                 if fs::create_dir_all(&data).is_ok() {
                     let probe = data.join(".write-test");
                     if fs::write(&probe, b"1").is_ok() {
