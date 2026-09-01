@@ -242,6 +242,9 @@ export function WeldAnnotator({
     () => [...welds].sort((a, b) => (a.weld_number ?? "").localeCompare(b.weld_number ?? "", undefined, { numeric: true })),
     [welds]
   );
+  // Voided welds stay on the map (dimmed — the record still exists) but drop
+  // out of the guided walk: there's nothing to fill on an excluded weld.
+  const fillable = useMemo(() => ordered.filter((w) => !w.voided_at), [ordered]);
 
   // number-key welder shortcuts, Esc to cancel, Delete to remove the selection
   useEffect(() => {
@@ -432,22 +435,22 @@ export function WeldAnnotator({
     } catch (e) { toast.push("err", errMsg(e)); return false; }
   };
 
-  // welder totals for the legend
+  // welder totals for the legend (voided welds don't count toward anyone)
   const totals = useMemo(() => {
     const m = new Map<string, number>();
-    welds.forEach((w) => { if (w.stamp_number) m.set(w.stamp_number, (m.get(w.stamp_number) ?? 0) + 1); });
+    welds.forEach((w) => { if (w.stamp_number && !w.voided_at) m.set(w.stamp_number, (m.get(w.stamp_number) ?? 0) + 1); });
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [welds]);
 
   // guided fill: pan the active bubble to the centre of the stage
   useEffect(() => {
     if (guided === null) return;
-    const w = ordered[guided];
+    const w = fillable[guided];
     if (!w || w.bubble_x == null) return;
     if ((w.bubble_page ?? 1) !== pageNum) setPageNum(w.bubble_page ?? 1);
     centerOn(w.bubble_x ?? 0.5, w.bubble_y ?? 0.5, DRAWER_W);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guided, ordered, size.w, size.h, pageNum]);
+  }, [guided, fillable, size.w, size.h, pageNum]);
 
   // Keep refs current for the native wheel handler (which must be non-passive
   // to preventDefault the browser's ctrl-zoom / page-scroll). Zoom changes only
@@ -509,16 +512,16 @@ export function WeldAnnotator({
   // together with the drawing.
   const z = renderedScale;
   const R = 17 * z;
-  const activeId = guided !== null ? ordered[guided]?.id : null;
+  const activeId = guided !== null ? fillable[guided]?.id : null;
   // The line's spec(s). A spec break gives two — the guided popup then lets you
   // put each weld on the correct side of the break.
   const specOptions = [drawing.line_spec, drawing.line_spec_2].filter(Boolean) as string[];
-  const gActive = guided !== null ? ordered[guided] : null;
+  const gActive = guided !== null ? fillable[guided] : null;
   const panning = downRef.current?.moved ?? false;
   const placing = editable && tool === "bubble" && stamp && !pending;
 
   const hint = !editable ? "Read-only — drag to pan, Ctrl+scroll to zoom." :
-    guided !== null ? `Guided fill — weld ${guided + 1} of ${ordered.length}. Enter for the next field, Save & next on the last.` :
+    guided !== null ? `Guided fill — weld ${guided + 1} of ${fillable.length}. Enter for the next field, Save & next on the last.` :
     tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a joint to place a weld · drag empty space to pan · Ctrl+scroll to zoom.") :
     "Click a bubble or the legend to select · drag it to move · Delete removes it · drag empty space to pan.";
 
@@ -553,8 +556,16 @@ export function WeldAnnotator({
                 // and draggable regardless of the active tool, unless a new
                 // bubble is mid-placement.
                 const grab = editable && !pending;
+                // Disposition glyph at the bubble's shoulder: the examination
+                // result once one exists, else "R" to flag an unexamined
+                // repair weld. Voided welds dim as a whole instead.
+                const voided = !!w.voided_at;
+                const glyph =
+                  w.nde_result === "Rejected" ? { t: "!", cls: "bad" } :
+                  w.nde_result === "Accepted" ? { t: "✓", cls: "ok" } :
+                  w.parent_weld_id != null ? { t: "R", cls: "rep" } : null;
                 return (
-                  <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""}`}
+                  <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""} ${voided ? "voided" : ""}`}
                     onMouseDown={(e) => { if (grab) { e.stopPropagation(); setSelId(w.id); setLegendSel(false); startDrag(w, "both", e); } }}
                     style={{ cursor: grab ? "move" : "pointer" }}
                   >
@@ -569,6 +580,12 @@ export function WeldAnnotator({
                     <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} className="anno-divider" style={{ strokeWidth: 1.4 * z }} />
                     <text x={cx} y={cy - R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.stamp_number ?? ""}</text>
                     <text x={cx} y={cy + R * 0.42} className="anno-txt" style={{ fontSize: 11 * z }}>{w.weld_number ?? ""}</text>
+                    {glyph && !voided && (
+                      <g className={`wm-glyph ${glyph.cls}`}>
+                        <circle cx={cx + R * 0.82} cy={cy - R * 0.82} r={6.4 * z} style={{ strokeWidth: 1.5 * z }} />
+                        <text x={cx + R * 0.82} y={cy - R * 0.82} style={{ fontSize: 8.6 * z }}>{glyph.t}</text>
+                      </g>
+                    )}
                   </g>
                 );
               })}
@@ -621,8 +638,8 @@ export function WeldAnnotator({
 
         {/* floating actions (top-right) */}
         <div className="anno-hud tr" onMouseDown={(e) => e.stopPropagation()}>
-          {editable && guided === null && ordered.length > 0 && (
-            <button className="btn btn-accent btn-sm" title="Walk each weld in order and fill its data" onClick={() => setGuided(0)}>▶ Fill attributes ({ordered.length})</button>
+          {editable && guided === null && fillable.length > 0 && (
+            <button className="btn btn-accent btn-sm" title="Walk each weld in order and fill its data" onClick={() => setGuided(0)}>▶ Fill attributes ({fillable.length})</button>
           )}
           {!legendOn && <button className="btn btn-sm" onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}>🏷</button>}
           <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
@@ -670,20 +687,20 @@ export function WeldAnnotator({
             key={gActive.id}
             weld={gActive}
             index={guided}
-            total={ordered.length}
+            total={fillable.length}
             welders={welders}
             lookups={lookups}
             sizes={sizes}
             specOptions={specOptions}
             sticky={stickyRef.current}
             onSaveNext={async (changes) => {
-              const w = ordered[guided];
+              const w = fillable[guided];
               stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
               try {
                 await api.updateWeld({ ...w, ...changes });
                 await refreshWelds();
               } catch (e) { toast.push("err", errMsg(e)); }
-              if (guided + 1 >= ordered.length) {
+              if (guided + 1 >= fillable.length) {
                 setGuided(null);
                 toast.push("ok", "All welds filled — review & save");
                 onComplete?.();
@@ -691,7 +708,7 @@ export function WeldAnnotator({
             }}
             onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
             onSkip={() => {
-              if (guided + 1 >= ordered.length) { setGuided(null); onComplete?.(); }
+              if (guided + 1 >= fillable.length) { setGuided(null); onComplete?.(); }
               else setGuided(guided + 1);
             }}
             onExit={() => setGuided(null)}
@@ -836,6 +853,11 @@ function Legend({
         </svg>
         <div className="wm-legend-keytext"><div><b>top</b> = welder ID</div><div><b>bottom</b> = weld #</div></div>
       </div>
+      <div className="wm-legend-status" title="Disposition marks on the bubbles">
+        <span className="ok">✓ accepted</span>
+        <span className="bad">! rejected</span>
+        <span className="rep">R repair</span>
+      </div>
       <div className="wm-legend-tot">
         <div className="wm-legend-toth">Welders on this map</div>
         {totals.length === 0 && <div className="faint" style={{ fontSize: 11 }}>none yet</div>}
@@ -943,6 +965,21 @@ function GuidedPopup({
   const canSave = missing.length === 0 && !reqBlocked;
   const save = () => { if (canSave) onSaveNext(changes()); };
 
+  // Which fields were seeded from the previous weld (own value empty, sticky
+  // filled) — disclosed so a carried value is never mistaken for entered data.
+  const CARRY_LABELS: Partial<Record<keyof Weld, string>> = {
+    stamp_number: "welder", date_welded: "date", size: "size", joint_type: "joint",
+    shop_or_field: "shop/field", service_category: "service", flange_class: "flange class",
+    material: "material", material_group: "mat. group", schedule: "schedule",
+    groove_type: "groove", process: "process", line_spec: "line spec",
+    b31_code: "code", hydro_status: "hydro",
+  };
+  const carried = STICKY_KEYS.filter((k) => {
+    const own = weld[k], sv = sticky[k];
+    return (own === undefined || own === null || own === "") &&
+      sv !== undefined && sv !== null && sv !== "" && typeof sv !== "boolean";
+  }).map((k) => CARRY_LABELS[k] ?? String(k));
+
   const opt = (k: string) => lookups[k] ?? [];
   const hasBreak = specOptions.length > 1;
   const tieIn = f.new_to_existing;
@@ -975,6 +1012,14 @@ function GuidedPopup({
         <span className="guided-prog">{index + 1}/{total}</span>
         <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill">✕</button>
       </div>
+      <div className="guided-progbar" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={index + 1}>
+        <span style={{ width: `${Math.round(((index + 1) / Math.max(total, 1)) * 100)}%` }} />
+      </div>
+      {carried.length > 0 && (
+        <div className="guided-carried" title="Inherited from the previous weld in this walk — change whatever differs before saving.">
+          ↩ carried forward: {carried.join(", ")}
+        </div>
+      )}
 
       {driversReady && req && !req.resolved ? (
         <div className="guided-req unresolved">

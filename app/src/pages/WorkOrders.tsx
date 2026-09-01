@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WorkOrderSummary } from "../types";
-import { ErrorBox, Spinner, num, useToast } from "../components/ui";
+import { ConfirmDialog, ErrorBox, Spinner, num, useToast } from "../components/ui";
 import { DrawingWizard } from "./DrawingWizard";
 import { WorkOrderRecord } from "./WorkOrderRecord";
 import type { WoIntent } from "../App";
@@ -43,11 +43,11 @@ export function WorkOrders({
     onConsumedInitial?.();
   }, [initial, onConsumedInitial]);
 
+  const [confirmDel, setConfirmDel] = useState<WorkOrderSummary | null>(null);
+
   const load = () => api.listWorkOrders().then(setRows).catch((e) => setError(errMsg(e)));
 
-  const delWorkOrder = async (r: WorkOrderSummary, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm(`Delete work order ${r.work_order} and ALL of it — ${r.drawing_count} drawing(s) and ${r.weld_count} weld(s)? This cannot be undone.`)) return;
+  const delWorkOrder = async (r: WorkOrderSummary) => {
     try {
       const [welds, draws] = await api.deleteWorkOrder(r.work_order);
       toast.push("ok", `Deleted ${r.work_order}: ${welds} weld(s), ${draws} drawing(s)`);
@@ -148,7 +148,7 @@ export function WorkOrders({
                   {can("editor") && (
                     <td onClick={(e) => e.stopPropagation()}>
                       {canDeleteWo(r) && (
-                        <button className="btn btn-sm btn-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => delWorkOrder(r, e)}>🗑</button>
+                        <button className="btn btn-sm btn-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }}>🗑</button>
                       )}
                     </td>
                   )}
@@ -157,6 +157,19 @@ export function WorkOrders({
             </tbody>
           </table>
         </div>
+      )}
+
+      {confirmDel && (
+        <ConfirmDialog
+          title={`Delete work order ${confirmDel.work_order}`}
+          body={`This permanently deletes ALL of it — ${confirmDel.drawing_count} drawing(s) and ${confirmDel.weld_count} weld(s) — and cannot be undone. Voiding individual welds keeps records; this does not.`}
+          confirmLabel="Delete everything"
+          danger
+          requireReason
+          reasonLabel="Reason for deleting this work order"
+          onConfirm={() => { const r = confirmDel; setConfirmDel(null); if (r) delWorkOrder(r); }}
+          onClose={() => setConfirmDel(null)}
+        />
       )}
     </div>
   );
