@@ -99,6 +99,33 @@ jobs:
       - name: Build Tauri app (NSIS per-user installer)
         run: npm run tauri build -- --bundles nsis
 
+      - name: Verify the exe carries the repo icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Byte-level proof: the .ico's PNG image is stored verbatim as an
+          # RT_ICON resource, so a slice of it must appear inside the exe.
+          # Fails the build if resource embedding silently used a stale cache.
+          sed 's/^          //' <<'PYEOF' > /tmp/verify_icon.py
+          import sys
+          ico = open('src-tauri/icons/icon.ico', 'rb').read()
+          start = ico.find(b'\x89PNG')
+          assert start > 0, 'icon.ico has no PNG image'
+          needle = ico[start + 64 : start + 256]
+          exe = None
+          for cand in ('target/release/Sentrix.exe', 'target/release/weld-tracker.exe'):
+              try:
+                  exe = open(cand, 'rb').read()
+                  break
+              except OSError:
+                  pass
+          assert exe, 'no built exe found'
+          if needle not in exe:
+              sys.exit('::error::built exe does NOT contain icons/icon.ico -- resource embedding failed (stale build cache?)')
+          print('OK: the exe contains the repo icon image')
+          PYEOF
+          python /tmp/verify_icon.py
+
       - name: Collect artifacts
         shell: bash
         run: |
