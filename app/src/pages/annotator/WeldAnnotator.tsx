@@ -114,6 +114,9 @@ export function WeldAnnotator({
   const downRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const zoomRef = useRef(1);
   const panStateRef = useRef({ x: 0, y: 0 });
+  // Set when a freshly loaded page still needs its first centering — resolved
+  // by the render effect, which runs with the stage actually on screen.
+  const centerPendingRef = useRef(false);
 
   const [welds, setWelds] = useState<Weld[]>([]);
   const [stamp, setStamp] = useState("");
@@ -183,11 +186,12 @@ export function WeldAnnotator({
           const page = await doc.getPage(from);
           const vp = page.getViewport({ scale: 1 });
           baseRef.current = { w: vp.width, h: vp.height };
-          // Start at 100% (zoom = 1), centred at the top of the page.
+          // Start at 100% (zoom = 1), centred at the top of the page. The
+          // stage isn't mounted yet (the spinner is showing), so the actual
+          // centering waits for the first raster, which knows the real width.
           setZoom(1);
           setScale(1);
-          const cw = (stageRef.current?.clientWidth ?? 900);
-          setPan({ x: Math.max(16, (cw - vp.width) / 2), y: 16 });
+          centerPendingRef.current = true;
         }
       } catch (e) {
         setError(errMsg(e));
@@ -199,10 +203,13 @@ export function WeldAnnotator({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawing.id]);
 
-  // render page
+  // render page. `loading` is a dep on purpose: while the spinner shows, the
+  // canvas isn't mounted and the render bails — the flip to loaded must re-run
+  // this effect or the first raster never happens (blank page until a zoom
+  // nudges `scale`).
   useEffect(() => {
     const doc = docRef.current;
-    if (!doc) return;
+    if (!doc || loading) return;
     let cancelled = false;
     (async () => {
       const page = await doc.getPage(pageNum);
@@ -216,13 +223,20 @@ export function WeldAnnotator({
       // (zoom / renderedScale) always matches the on-screen canvas — no flicker
       // during the debounced re-render.
       setRenderedScale(scale);
+      // Deferred initial centering: now the stage exists and its real width is
+      // known (the load effect only saw the spinner).
+      if (centerPendingRef.current) {
+        centerPendingRef.current = false;
+        const cw = stageRef.current?.clientWidth ?? 900;
+        setPan({ x: Math.max(16, (cw - vp.width) / 2), y: 16 });
+      }
       try { renderTaskRef.current?.cancel(); } catch { /* ignore */ }
       const task = page.render({ canvasContext: ctx, viewport: vp });
       renderTaskRef.current = task;
       try { await task.promise; } catch { /* cancelled */ }
     })();
     return () => { cancelled = true; };
-  }, [pageNum, scale, hasPdf]);
+  }, [pageNum, scale, hasPdf, loading]);
 
   // With no PDF attached, give the blank grid a real pixel size so bubbles, the
   // legend and the guided-fill popup have coordinates to anchor to (otherwise
