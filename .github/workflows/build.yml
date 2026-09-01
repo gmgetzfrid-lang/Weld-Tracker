@@ -103,11 +103,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist-out
+          # Two ready-to-deploy shapes and nothing else:
+          #   installer/  one per-user setup exe (single PC, no admin needed)
+          #   portable/   copy the whole folder to a network share and run it
+          mkdir -p dist-out/installer dist-out/portable
 
-          # NSIS per-user installer — exactly one -setup.exe is expected.
           setup=$(ls target/release/bundle/nsis/*-setup.exe | head -n1)
-          cp "$setup" dist-out/
+          cp "$setup" dist-out/installer/
 
           # Portable exe: Tauri names the main binary after productName
           # ("Sentrix"); fall back to the Cargo package name for older configs.
@@ -115,36 +117,49 @@ jobs:
           elif [ -f target/release/weld-tracker.exe ]; then portable=target/release/weld-tracker.exe
           else echo "::error::no portable exe found in target/release"; ls -la target/release; exit 1
           fi
-          cp "$portable" dist-out/Sentrix-portable.exe
-          # Ship a portable marker so the portable exe keeps its database in a
-          # data\ folder beside it — drop the exe + this marker on a network
-          # share and everyone who runs it shares the same data.
-          printf 'This marker tells Sentrix-portable.exe to keep its shared database in the data folder next to the exe.\r\n' > dist-out/sentrix.portable
-          cat > dist-out/READ-ME-FIRST.txt <<'TXT'
+          cp "$portable" dist-out/portable/Sentrix.exe
+          # The marker beside the exe switches it to shared mode: database in a
+          # data\ folder next to the exe, one set of records for everyone.
+          printf 'This marker tells Sentrix.exe to keep its shared database in the data folder next to the exe.\r\n' > dist-out/portable/sentrix.portable
+          sed -e 's/^          //' -e 's/$/\r/' <<'TXT' > dist-out/READ-ME-FIRST.txt
           SENTRIX — Assurance Console — how to deploy
 
-          SHARED (a team on a network drive) — recommended:
-            1. Copy Sentrix-portable.exe and sentrix.portable together
-               into a folder on your network drive, e.g. \\server\apps\Sentrix\
-            2. Everyone runs Sentrix-portable.exe from that folder.
-            3. The shared database is created in a "data" subfolder beside the exe,
-               so every user sees the same work orders, welds and reports.
-            4. First run: sign in as admin / password, then set a new password and
-               create a login profile for each user (Administration > Users).
+          The zip holds two ready-to-go shapes. Pick ONE — you don't need both.
 
-          Point at a specific shared file instead:
+          SHARED (a team on a network drive) — recommended:
+            1. Copy the whole "portable" folder onto your network drive and
+               rename it, e.g.  \\server\apps\Sentrix\
+               (it must contain Sentrix.exe and sentrix.portable, side by side)
+            2. Everyone runs Sentrix.exe from that folder — make a desktop
+               shortcut to it. No install, no admin rights.
+            3. The shared database is created in a "data" subfolder beside the
+               exe, so every user sees the same work orders, welds and reports.
+            4. First run: sign in as admin / password, set a new password, then
+               create a login for each user (Administration > Users).
+
+          SINGLE PC (your records only):
+            Run installer\...-setup.exe. It installs per-user — no admin
+            rights needed — and keeps its database on that PC.
+
+          Point at a specific shared database file instead (optional):
             Put a file named sentrix.json next to the exe containing:
               { "database_path": "\\\\server\\apps\\Sentrix\\data\\sentrix.db" }
             (or set the SENTRIX_DB environment variable to that path.)
 
-          SINGLE PC:
-            Run the ...-setup.exe installer (installs per-user, no admin). Its
-            database stays on that PC only. Delete sentrix.portable if you
-            copied it and don't want shared mode.
+          If Windows warns about an "unrecognized app" on first run:
+            The exe is not code-signed yet, so Windows SmartScreen is cautious
+            with files downloaded from the internet. Either click
+            "More info > Run anyway", or right-click the exe > Properties >
+            tick "Unblock" > OK. Files run from your own network drive are
+            normally not flagged at all.
+
+          Needs Microsoft Edge WebView2 (already on Windows 11 and kept
+          current on Windows 10 by Microsoft; the installer fetches it
+          automatically if missing).
 
           Settings > About shows the exact database file each user is on.
           TXT
-          ls -la dist-out
+          ls -laR dist-out
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4

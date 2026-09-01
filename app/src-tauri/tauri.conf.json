@@ -30,6 +30,7 @@
     "active": true,
     "targets": ["nsis"],
     "publisher": "Sentrix",
+    "copyright": "© 2026 Sentrix",
     "category": "Business",
     "shortDescription": "Weld & NDE quality assurance",
     "longDescription": "SENTRIX Assurance Console — weld log, welder roster, isometric weld mapping, document control and NDE/QC compliance reporting.",
