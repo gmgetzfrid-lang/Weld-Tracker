@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
-import type { NdeComplianceReport, SummaryReport } from "../types";
-import { BarChart, ErrorBox, Spinner, StatCard, num, pct } from "../components/ui";
+import type { AuditEntry, ExceptionsSummary, NdeComplianceReport, SummaryReport } from "../types";
+import { BarChart, ErrorBox, Spinner, StatCard, localTime, num, pct } from "../components/ui";
 
 export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => void; onNewEntry: () => void }) {
   const { user } = useAuth();
   const [rep, setRep] = useState<SummaryReport | null>(null);
   const [nde, setNde] = useState<NdeComplianceReport | null>(null);
   const [drawingCount, setDrawingCount] = useState(0);
+  const [exc, setExc] = useState<ExceptionsSummary | null>(null);
+  const [activity, setActivity] = useState<AuditEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.reportSummary().then(setRep).catch((e) => setError(errMsg(e)));
     api.reportNdeCompliance().then(setNde).catch(logErr("loading NDE compliance"));
-    api.listDrawings().then((d) => setDrawingCount(d.length)).catch(() => {});
+    api.listDrawings().then((d) => setDrawingCount(d.length)).catch(logErr("loading drawings"));
+    api.weldExceptions(null).then(setExc).catch(logErr("loading exceptions"));
+    api.recentActivity(null, 8).then(setActivity).catch(logErr("loading activity"));
   }, []);
 
   if (error) return <ErrorBox message={error} />;
@@ -22,6 +26,7 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
 
   const t = rep.total;
   const fresh = t.welds === 0;
+  const ndeOwed = nde ? nde.by_spec.reduce((a, sp) => a + sp.shortfall, 0) : 0;
 
   const steps = [
     {
@@ -85,22 +90,51 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
         </div>
       )}
 
+      {!fresh && exc && nde && (
+        <div className="exc-tiles" style={{ marginBottom: 0 }}>
+          <button className={`exc-tile sev-error ${exc.errors ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
+            title="Validation errors — unresolved NDE requirements, unrepaired rejects, contradictions. Click to work the list.">
+            <span className="exc-num">{num(exc.errors)}</span>
+            <span className="exc-cap">Errors to clear</span>
+          </button>
+          <button className={`exc-tile sev-error ${(exc.by_code["result.rejected_unrepaired"] ?? 0) ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
+            title="Rejected welds with no repair logged yet.">
+            <span className="exc-num">{num(exc.by_code["result.rejected_unrepaired"] ?? 0)}</span>
+            <span className="exc-cap">Rejects awaiting repair</span>
+          </button>
+          <button className={`exc-tile sev-warning ${ndeOwed ? "" : "quiet"}`} onClick={() => onNavigate("statistics")}
+            title="Examinations still owed to keep every welder at or above their NDE spec.">
+            <span className="exc-num">{num(ndeOwed)}</span>
+            <span className="exc-cap">NDE exams owed</span>
+          </button>
+          <button className={`exc-tile sev-warning ${exc.warnings ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
+            title="Warnings — below-spec coverage, missing fields, PWHT/PMI owed.">
+            <span className="exc-num">{num(exc.warnings)}</span>
+            <span className="exc-cap">Warnings</span>
+          </button>
+        </div>
+      )}
+
       <div className="grid cols-4">
-        <StatCard label="Total Welds" value={num(t.welds)} sub="excludes count-omitted" />
+        <StatCard label="Total Welds" value={num(t.welds)} onClick={() => onNavigate("weldlog")}
+          sub={`${num(t.inches, 1)} weld inches · excludes count-omitted`} />
         <StatCard
           label="RT Coverage"
           value={pct(t.rt_pct)}
           sub={`${num(t.rt)} of ${num(t.welds)} RT'd`}
+          onClick={() => onNavigate("statistics")}
         />
         <StatCard
           label="Reject Rate"
           value={pct(t.reject_rate)}
           sub={`${num(t.rejected)} rejected of ${num(t.rt)} RT'd`}
+          onClick={() => onNavigate("statistics")}
         />
         <StatCard
           label="Welders"
           value={num(rep.active_welder_count)}
           sub={`${num(rep.welder_count)} on roster`}
+          onClick={() => onNavigate("roster")}
         />
       </div>
 
@@ -120,25 +154,31 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
           />
         </div>
         <div className="card card-pad">
-          <h3>Total Weld Inches</h3>
-          <div className="stat" style={{ border: 0, boxShadow: "none", padding: 0 }}>
-            <div className="value" style={{ fontSize: 40 }}>
-              {num(t.inches, 1)}
+          <h3>Recent Activity</h3>
+          {activity.length === 0 ? (
+            <p className="faint">No activity recorded yet.</p>
+          ) : (
+            <div className="dash-activity">
+              {activity.map((a) => (
+                <div key={a.id} className="dash-act-row">
+                  <span className="dash-act-ts">{localTime(a.ts)}</span>
+                  <span className="dash-act-body">
+                    <b>{a.username ?? "—"}</b> {a.action ?? ""} {a.entity ?? ""}
+                    {a.entity_id ? ` #${a.entity_id}` : ""}
+                    {a.detail ? ` — ${a.detail.length > 80 ? a.detail.slice(0, 80) + "…" : a.detail}` : ""}
+                  </span>
+                </div>
+              ))}
             </div>
-            <div className="sub">cumulative diameter-inches welded</div>
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <button className="btn" onClick={() => onNavigate("weldlog")}>
-              Open Weld Log →
-            </button>
-          </div>
+          )}
         </div>
       </div>
 
-      <div className="card">
-        <div className="card-pad" style={{ paddingBottom: 8 }}>
-          <h3>Breakdown by Joint Type</h3>
-        </div>
+      <details className="card dash-details">
+        <summary className="card-pad" style={{ paddingBottom: 12, cursor: "pointer" }}>
+          <h3 style={{ display: "inline" }}>Breakdown by Joint Type</h3>
+          <span className="muted" style={{ marginLeft: 10, fontSize: 12 }}>expand</span>
+        </summary>
         <div className="table-wrap" style={{ border: 0 }}>
           <table className="data">
             <thead>
@@ -184,7 +224,7 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
             </tfoot>
           </table>
         </div>
-      </div>
+      </details>
     </div>
   );
 }

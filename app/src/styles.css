@@ -888,3 +888,16 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, label.btn:focus
 .report-tab:hover { border-color: var(--border-strong); color: var(--text); }
 .report-tab.active { background: var(--navy); border-color: var(--navy); color: #fff; }
 .report-tab-desc { font-size: 12.5px; margin: 0 0 14px; }
+
+
+/* Dashboard: clickable KPIs, quiet attention tiles, activity feed, collapsed breakdown */
+.stat.clickable { cursor: pointer; transition: border-color .12s; }
+.stat.clickable:hover { border-color: var(--border-strong); }
+.exc-tile.quiet .exc-num { color: var(--text-faint); }
+.dash-activity { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.dash-act-row { display: flex; gap: 10px; font-size: 12px; align-items: baseline; }
+.dash-act-ts { flex: none; color: var(--text-faint); font-size: 11px; min-width: 118px; }
+.dash-act-body { color: var(--text-muted); word-break: break-word; }
+.dash-details summary { list-style: none; }
+.dash-details summary::-webkit-details-marker { display: none; }
+.dash-details[open] summary .muted { visibility: hidden; }

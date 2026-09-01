@@ -14,13 +14,22 @@ export function StatCard({
   label,
   value,
   sub,
+  onClick,
 }: {
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
+  /** Makes the card a drill-down — every dashboard number should go somewhere. */
+  onClick?: () => void;
 }) {
   return (
-    <div className="stat">
+    <div
+      className={`stat ${onClick ? "clickable" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") onClick(); } : undefined}
+    >
       <div className="label">{label}</div>
       <div className="value">{value}</div>
       {sub != null && <div className="sub">{sub}</div>}
