@@ -236,6 +236,11 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .seg-part input { width: 100%; border: none; background: transparent; padding: 1px 0; margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
 .seg-part input:focus { outline: none; box-shadow: none; }
 .seg-part input::placeholder { font-weight: 400; color: var(--text-faint); }
+/* Identity part still blank — the amber underline says "fill me from the
+   title block" without pre-filling a value someone would skip past. */
+.seg-part.seg-need { box-shadow: inset 0 -2px 0 #d97706; background: #fffbeb; }
+.seg-part.seg-need .seg-lab { color: #b45309; }
+.hint .id-need { color: #b45309; font-weight: 600; }
 .checkline { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
 .checkline input { width: auto; }
 

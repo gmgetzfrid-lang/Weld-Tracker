@@ -1290,6 +1290,32 @@ fn void_bumps_row_version_so_stale_saves_conflict() {
 }
 
 #[test]
+fn drawing_revision_is_never_invented_and_backfills_once() {
+    let s = store();
+    let d = Drawing {
+        work_order: Some("930".into()),
+        drawing_no: Some("ISO-77".into()),
+        ..Default::default() // no revision typed
+    };
+    let id = s.create_drawing(&d, "alice").unwrap();
+    // A blank rev stays blank — no fabricated "Rev 0" on a controlled doc.
+    let got = s.get_drawing(id).unwrap();
+    assert_eq!(got.revision, None);
+    assert!(!got.doc_name.contains("Rev"));
+    // Filling the missing label in later (from the title block) works…
+    let mut fill = got.clone();
+    fill.revision = Some("2".into());
+    s.update_drawing(&fill).unwrap();
+    let got = s.get_drawing(id).unwrap();
+    assert_eq!(got.revision.as_deref(), Some("2"));
+    // …but an already-recorded label is controlled: plain update can't change it.
+    let mut change = got.clone();
+    change.revision = Some("3".into());
+    s.update_drawing(&change).unwrap();
+    assert_eq!(s.get_drawing(id).unwrap().revision.as_deref(), Some("2"));
+}
+
+#[test]
 fn repair_fallback_does_not_cross_work_orders() {
     let s = store();
     // WO-A: W12 rejected, never repaired. WO-B: unrelated W12R1 exists.

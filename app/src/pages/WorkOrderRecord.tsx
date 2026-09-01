@@ -130,7 +130,9 @@ export function WorkOrderRecord({
                 {d.has_pdf ? <span className="badge badge-green">PDF</span> : <span className="badge badge-gray">no PDF</span>}
               </div>
               <div className="muted" style={{ fontSize: 12, marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <span className="badge badge-blue" title="effective revision">Rev {d.revision ?? "0"}</span>
+                {d.revision
+                  ? <span className="badge badge-blue" title="effective revision">Rev {d.revision}</span>
+                  : <span className="badge badge-gray" title="No revision recorded — open the drawing and enter it from the title block">rev not set</span>}
                 {(d.rev_count ?? 0) > 1 && <span className="badge badge-gray" title="revision history">{d.rev_count} revs</span>}
                 <span>{d.line_spec ? `${d.line_spec} · ` : ""}{num(d.weld_count)} welds</span>
               </div>

@@ -32,7 +32,9 @@ export function DrawingWizard({
 }) {
   const toast = useToast();
   const [step, setStep] = useState(0);
-  const [drawing, setDrawing] = useState<Drawing>({ ...EMPTY, work_order: initialWorkOrder ?? null, revision: "0" });
+  // Sheet and rev start EMPTY on purpose: they come off the title block, and a
+  // pre-filled value reads as already answered — people would skip right past.
+  const [drawing, setDrawing] = useState<Drawing>({ ...EMPTY, work_order: initialWorkOrder ?? null });
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,7 +97,9 @@ export function DrawingWizard({
       default_material: drawing.default_material ?? null,
       drawing_no: drawing.drawing_no ?? null, // same drawing, next sheet by default
       sheet_no: nextSheet || null,
-      revision: "0",
+      // Carry the rev the user actually typed — sheets of one issued set share
+      // an issue rev. Never invent one.
+      revision: drawing.revision ?? null,
     });
     setPdfFile(null);
     setError(null);
@@ -179,6 +183,11 @@ function HeaderStep({
   useEffect(() => { api.distinctWeldValues("line_spec").then(setLineSpecs).catch(() => {}); }, []);
   const [showBreak, setShowBreak] = useState(!!drawing.line_spec_2);
   const composed = docName(drawing.drawing_no, drawing.sheet_no, drawing.revision);
+  // Which identity parts are still blank — surfaced so sheet/rev read as real
+  // inputs to fill from the title block, not pre-answered boxes to skip.
+  const sheetBlank = !String(drawing.sheet_no ?? "").trim();
+  const revBlank = !String(drawing.revision ?? "").trim();
+  const idNeeded = [sheetBlank && "sheet", revBlank && "rev"].filter(Boolean) as string[];
 
   return (
     <>
@@ -210,16 +219,24 @@ function HeaderStep({
               <span className="seg-lab">Drawing / Iso #</span>
               <input value={drawing.drawing_no ?? ""} onChange={(e) => set("drawing_no", e.target.value)} placeholder="ISO-1042" />
             </div>
-            <div className="seg-part narrow">
+            <div className={`seg-part narrow ${sheetBlank ? "seg-need" : ""}`}>
               <span className="seg-lab">Sheet</span>
-              <input value={drawing.sheet_no ?? ""} onChange={(e) => set("sheet_no", e.target.value)} placeholder="1" />
+              <input value={drawing.sheet_no ?? ""} onChange={(e) => set("sheet_no", e.target.value)}
+                title="Sheet number from the title block (leave blank only for a single-sheet iso)" />
             </div>
-            <div className="seg-part narrow">
+            <div className={`seg-part narrow ${revBlank ? "seg-need" : ""}`}>
               <span className="seg-lab">Rev</span>
-              <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)} placeholder="0" />
+              <input value={drawing.revision ?? ""} onChange={(e) => set("revision", e.target.value)}
+                title="Revision from the title block — type 0 if it's the original issue" />
             </div>
           </div>
-          <div className="hint">Reads as <b>{composed || "…"}</b> · more sheets or drawings? Save this one, then <b>＋ Add another</b> at the end — or use <b>Ingest work package</b> on the work order for a compiled book.</div>
+          <div className="hint">
+            Reads as <b>{composed || "…"}</b>
+            {idNeeded.length > 0 && (
+              <span className="id-need"> — enter the {idNeeded.join(" and ")} from the title block</span>
+            )}
+            {" "}· more sheets or drawings? Save this one, then <b>＋ Add another</b> at the end — or use <b>Ingest work package</b> on the work order for a compiled book.
+          </div>
         </div>
 
         <div className="wrow">

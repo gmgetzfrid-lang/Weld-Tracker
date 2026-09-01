@@ -166,12 +166,14 @@ impl Store {
         )?;
         let id = conn.last_insert_rowid();
         // Open the initial Effective revision (controlled copy attached next).
+        // The rev label comes off the title block: stored exactly as typed, or
+        // NULL until the user enters it. Never invent a "0" — a fabricated rev
+        // on a controlled document reads as fact.
         let rev = d
             .revision
             .as_deref()
             .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("0");
+            .filter(|s| !s.is_empty());
         conn.execute(
             "INSERT INTO drawing_revisions (drawing_id, rev, status, reason, created_by)
              VALUES (?1, ?2, 'Effective', 'Initial issue', ?3)",
@@ -187,8 +189,12 @@ impl Store {
         Ok(id)
     }
 
-    /// Update a sheet's metadata. The revision label is NOT changed here — it is
-    /// controlled and only changes through `revise_drawing`.
+    /// Update a sheet's metadata. An already-recorded revision label is NOT
+    /// changed here — it is controlled and only changes through
+    /// `revise_drawing`. The one exception is backfill: a sheet saved before
+    /// its rev was entered may have the missing label filled in later from
+    /// the title block (drawings.revision and the current Effective revision
+    /// row update together).
     pub fn update_drawing(&self, d: &Drawing) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let n = conn.execute(
@@ -205,6 +211,29 @@ impl Store {
         )?;
         if n == 0 {
             return Err(Error::NotFound);
+        }
+        if let Some(new_rev) = d.revision.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            let cur: Option<String> = conn
+                .query_row(
+                    "SELECT revision FROM drawings WHERE id = ?1",
+                    params![d.id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .flatten();
+            let cur_blank = cur.as_deref().map(str::trim).map(str::is_empty).unwrap_or(true);
+            if cur_blank {
+                conn.execute(
+                    "UPDATE drawings SET revision = ?1 WHERE id = ?2",
+                    params![new_rev, d.id],
+                )?;
+                conn.execute(
+                    "UPDATE drawing_revisions SET rev = ?1
+                     WHERE drawing_id = ?2 AND status = 'Effective'
+                       AND (rev IS NULL OR TRIM(rev) = '')",
+                    params![new_rev, d.id],
+                )?;
+            }
         }
         Ok(())
     }

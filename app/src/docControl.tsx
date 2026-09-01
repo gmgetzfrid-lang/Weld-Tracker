@@ -78,7 +78,7 @@ export function RevisePanel({
     >
       <ErrorBox message={error} />
       <p className="hint" style={{ marginTop: 0 }}>
-        The current revision <b>Rev {drawing.revision ?? "0"}</b> will be marked
+        The current revision <b>{drawing.revision ? `Rev ${drawing.revision}` : "(no rev recorded)"}</b> will be marked
         <b> Superseded</b> and kept on record. This new revision becomes the effective drawing;
         its welds carry over.
       </p>
@@ -191,9 +191,10 @@ export function PackageIngest({
     try {
       const { pages } = await fileToPdf(f);
       setPages(pages);
-      // Seed one sheet per page as a sensible starting point.
+      // Seed one sheet per page as a sensible starting point. Rev is left
+      // blank on purpose — it comes off each title block, never invented.
       setRows(Array.from({ length: pages }, (_, i) => ({
-        drawing_no: "", sheet_no: String(i + 1), revision: "0", page_from: i + 1, page_to: i + 1,
+        drawing_no: "", sheet_no: String(i + 1), revision: "", page_from: i + 1, page_to: i + 1,
       })));
     } catch (e) { setError(errMsg(e)); }
   };
@@ -201,7 +202,7 @@ export function PackageIngest({
   const setRow = (i: number, patch: Partial<SheetRow>) =>
     setRows((p) => p.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const addRow = () =>
-    setRows((p) => [...p, { drawing_no: p[p.length - 1]?.drawing_no ?? "", sheet_no: "", revision: "0", page_from: 1, page_to: pages || 1 }]);
+    setRows((p) => [...p, { drawing_no: p[p.length - 1]?.drawing_no ?? "", sheet_no: "", revision: p[p.length - 1]?.revision ?? "", page_from: 1, page_to: pages || 1 }]);
   const delRow = (i: number) => setRows((p) => p.filter((_, j) => j !== i));
 
   const submit = async () => {
@@ -215,7 +216,7 @@ export function PackageIngest({
       for (const r of usable) {
         const id = await api.createDrawing({
           id: 0, work_order: workOrder, drawing_no: r.drawing_no.trim(),
-          sheet_no: r.sheet_no.trim() || null, revision: r.revision.trim() || "0",
+          sheet_no: r.sheet_no.trim() || null, revision: r.revision.trim() || null,
           line_spec: lineSpec ?? null,
           spec_5: false, spec_10: false, spec_20: false, spec_25: false, spec_50: false, spec_100: false,
           has_pdf: false, page_count: 0, weld_count: 0,
