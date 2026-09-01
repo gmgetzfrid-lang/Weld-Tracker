@@ -184,6 +184,7 @@ fn main() {
             recent_activity,
             backup_database,
             open_log_folder,
+            open_welder_cert,
             save_export,
             create_repair,
             distinct_weld_values,

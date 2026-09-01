@@ -473,6 +473,18 @@ pub fn save_export(app: tauri::AppHandle, state: State<AppState>, name: String, 
     Ok(target)
 }
 
+/// Open a welder's stored WPQ document with the OS default app. The file
+/// bytes stay on the Rust side (one DB read, one disk write, launch) —
+/// nothing shuttles through the UI bridge, so big scans open fast.
+#[tauri::command]
+pub fn open_welder_cert(app: tauri::AppHandle, state: State<AppState>, id: i64) -> R<String> {
+    state.require_login()?;
+    let (name, b64) = e(state.store()?.get_welder_cert_file(id))?
+        .ok_or_else(|| "no document stored on this cert".to_string())?;
+    let fname = if name.trim().is_empty() { format!("cert-{id}.pdf") } else { name };
+    save_export(app, state, fname, b64, "open".into())
+}
+
 /// Open the per-user support-log folder in the OS file manager. The path is
 /// fixed by the app (never user input), so this cannot be steered elsewhere.
 #[tauri::command]

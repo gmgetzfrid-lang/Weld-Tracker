@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WelderCert, WelderContinuity } from "../types";
-import { ErrorBox, Modal, Spinner, downloadCsv, useToast } from "../components/ui";
+import { ConfirmDialog, ErrorBox, Modal, Spinner, downloadCsv, useToast } from "../components/ui";
 import { fileToBase64 } from "../pdf";
-import { continuityPdf, openBase64File, printContinuity } from "../continuity";
+import { continuityPdf, printContinuity } from "../continuity";
 
 const EMPTY: Welder = { id: 0, stamp: "", name: "", active: true };
 
@@ -57,9 +57,7 @@ export function Roster() {
   const openCertFile = async (c: WelderCert) => {
     if (!c.has_file) return;
     try {
-      const f = await api.getWelderCertFile(c.id);
-      if (f) openBase64File(f[0] || c.alias, f[1]);
-      else toast.push("err", "No file stored");
+      await api.openWelderCert(c.id);
     } catch (e) {
       toast.push("err", errMsg(e));
     }
@@ -173,10 +171,13 @@ function WelderEditor({
   const editable = can("editor");
   const [w, setW] = useState<Welder>(welder ? { ...welder } : { ...EMPTY });
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const set = <K extends keyof Welder>(k: K, v: Welder[K]) => setW((p) => ({ ...p, [k]: v }));
 
   const save = async () => {
     setError(null);
+    setBusy(true);
     try {
       if (w.id) await api.updateWelder(w);
       else {
@@ -188,12 +189,13 @@ function WelderEditor({
       onSaved();
     } catch (e) {
       setError(errMsg(e));
+    } finally {
+      setBusy(false);
     }
   };
 
   const del = async () => {
     if (!w.id) return;
-    if (!confirm(`Delete welder ${w.name}?`)) return;
     try { await api.deleteWelder(w.id); onSaved(); } catch (e) { toast.push("err", errMsg(e)); }
   };
 
@@ -204,12 +206,26 @@ function WelderEditor({
       wide
       footer={
         <>
-          {w.id && editable && (<><button className="btn btn-danger" onClick={del}>Delete</button><div style={{ flex: 1 }} /></>)}
+          {w.id && editable && (<><button className="btn btn-danger" onClick={() => setConfirmDel(true)}>Delete</button><div style={{ flex: 1 }} /></>)}
           <button className="btn" onClick={onClose}>Close</button>
-          {editable && <button className="btn btn-primary" onClick={save}>{w.id ? "Save" : "Create"}</button>}
+          {editable && (
+            <button className="btn btn-primary" disabled={busy} onClick={save}>
+              {busy ? "Saving…" : w.id ? "Save" : "Create"}
+            </button>
+          )}
         </>
       }
     >
+      {confirmDel && (
+        <ConfirmDialog
+          title={`Delete welder ${w.name || w.stamp}`}
+          body="The welder and their qualification records are removed from the roster. Welds already logged under their stamp are kept."
+          confirmLabel="Delete welder"
+          danger
+          onConfirm={() => { setConfirmDel(false); del(); }}
+          onClose={() => setConfirmDel(false)}
+        />
+      )}
       <ErrorBox message={error} />
       <div className="form-grid cols-2">
         <div className="field">
@@ -256,6 +272,11 @@ function CertManager({
   const toast = useToast();
   const [certs, setCerts] = useState<WelderCert[]>([]);
   const [loading, setLoading] = useState(true);
+  // One action at a time, and every action announces itself: "add",
+  // "up-<id>", "open-<id>" — buttons disable and show progress so a
+  // multi-second file write never reads as a dead click.
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirmDel, setConfirmDel] = useState<WelderCert | null>(null);
   const [adding, setAdding] = useState<{ alias: string; process: string; qualified_date: string; file: File | null }>({
     alias: "", process: "", qualified_date: "", file: null,
   });
@@ -265,8 +286,12 @@ function CertManager({
   }, [welderId]);
   useEffect(load, [load]);
 
+  const fmtMb = (n: number) => (n / 1024 / 1024).toFixed(1);
+
   const addCert = async () => {
     if (!adding.alias.trim()) return toast.push("err", "Give the cert an alias (name)");
+    if (busy) return;
+    setBusy("add");
     try {
       const id = await api.createWelderCert({
         id: 0, welder_id: welderId, alias: adding.alias.trim(),
@@ -277,28 +302,34 @@ function CertManager({
         const b64 = await fileToBase64(adding.file);
         await api.setWelderCertFile(id, adding.file.name, b64);
       }
+      const withFile = adding.file ? ` with ${adding.file.name} (${fmtMb(adding.file.size)} MB)` : "";
       setAdding({ alias: "", process: "", qualified_date: "", file: null });
       load();
-      toast.push("ok", "Cert added");
+      toast.push("ok", `Cert added${withFile}`);
     } catch (e) {
       toast.push("err", errMsg(e));
+    } finally {
+      setBusy(null);
     }
   };
 
   const uploadTo = async (c: WelderCert, file: File) => {
+    if (busy) return;
+    setBusy(`up-${c.id}`);
     try {
       const b64 = await fileToBase64(file);
       await api.setWelderCertFile(c.id, file.name, b64);
       load();
-      toast.push("ok", "Document attached");
-    } catch (e) { toast.push("err", errMsg(e)); }
+      toast.push("ok", `Attached ${file.name} (${fmtMb(file.size)} MB)`);
+    } catch (e) { toast.push("err", errMsg(e)); } finally { setBusy(null); }
   };
 
   const open = async (c: WelderCert) => {
+    if (busy) return;
+    setBusy(`open-${c.id}`);
     try {
-      const f = await api.getWelderCertFile(c.id);
-      if (f) openBase64File(f[0] || c.alias, f[1]);
-    } catch (e) { toast.push("err", errMsg(e)); }
+      await api.openWelderCert(c.id);
+    } catch (e) { toast.push("err", errMsg(e)); } finally { setBusy(null); }
   };
 
   const saveField = async (c: WelderCert, patch: Partial<WelderCert>) => {
@@ -306,8 +337,7 @@ function CertManager({
   };
 
   const del = async (c: WelderCert) => {
-    if (!confirm(`Remove cert "${c.alias}"?`)) return;
-    try { await api.deleteWelderCert(c.id); load(); } catch (e) { toast.push("err", errMsg(e)); }
+    try { await api.deleteWelderCert(c.id); load(); toast.push("ok", `Removed ${c.alias}`); } catch (e) { toast.push("err", errMsg(e)); }
   };
 
   return (
@@ -348,16 +378,18 @@ function CertManager({
                   <td>{c.last_activity ?? <span className="faint">—</span>}</td>
                   <td>
                     {c.has_file ? (
-                      <button className="btn btn-sm" onClick={() => open(c)}>📎 {c.file_name || "open"}</button>
+                      <button className="btn btn-sm" disabled={busy === `open-${c.id}`} onClick={() => open(c)}>
+                        {busy === `open-${c.id}` ? "Opening…" : <>📎 {c.file_name || "open"}</>}
+                      </button>
                     ) : <span className="faint">none</span>}
                     {editable && (
-                      <label className="btn btn-sm" style={{ marginLeft: 6, cursor: "pointer" }}>
-                        {c.has_file ? "Replace" : "Upload"}
-                        <input type="file" hidden accept=".pdf,image/*,.doc,.docx" onChange={(e) => e.target.files?.[0] && uploadTo(c, e.target.files[0])} />
+                      <label className={`btn btn-sm ${busy === `up-${c.id}` ? "btn-busy" : ""}`} style={{ marginLeft: 6, cursor: busy ? "wait" : "pointer" }}>
+                        {busy === `up-${c.id}` ? "Uploading…" : c.has_file ? "Replace" : "Upload WPQ"}
+                        <input type="file" hidden disabled={!!busy} accept=".pdf,image/*,.doc,.docx" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadTo(c, f); }} />
                       </label>
                     )}
                   </td>
-                  <td>{editable && <button className="btn btn-sm btn-danger" onClick={() => del(c)}>✕</button>}</td>
+                  <td>{editable && <button className="btn btn-sm btn-danger" onClick={() => setConfirmDel(c)}>✕</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -366,18 +398,39 @@ function CertManager({
       )}
       {editable && (
         <div className="cert-add">
-          <input placeholder="Cert alias (e.g. 6G GTAW CS)" value={adding.alias} onChange={(e) => setAdding((a) => ({ ...a, alias: e.target.value }))} />
-          <select value={adding.process} onChange={(e) => setAdding((a) => ({ ...a, process: e.target.value }))}>
+          <input placeholder="Cert alias (e.g. 6G GTAW CS)" value={adding.alias} disabled={busy === "add"} onChange={(e) => setAdding((a) => ({ ...a, alias: e.target.value }))} />
+          <select value={adding.process} disabled={busy === "add"} onChange={(e) => setAdding((a) => ({ ...a, process: e.target.value }))}>
             <option value="">Process…</option>
             {(lookups.process ?? []).map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <input type="date" title="Date qualified" value={adding.qualified_date} onChange={(e) => setAdding((a) => ({ ...a, qualified_date: e.target.value }))} />
-          <label className="btn btn-sm" style={{ cursor: "pointer" }}>
-            {adding.file ? adding.file.name.slice(0, 16) : "WPQ file…"}
-            <input type="file" hidden accept=".pdf,image/*,.doc,.docx" onChange={(e) => setAdding((a) => ({ ...a, file: e.target.files?.[0] ?? null }))} />
-          </label>
-          <button className="btn btn-primary btn-sm" onClick={addCert}>+ Add cert</button>
+          <input type="date" title="Date qualified" value={adding.qualified_date} disabled={busy === "add"} onChange={(e) => setAdding((a) => ({ ...a, qualified_date: e.target.value }))} />
+          {adding.file ? (
+            <span className="cert-filechip" title={`${adding.file.name} (${fmtMb(adding.file.size)} MB) — attached when you add the cert`}>
+              📎 {adding.file.name.length > 22 ? adding.file.name.slice(0, 20) + "…" : adding.file.name}
+              <button type="button" className="cert-filechip-x" title="Remove the chosen file" onClick={() => setAdding((a) => ({ ...a, file: null }))}>✕</button>
+            </span>
+          ) : (
+            <label className="btn btn-sm" style={{ cursor: "pointer" }}>
+              WPQ file…
+              <input type="file" hidden accept=".pdf,image/*,.doc,.docx" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setAdding((a) => ({ ...a, file: f })); }} />
+            </label>
+          )}
+          <button className="btn btn-primary btn-sm" disabled={busy === "add" || !adding.alias.trim()} onClick={addCert}>
+            {busy === "add" ? "Adding…" : "+ Add cert"}
+          </button>
         </div>
+      )}
+      <p className="hint">You can add the cert now and attach the WPQ document later — every row has an Upload button.</p>
+
+      {confirmDel && (
+        <ConfirmDialog
+          title={`Remove cert ${confirmDel.alias}`}
+          body="The qualification and its WPQ document are removed from this welder's record."
+          confirmLabel="Remove cert"
+          danger
+          onConfirm={() => { const c = confirmDel; setConfirmDel(null); if (c) del(c); }}
+          onClose={() => setConfirmDel(null)}
+        />
       )}
     </div>
   );

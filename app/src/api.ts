@@ -87,6 +87,8 @@ export const api = {
     invoke<void>("set_welder_cert_file", { id, name, dataBase64 }),
   getWelderCertFile: (id: number) =>
     invoke<[string, string] | null>("get_welder_cert_file", { id }),
+  /** Open a cert's WPQ with the OS viewer — file bytes never cross the bridge. */
+  openWelderCert: (id: number) => invoke<string>("open_welder_cert", { id }),
   welderContinuity: (welderId: number) =>
     invoke<WelderContinuity>("welder_continuity", { welderId }),
 
