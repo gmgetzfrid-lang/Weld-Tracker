@@ -83,6 +83,59 @@ export function Modal({
   );
 }
 
+/**
+ * App-styled confirmation dialog (replaces browser confirm()/prompt()). When
+ * `requireReason` is set the confirm button stays disabled until a reason is
+ * typed — used for Void and other controlled-record actions.
+ */
+export function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  danger,
+  requireReason,
+  reasonLabel,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  body: React.ReactNode;
+  confirmLabel: string;
+  danger?: boolean;
+  requireReason?: boolean;
+  reasonLabel?: string;
+  onConfirm: (reason?: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const ok = !requireReason || reason.trim().length > 0;
+  return (
+    <Modal title={title} onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button
+            className={`btn ${danger ? "btn-danger" : "btn-primary"}`}
+            disabled={!ok}
+            onClick={() => onConfirm(requireReason ? reason.trim() : undefined)}
+          >
+            {confirmLabel}
+          </button>
+        </>
+      }
+    >
+      <p style={{ marginTop: 0 }}>{body}</p>
+      {requireReason && (
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>{reasonLabel ?? "Reason"}</label>
+          <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && ok) onConfirm(reason.trim()); }} />
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export function Field({
   label,
   children,

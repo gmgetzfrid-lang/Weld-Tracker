@@ -901,3 +901,15 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, label.btn:focus
 .dash-details summary { list-style: none; }
 .dash-details summary::-webkit-details-marker { display: none; }
 .dash-details[open] summary .muted { visibility: hidden; }
+
+
+/* Weld grid: save state, column chooser, spec violation, sticky identity */
+.wt-savestate { font-size: 11.5px; color: var(--ok); font-weight: 600; margin-left: 10px; }
+.wt-savestate.busy { color: var(--text-muted); }
+.wt-cols { position: relative; }
+.wt-cols-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 10px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; min-width: 300px; }
+.wt-cols-menu label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text); cursor: pointer; white-space: nowrap; }
+.spec-bad { color: #b45309; font-weight: 700; }
+.wt th:first-child, .wt td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 2; }
+.wt th:nth-child(2), .wt td:nth-child(2) { position: sticky; left: 26px; background: var(--surface); z-index: 2; box-shadow: 4px 0 6px -4px rgba(15,23,42,.12); }
+.wt thead th:first-child, .wt thead th:nth-child(2) { z-index: 4; }

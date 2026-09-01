@@ -2,8 +2,30 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import type { Lookups, Weld, Welder } from "../types";
 import { useAuth } from "../auth";
-import { StatusBadge, useToast } from "./ui";
+import { ConfirmDialog, StatusBadge, useToast } from "./ui";
 import { InlineMulti, InlineSelect, InlineText, Segmented } from "./inline";
+
+/** Hideable grid columns, in display order. */
+const COLS_DEF: { key: string; label: string }[] = [
+  { key: "drawing", label: "Drawing" },
+  { key: "nde_percent", label: "NDE %" },
+  { key: "joint", label: "Joint Type" },
+  { key: "size", label: "Size" },
+  { key: "schedule", label: "Schedule" },
+  { key: "material", label: "Material" },
+  { key: "thk", label: "Thk" },
+  { key: "weld_inches", label: "Weld Inches" },
+  { key: "welder", label: "Welder" },
+  { key: "date", label: "Date Welded" },
+  { key: "method", label: "Method" },
+  { key: "result", label: "NDE Result" },
+  { key: "pwht", label: "PWHT" },
+  { key: "brinell", label: "Brinell" },
+  { key: "pressure", label: "Pressure Test" },
+  { key: "status", label: "Status" },
+];
+/** Hidden out of the box: derived / secondary columns (still one click away). */
+const DEFAULT_HIDDEN = ["schedule", "thk", "weld_inches", "brinell"];
 
 /**
  * The one weld grid used everywhere. An "Edit" toggle puts the whole table into
@@ -44,6 +66,31 @@ export function WeldTable({
   const [open, setOpen] = useState<Set<number>>(new Set());
   useEffect(() => setRows(welds), [welds]);
 
+  // Column visibility: the grid shows a working set by default; secondary
+  // derived/heat-treat columns hide behind the Columns menu (persisted).
+  const [hidden, setHidden] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("wt-hidden-cols");
+      return new Set<string>(raw ? JSON.parse(raw) : DEFAULT_HIDDEN);
+    } catch { return new Set<string>(DEFAULT_HIDDEN); }
+  });
+  const [colsOpen, setColsOpen] = useState(false);
+  const showCol = (k: string) => !hidden.has(k);
+  const toggleCol = (k: string) =>
+    setHidden((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      try { localStorage.setItem("wt-hidden-cols", JSON.stringify([...n])); } catch { /* convenience only */ }
+      return n;
+    });
+
+  // Visible autosave state: a QC user must never wonder whether an edit stuck.
+  const [pendingSaves, setPendingSaves] = useState(0);
+  const [savedOnce, setSavedOnce] = useState(false);
+
+  // Void / purge run through a proper confirm dialog, not browser prompt().
+  const [confirmAct, setConfirmAct] = useState<{ kind: "void" | "purge"; w: Weld } | null>(null);
+
   const stamps = welders.map((w) => w.stamp);
   const opt = (k: string) => lookups[k] ?? [];
   const sizeStr = sizes.map(String);
@@ -66,6 +113,7 @@ export function WeldTable({
 
   const save = (w: Weld, changes: Partial<Weld>) => {
     setRows((prev) => prev.map((x) => (x.id === w.id ? { ...x, ...changes } : x)));
+    setPendingSaves((n) => n + 1);
     const prior = chain.current.get(w.id) ?? Promise.resolve();
     const next = prior.then(async () => {
       const version = latestVer.current.get(w.id) ?? w.row_version ?? 0;
@@ -87,27 +135,37 @@ export function WeldTable({
           } catch { /* ignore reload failure */ }
           toast.push("err", "Someone else changed this weld — reloaded it. Re-apply your edit.");
         } else {
+          // The save failed — the optimistic cell would silently lie. Reload
+          // the row to the server's truth and surface the error.
+          try {
+            const fresh = await api.getWeld(w.id);
+            latestVer.current.set(w.id, fresh.row_version ?? 0);
+            setRows((prev) => prev.map((x) => (x.id === w.id ? fresh : x)));
+          } catch { /* reload best-effort */ }
           toast.push("err", msg);
         }
+      } finally {
+        setPendingSaves((n) => n - 1);
+        setSavedOnce(true);
       }
     });
     chain.current.set(w.id, next);
   };
 
   // Void = the normal, record-preserving delete: the weld is kept for the QC
-  // record but excluded from every count. A reason is required.
-  const voidWeld = async (w: Weld) => {
-    const reason = prompt(
-      `Void weld ${w.weld_number ?? w.id}?\n\nIt is kept on the record (excluded from counts) and can be restored. Reason:`
-    );
-    if (reason == null || !reason.trim()) return;
-    try { await api.voidWeld(w.id, reason.trim()); onChanged?.(); }
-    catch (e) { toast.push("err", errMsg(e)); }
-  };
-  // Purge = admin-only permanent delete. Destroys the record.
-  const purge = async (w: Weld) => {
-    if (!confirm(`Permanently DELETE weld ${w.weld_number ?? w.id}?\n\nThis destroys the record and cannot be undone. Prefer Void.`)) return;
-    try { await api.deleteWeld(w.id); onChanged?.(); } catch (e) { toast.push("err", errMsg(e)); }
+  // record but excluded from every count. A reason is required (dialog).
+  const voidWeld = (w: Weld) => setConfirmAct({ kind: "void", w });
+  // Purge = admin-only permanent delete. Destroys the record (dialog).
+  const purge = (w: Weld) => setConfirmAct({ kind: "purge", w });
+  const runConfirm = async (reason?: string) => {
+    if (!confirmAct) return;
+    const { kind, w } = confirmAct;
+    setConfirmAct(null);
+    try {
+      if (kind === "void") await api.voidWeld(w.id, (reason ?? "").trim());
+      else await api.deleteWeld(w.id);
+      onChanged?.();
+    } catch (e) { toast.push("err", errMsg(e)); }
   };
   const restore = async (w: Weld) => {
     try { await api.restoreWeld(w.id); onChanged?.(); } catch (e) { toast.push("err", errMsg(e)); }
@@ -124,13 +182,30 @@ export function WeldTable({
     setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const txt = (v: unknown) => (v == null || v === "" ? <span className="faint">—</span> : String(v));
-  const cols = showWorkOrder ? 19 : 18;
+  const cols = 2 + (showWorkOrder ? 1 : 0) + COLS_DEF.filter((c) => showCol(c.key)).length;
 
   return (
     <div className="weldtable">
       <div className="wt-bar">
         <span className="muted" style={{ fontSize: 12 }}>{rows.length} welds</span>
+        {editable && (pendingSaves > 0 || savedOnce) && (
+          <span className={`wt-savestate ${pendingSaves > 0 ? "busy" : ""}`}>
+            {pendingSaves > 0 ? `Saving ${pendingSaves} change${pendingSaves > 1 ? "s" : ""}…` : "All changes saved ✓"}
+          </span>
+        )}
         <div className="spacer" />
+        <div className="wt-cols">
+          <button className="btn btn-sm" onClick={() => setColsOpen((v) => !v)} title="Choose which columns to show">▦ Columns</button>
+          {colsOpen && (
+            <div className="wt-cols-menu" onMouseLeave={() => setColsOpen(false)}>
+              {COLS_DEF.map((c) => (
+                <label key={c.key}>
+                  <input type="checkbox" checked={showCol(c.key)} onChange={() => toggleCol(c.key)} /> {c.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
         {onAddWeld && editable && <button className="btn btn-sm" onClick={onAddWeld}>＋ Add Weld</button>}
         {editable && (
           <button className={`btn btn-sm ${edit ? "btn-primary" : ""}`} onClick={() => setEdit((e) => !e)}>
@@ -147,10 +222,22 @@ export function WeldTable({
               <th style={{ width: 26 }}></th>
               <th className="sortable" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>Weld # {sortDir === "asc" ? "▲" : "▼"}</th>
               {showWorkOrder && <th>Work Order</th>}
-              <th>Drawing</th><th title="Assigned NDE coverage — the calculated Table 4 requirement is in the row detail">NDE %</th><th>Joint Type</th><th className="num" title="Nominal pipe size">Size</th>
-              <th>Schedule</th><th>Material</th><th className="num" title="Wall thickness (in.)">Thk</th><th className="num" title="Diameter inches">Weld Inches</th>
-              <th>Welder</th><th>Date Welded</th><th title="NDE methods / passes recorded">Method</th><th>NDE Result</th>
-              <th>PWHT</th><th title="Brinell hardness check">Brinell</th><th>Pressure Test</th><th>Status</th>
+              {showCol("drawing") && <th>Drawing</th>}
+              {showCol("nde_percent") && <th title="Assigned NDE coverage — the calculated Table 4 requirement is in the row detail">NDE %</th>}
+              {showCol("joint") && <th>Joint Type</th>}
+              {showCol("size") && <th className="num" title="Nominal pipe size">Size</th>}
+              {showCol("schedule") && <th>Schedule</th>}
+              {showCol("material") && <th>Material</th>}
+              {showCol("thk") && <th className="num" title="Wall thickness (in.)">Thk</th>}
+              {showCol("weld_inches") && <th className="num" title="Diameter inches">Weld Inches</th>}
+              {showCol("welder") && <th>Welder</th>}
+              {showCol("date") && <th>Date Welded</th>}
+              {showCol("method") && <th title="NDE methods / passes recorded">Method</th>}
+              {showCol("result") && <th>NDE Result</th>}
+              {showCol("pwht") && <th>PWHT</th>}
+              {showCol("brinell") && <th title="Brinell hardness check">Brinell</th>}
+              {showCol("pressure") && <th>Pressure Test</th>}
+              {showCol("status") && <th>Status</th>}
             </tr>
           </thead>
           <tbody>
@@ -176,48 +263,57 @@ export function WeldTable({
                         {w.work_order ? <a className="wo-link">{w.work_order}</a> : "—"}
                       </td>
                     )}
-                    <td>{txt(w.drawing_no)}</td>
-                    <td>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        {edit ? <InlineSelect value={w.nde_percent} options={opt("nde_percent")} allowCustom onCommit={(v) => save(w, { nde_percent: v })} /> : txt(w.nde_percent)}
-                        {warn && <span className="spec-warn" title={warn}>⚠</span>}
-                      </span>
-                    </td>
-                    <td>{edit ? <InlineSelect value={w.joint_type} options={opt("joint_type")} onCommit={(v) => save(w, { joint_type: v })} /> : txt(w.joint_type)}</td>
-                    <td className="num">{edit ? <InlineSelect value={w.size?.toString()} options={sizeStr} allowCustom onCommit={(v) => save(w, { size: v == null ? null : Number(v) })} /> : txt(w.size)}</td>
-                    <td>{edit ? <InlineSelect value={w.schedule} options={opt("schedule")} onCommit={(v) => save(w, { schedule: v })} /> : txt(w.schedule)}</td>
-                    <td>{edit ? <InlineSelect value={w.material} options={opt("material")} allowCustom onCommit={(v) => save(w, { material: v })} /> : txt(w.material)}</td>
-                    <td className="num" title="auto from pipe table">{txt(w.thickness)}</td>
-                    <td className="num" title="diameter inches = NPS">{txt(w.weld_inches ?? w.size)}</td>
-                    <td>{edit ? <InlineSelect value={w.stamp_number} options={stamps} onCommit={(v) => save(w, { stamp_number: v })} /> : txt(w.stamp_number)}</td>
-                    <td>{edit ? <InlineText value={w.date_welded} date onCommit={(v) => save(w, { date_welded: v })} /> : txt(w.date_welded)}</td>
-                    <td>{edit ? <InlineMulti value={w.nde_types} options={opt("nde_type")} onCommit={(v) => save(w, { nde_types: v })} /> : <InlineMulti readOnly value={w.nde_types} options={[]} onCommit={() => {}} />}</td>
-                    <td>
-                      {edit ? (
-                        <div className="stack">
-                          <Segmented value={rt} options={[{ value: "", label: "—" }, { value: "Accepted", label: "Accept", cls: "ok" }, { value: "Rejected", label: "Reject", cls: "bad" }]} onChange={(v) => save(w, { nde_result: v || null })} />
-                          <InlineText value={w.nde_date} date onCommit={(v) => save(w, { nde_date: v })} />
-                        </div>
-                      ) : rt ? <span className={`badge ${rt === "Rejected" ? "badge-red" : "badge-green"}`}>{rt}{w.nde_date ? ` · ${w.nde_date}` : ""}</span> : <span className="faint">—</span>}
-                    </td>
-                    <td>{edit ? <InlineText value={w.pwht_temp} placeholder="N/A" onCommit={(v) => save(w, { pwht_temp: v })} /> : (w.pwht_temp ? String(w.pwht_temp) : <span className="faint">N/A</span>)}</td>
-                    <td>
-                      {edit ? (
-                        <div className="stack">
-                          <Segmented value={w.brinnel_complete === "Y" ? "Y" : ""} options={[{ value: "", label: "No" }, { value: "Y", label: "Yes", cls: "ok" }]} onChange={(v) => save(w, { brinnel_complete: v || null })} />
-                          {w.brinnel_complete === "Y" && <InlineText value={w.brinnel_value} placeholder="value" onCommit={(v) => save(w, { brinnel_value: v })} />}
-                        </div>
-                      ) : w.brinnel_complete === "Y" ? `Yes${w.brinnel_value ? ` (${w.brinnel_value})` : ""}` : <span className="faint">No</span>}
-                    </td>
-                    <td>
-                      {edit ? (
-                        <div className="stack">
-                          <InlineText value={w.hydro_pressure} placeholder="pressure" onCommit={(v) => save(w, { hydro_pressure: v })} />
-                          <InlineText value={w.hydro_time_held} placeholder="time held" onCommit={(v) => save(w, { hydro_time_held: v })} />
-                        </div>
-                      ) : w.hydro_pressure ? `${w.hydro_pressure}${w.hydro_time_held ? ` · ${w.hydro_time_held}` : ""}` : <span className="faint">N/A</span>}
-                    </td>
-                    <td>{edit ? <InlineSelect value={w.status} options={opt("status")} onCommit={(v) => save(w, { status: v ?? "" })} render={(s) => <StatusBadge status={s} />} /> : <StatusBadge status={w.status} />}</td>
+                    {showCol("drawing") && <td>{txt(w.drawing_no)}</td>}
+                    {showCol("nde_percent") && (
+                      <td>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          {edit ? <InlineSelect value={w.nde_percent} options={opt("nde_percent")} allowCustom onCommit={(v) => save(w, { nde_percent: v })} />
+                            : warn ? <span className="spec-bad">{w.nde_percent ?? "—"}</span> : txt(w.nde_percent)}
+                          {warn && <span className="spec-warn" title={warn}>⚠</span>}
+                        </span>
+                      </td>
+                    )}
+                    {showCol("joint") && <td>{edit ? <InlineSelect value={w.joint_type} options={opt("joint_type")} onCommit={(v) => save(w, { joint_type: v })} /> : txt(w.joint_type)}</td>}
+                    {showCol("size") && <td className="num">{edit ? <InlineSelect value={w.size?.toString()} options={sizeStr} allowCustom onCommit={(v) => save(w, { size: v == null ? null : Number(v) })} /> : txt(w.size)}</td>}
+                    {showCol("schedule") && <td>{edit ? <InlineSelect value={w.schedule} options={opt("schedule")} onCommit={(v) => save(w, { schedule: v })} /> : txt(w.schedule)}</td>}
+                    {showCol("material") && <td>{edit ? <InlineSelect value={w.material} options={opt("material")} allowCustom onCommit={(v) => save(w, { material: v })} /> : txt(w.material)}</td>}
+                    {showCol("thk") && <td className="num" title="auto from pipe table">{txt(w.thickness)}</td>}
+                    {showCol("weld_inches") && <td className="num" title="diameter inches = NPS">{txt(w.weld_inches ?? w.size)}</td>}
+                    {showCol("welder") && <td>{edit ? <InlineSelect value={w.stamp_number} options={stamps} onCommit={(v) => save(w, { stamp_number: v })} /> : txt(w.stamp_number)}</td>}
+                    {showCol("date") && <td>{edit ? <InlineText value={w.date_welded} date onCommit={(v) => save(w, { date_welded: v })} /> : txt(w.date_welded)}</td>}
+                    {showCol("method") && <td>{edit ? <InlineMulti value={w.nde_types} options={opt("nde_type")} onCommit={(v) => save(w, { nde_types: v })} /> : <InlineMulti readOnly value={w.nde_types} options={[]} onCommit={() => {}} />}</td>}
+                    {showCol("result") && (
+                      <td>
+                        {edit ? (
+                          <div className="stack">
+                            <Segmented value={rt} options={[{ value: "", label: "—" }, { value: "Accepted", label: "Accept", cls: "ok" }, { value: "Rejected", label: "Reject", cls: "bad" }]} onChange={(v) => save(w, { nde_result: v || null })} />
+                            <InlineText value={w.nde_date} date onCommit={(v) => save(w, { nde_date: v })} />
+                          </div>
+                        ) : rt ? <span className={`badge ${rt === "Rejected" ? "badge-red" : "badge-green"}`}>{rt}{w.nde_date ? ` · ${w.nde_date}` : ""}</span> : <span className="faint">—</span>}
+                      </td>
+                    )}
+                    {showCol("pwht") && <td>{edit ? <InlineText value={w.pwht_temp} placeholder="N/A" onCommit={(v) => save(w, { pwht_temp: v })} /> : (w.pwht_temp ? String(w.pwht_temp) : <span className="faint">N/A</span>)}</td>}
+                    {showCol("brinell") && (
+                      <td>
+                        {edit ? (
+                          <div className="stack">
+                            <Segmented value={w.brinnel_complete === "Y" ? "Y" : ""} options={[{ value: "", label: "No" }, { value: "Y", label: "Yes", cls: "ok" }]} onChange={(v) => save(w, { brinnel_complete: v || null })} />
+                            {w.brinnel_complete === "Y" && <InlineText value={w.brinnel_value} placeholder="value" onCommit={(v) => save(w, { brinnel_value: v })} />}
+                          </div>
+                        ) : w.brinnel_complete === "Y" ? `Yes${w.brinnel_value ? ` (${w.brinnel_value})` : ""}` : <span className="faint">No</span>}
+                      </td>
+                    )}
+                    {showCol("pressure") && (
+                      <td>
+                        {edit ? (
+                          <div className="stack">
+                            <InlineText value={w.hydro_pressure} placeholder="pressure" onCommit={(v) => save(w, { hydro_pressure: v })} />
+                            <InlineText value={w.hydro_time_held} placeholder="time held" onCommit={(v) => save(w, { hydro_time_held: v })} />
+                          </div>
+                        ) : w.hydro_pressure ? `${w.hydro_pressure}${w.hydro_time_held ? ` · ${w.hydro_time_held}` : ""}` : <span className="faint">N/A</span>}
+                      </td>
+                    )}
+                    {showCol("status") && <td>{edit ? <InlineSelect value={w.status} options={opt("status")} onCommit={(v) => save(w, { status: v ?? "" })} render={(s) => <StatusBadge status={s} />} /> : <StatusBadge status={w.status} />}</td>}
                   </tr>
                   {isOpen && (
                     <tr className="wt-detail">
@@ -235,6 +331,27 @@ export function WeldTable({
           </tbody>
         </table>
       </div>
+      {confirmAct && (confirmAct.kind === "void" ? (
+        <ConfirmDialog
+          title={`Void weld ${confirmAct.w.weld_number ?? confirmAct.w.id}`}
+          body="The weld stays on the record and in history — it is excluded from every count and can be restored later."
+          confirmLabel="Void weld"
+          danger
+          requireReason
+          reasonLabel="Reason for voiding"
+          onConfirm={(reason) => runConfirm(reason)}
+          onClose={() => setConfirmAct(null)}
+        />
+      ) : (
+        <ConfirmDialog
+          title={`Permanently delete weld ${confirmAct.w.weld_number ?? confirmAct.w.id}`}
+          body="This destroys the record and its history and cannot be undone. Prefer Void, which keeps the record."
+          confirmLabel="Delete permanently"
+          danger
+          onConfirm={() => runConfirm()}
+          onClose={() => setConfirmAct(null)}
+        />
+      ))}
     </div>
   );
 }
