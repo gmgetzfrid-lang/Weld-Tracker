@@ -890,7 +890,9 @@ function GuidedPopup({
       groove_type: str("groove_type"), process: str("process"), schedule: str("schedule"),
       material: str("material"), line_spec: str("line_spec"),
       nde_percent: w.nde_percent ?? "", nde_types: w.nde_types ?? "",
-      nde_result: w.nde_result ?? "", nde_date: w.nde_date ?? "", date_welded: str("date_welded"),
+      nde_result: w.nde_result ?? "", nde_date: w.nde_date ?? "",
+      nde_override_reason: w.nde_override_reason ?? "", // per-weld, never carried
+      date_welded: str("date_welded"),
       shop_or_field: str("shop_or_field"), material_group: str("material_group"),
       flange_class: str("flange_class"), service_category: str("service_category"),
       b31_code: str("b31_code"), aes_service: bool("aes_service"), new_to_existing: bool("new_to_existing"),
@@ -962,8 +964,15 @@ function GuidedPopup({
   // Once the drivers are in, the requirement must resolve before the weld can be
   // saved — a weld whose required NDE % can't be determined can't be signed off.
   const reqBlocked = driversReady && !reqResolved;
-  const canSave = missing.length === 0 && !reqBlocked;
-  const save = () => { if (canSave) onSaveNext(changes()); };
+  // Coverage below the Table 4 requirement is a documented deviation, not a
+  // silent one: the walk won't advance until the reason is on record.
+  const overrideMissing = !!mismatch && !f.nde_override_reason.trim();
+  const canSave = missing.length === 0 && !reqBlocked && !overrideMissing;
+  const save = () => {
+    if (!canSave) return;
+    // The reason lives only while the deviation does — meeting spec clears it.
+    onSaveNext({ ...changes(), nde_override_reason: mismatch ? f.nde_override_reason.trim() || null : null });
+  };
 
   // Which fields were seeded from the previous weld (own value empty, sticky
   // filled) — disclosed so a carried value is never mistaken for entered data.
@@ -1042,7 +1051,7 @@ function GuidedPopup({
           </div>
           <div className="guided-req-note">{req.note}</div>
           {req.supplemental.map((s, i) => <div key={i} className="guided-req-sup">＋ {s}</div>)}
-          {mismatch && <div className="guided-req-mismatch">Entered {f.nde_percent} is below the required {req.required_percent}%</div>}
+          {mismatch && <div className="guided-req-mismatch">Entered {f.nde_percent} is below the required {req.required_percent}% — document the reason below</div>}
         </div>
       ) : (
         <div className="guided-req guided-req-idle">
@@ -1106,6 +1115,17 @@ function GuidedPopup({
           <select value={f.nde_result} onChange={(e) => setF({ ...f, nde_result: e.target.value })}>
             {NDE_RESULTS.map((o) => <option key={o} value={o}>{o || "—"}</option>)}
           </select></div>
+        {mismatch && (
+          <div className={`field span2 nde-field ${cls(f.nde_override_reason)}`}>
+            <label>Below-spec reason{rq}</label>
+            <input
+              value={f.nde_override_reason}
+              onChange={(e) => setF({ ...f, nde_override_reason: e.target.value })}
+              placeholder="Engineering disposition, inaccessible joint…"
+              title="Why this weld's NDE coverage deviates from the Table 4 requirement — kept on the record and shown in Exceptions"
+            />
+          </div>
+        )}
         <div className="field span2 nde-field"><label>NDE methods / passes</label>
           <InlineMulti value={f.nde_types} options={NDE_TYPE_OPTIONS} onCommit={(v) => setF({ ...f, nde_types: v ?? "" })} /></div>
         <div className="field nde-field"><label>NDE date</label>
@@ -1150,12 +1170,19 @@ function GuidedPopup({
             {req ? "NDE requirement unresolved" : "Determining…"}
           </span>
         )}
+        {missing.length === 0 && !reqBlocked && overrideMissing && (
+          <span className="guided-req-missing" title="NDE % is below the Table 4 requirement — enter the below-spec reason to save">
+            Document below-spec reason
+          </span>
+        )}
         <button className="btn btn-accent btn-sm" onClick={save} disabled={!canSave}
           title={
             missing.length > 0
               ? `Fill out all required fields: ${missing.map((m) => m.label).join(", ")}`
               : reqBlocked
               ? `Resolve the NDE requirement first: ${req ? req.blockers.join(", ") : "computing…"}`
+              : overrideMissing
+              ? "NDE % is below the requirement — document the deviation reason first"
               : ""
           }>
           {index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}

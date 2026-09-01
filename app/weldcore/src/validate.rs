@@ -88,14 +88,27 @@ pub fn validate_weld(w: &Weld) -> Vec<Finding> {
                 ));
             }
             Some(pct) if pct < req.required_percent => {
-                f.push(Finding::new(
-                    Severity::Warning,
-                    "nde.below_spec",
-                    format!(
-                        "NDE {}% is below the required {}%",
-                        pct, req.required_percent
-                    ),
-                ));
+                // A documented override (EP 5-5-1 deviations do happen — an
+                // engineering disposition, an inaccessible joint) stays visible
+                // but drops to Advisory. Undocumented below-spec stays a Warning.
+                match w.nde_override_reason.as_deref().map(str::trim) {
+                    Some(reason) if !reason.is_empty() => f.push(Finding::new(
+                        Severity::Advisory,
+                        "nde.below_spec",
+                        format!(
+                            "NDE {}% below the required {}% — documented: {}",
+                            pct, req.required_percent, reason
+                        ),
+                    )),
+                    _ => f.push(Finding::new(
+                        Severity::Warning,
+                        "nde.below_spec",
+                        format!(
+                            "NDE {}% is below the required {}% — document the deviation reason",
+                            pct, req.required_percent
+                        ),
+                    )),
+                }
             }
             _ => {}
         }
@@ -219,6 +232,22 @@ mod tests {
         let mut w = complete_weld();
         w.aes_service = true; // bumps CS Class-300 to 10% required
         w.nde_percent = Some("5%".into());
+        let f = validate_weld(&w);
+        assert!(f.iter().any(|x| x.code == "nde.below_spec" && x.severity == Severity::Warning));
+    }
+
+    #[test]
+    fn below_spec_with_documented_override_is_advisory() {
+        let mut w = complete_weld();
+        w.aes_service = true;
+        w.nde_percent = Some("5%".into());
+        w.nde_override_reason = Some("Engineering disposition ED-114: joint inaccessible".into());
+        let f = validate_weld(&w);
+        let hit = f.iter().find(|x| x.code == "nde.below_spec").expect("finding present");
+        assert_eq!(hit.severity, Severity::Advisory);
+        assert!(hit.message.contains("ED-114"));
+        // Whitespace-only reasons don't count as documentation.
+        w.nde_override_reason = Some("   ".into());
         let f = validate_weld(&w);
         assert!(f.iter().any(|x| x.code == "nde.below_spec" && x.severity == Severity::Warning));
     }
