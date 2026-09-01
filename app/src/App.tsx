@@ -12,15 +12,7 @@ import { WeldLog } from "./pages/WeldLog";
 import { NewEntryChooser } from "./components/NewEntryChooser";
 import { CommandPalette } from "./components/CommandPalette";
 import { Roster } from "./pages/Roster";
-import { Performance } from "./pages/Performance";
-import { Statistics } from "./pages/Statistics";
-import { WelderStats } from "./pages/WelderStats";
-import { WelderReport } from "./pages/WelderReport";
-import { Monthly } from "./pages/Monthly";
-import { Daily } from "./pages/Daily";
-import { JobReport } from "./pages/JobReport";
-import { ClientReport } from "./pages/ClientReport";
-import { QmReport } from "./pages/QmReport";
+import { Reports, type ReportTab } from "./pages/Reports";
 import { PipeTable } from "./pages/PipeTable";
 import { Legend } from "./pages/Legend";
 import { Instructions } from "./pages/Instructions";
@@ -33,6 +25,7 @@ type PageKey =
   | "weldlog"
   | "workorders"
   | "roster"
+  | "reports"
   | "performance"
   | "statistics"
   | "welderstats"
@@ -58,25 +51,17 @@ interface NavDef {
 }
 
 const NAV: NavDef[] = [
-  { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "Your at-a-glance totals — weld count, RT coverage and reject rate." },
-  { key: "exceptions", label: "Exceptions", icon: "⚠", group: "Overview", desc: "Every weld the validation engine flags — unresolved NDE, below-spec coverage, rejects awaiting repair, missing heat-treat. Clear the errors before closeout." },
-  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The hub: log new welds from an isometric, search, and open a work order's records. Start here." },
-  { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory." },
+  { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "What needs attention now, plus your at-a-glance totals." },
+  { key: "exceptions", label: "Exceptions", icon: "⚠", group: "Overview", desc: "Every weld the validation engine flags — unresolved NDE, below-spec coverage, rejects awaiting repair, missing heat-treat." },
+  { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory. Start here." },
+  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The searchable ledger of every weld across all work orders." },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
-  { key: "performance", label: "Performance Report", icon: "📄", group: "Reports", desc: "The distribution report: each welder's performance and proof they stayed at or above their assigned NDE spec, for a month, year, or all time. Generate a PDF for management, supervisors or the welders." },
-  { key: "statistics", label: "NDE Statistics", icon: "📊", group: "Reports", desc: "Per-welder NDE compliance (5/10/20/100% + API 570), performance and reject-rate analysis. Catch anyone falling below spec." },
-  { key: "welderstats", label: "Welder Statistics", icon: "％", group: "Reports", desc: "Per-welder counts and reject rates by NDE examination level." },
-  { key: "welderreport", label: "Welder Report", icon: "◔", group: "Reports", desc: "A single welder's full breakdown by joint type." },
-  { key: "monthly", label: "Monthly Report", icon: "▦", group: "Reports", desc: "Weld counts, RT and rejects across the twelve months of a year." },
-  { key: "daily", label: "Daily Weld Count", icon: "☀", group: "Reports", desc: "How many welds were made and RT'd on a given day." },
-  { key: "job", label: "Job Report", icon: "⚙", group: "Reports", desc: "Totals and examination completion for one work order." },
-  { key: "client", label: "Client / TSA Report", icon: "✦", group: "Reports", desc: "The monthly per-welder summary for the client." },
-  { key: "qm", label: "QM Summary", icon: "✓", group: "Reports", desc: "Quality-manager roll-up of acceptance and rejection by welder." },
+  { key: "reports", label: "Reports", icon: "📊", group: "Reports", desc: "Performance, NDE compliance, welder statistics, monthly/daily counts, job, client/TSA and QM summaries." },
   { key: "pipe", label: "Pipe Table", icon: "◎", group: "Reference", desc: "Wall thickness by nominal size and schedule — drives auto-fill." },
   { key: "legend", label: "Criteria Legend", icon: "✎", group: "Reference", desc: "What each line-spec criteria category means." },
   { key: "instructions", label: "Instructions", icon: "ℹ", group: "Reference", desc: "How the app works: repair procedure, statuses and key terms." },
   { key: "users", label: "Users", icon: "⚷", group: "Administration", admin: true, desc: "Create login profiles and set who can view or edit." },
-  { key: "settings", label: "Settings", icon: "⚑", group: "Administration", admin: true, desc: "Branding, dropdown lists and your own password." },
+  { key: "settings", label: "Settings", icon: "⚑", group: "Administration", admin: true, desc: "Branding, dropdown lists, backups and support." },
 ];
 
 /** Where the Work Orders page should open when navigated to from elsewhere. */
@@ -95,6 +80,22 @@ export function App() {
   const [woIntent, setWoIntent] = useState<WoIntent>(null);
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [dbShared, setDbShared] = useState<boolean | null>(null);
+  const [reportTab, setReportTab] = useState<ReportTab>("performance");
+  const [railPinned, setRailPinned] = useState<boolean>(() => {
+    try { return localStorage.getItem("rail-pinned") === "1"; } catch { return false; }
+  });
+  const togglePin = () => setRailPinned((v) => {
+    const next = !v;
+    try { localStorage.setItem("rail-pinned", next ? "1" : "0"); } catch { /* per-user convenience only */ }
+    return next;
+  });
+  const REPORT_KEYS: PageKey[] = ["performance", "statistics", "welderstats", "welderreport", "monthly", "daily", "job", "client", "qm"];
+  // Deep links from other pages may still target a specific report — fold them
+  // into the Reports hub with that tab active.
+  const navigate = (p: PageKey) => {
+    if (REPORT_KEYS.includes(p)) { setReportTab(p as ReportTab); setPage("reports"); }
+    else setPage(p);
+  };
   const openNewEntry = () => setEntryOpen(true);
   const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
 
@@ -142,9 +143,9 @@ export function App() {
     .toUpperCase();
 
   return (
-    <div className="app">
+    <div className={`app ${railPinned ? "rail-pinned" : ""}`}>
       <div className="rail-slot">
-        <aside className="rail" onMouseLeave={() => setProfileOpen(false)}>
+        <aside className={`rail ${railPinned ? "pinned" : ""}`} onMouseLeave={() => setProfileOpen(false)}>
           <div className="rail-brand" title="SENTRIX — Assurance Console">
             <SentrixMark size={30} />
             <div className="rail-brand-text">
@@ -163,7 +164,7 @@ export function App() {
                     <button
                       key={n.key}
                       className={`rail-item ${page === n.key ? "active" : ""}`}
-                      onClick={() => setPage(n.key)}
+                      onClick={() => navigate(n.key)}
                       title={n.desc}
                     >
                       <span className="rail-ico">{n.icon}</span>
@@ -175,6 +176,11 @@ export function App() {
             })}
           </nav>
           <div className="rail-foot">
+            <button className="rail-item rail-pin" onClick={togglePin}
+              title={railPinned ? "Unpin the menu (expand on hover)" : "Keep the menu open"}>
+              <span className="rail-ico">{railPinned ? "⇤" : "⇥"}</span>
+              <span className="rail-label">{railPinned ? "Unpin menu" : "Pin menu open"}</span>
+            </button>
             <button className="rail-user" onClick={() => setProfileOpen((v) => !v)} title={user.display_name || user.username}>
               <span className="rail-avatar">{initials}</span>
               <span className="rail-label rail-user-name">{user.display_name || user.username}</span>
@@ -215,7 +221,8 @@ export function App() {
         <div className="content">
           <PageView
             page={page}
-            onNavigate={setPage}
+            reportTab={reportTab}
+            onNavigate={navigate}
             onNewEntry={openNewEntry}
             onOpenWorkOrder={openWorkOrder}
             woIntent={woIntent}
@@ -244,6 +251,7 @@ export function App() {
 
 function PageView({
   page,
+  reportTab,
   onNavigate,
   onNewEntry,
   onOpenWorkOrder,
@@ -251,6 +259,7 @@ function PageView({
   clearWoIntent,
 }: {
   page: PageKey;
+  reportTab: ReportTab;
   onNavigate: (p: PageKey) => void;
   onNewEntry: () => void;
   onOpenWorkOrder: (wo: string) => void;
@@ -274,24 +283,8 @@ function PageView({
       return <WeldLog onNewEntry={onNewEntry} onOpenWorkOrder={onOpenWorkOrder} />;
     case "roster":
       return <Roster />;
-    case "performance":
-      return <Performance />;
-    case "statistics":
-      return <Statistics />;
-    case "welderstats":
-      return <WelderStats />;
-    case "welderreport":
-      return <WelderReport />;
-    case "monthly":
-      return <Monthly />;
-    case "daily":
-      return <Daily />;
-    case "job":
-      return <JobReport />;
-    case "client":
-      return <ClientReport />;
-    case "qm":
-      return <QmReport />;
+    case "reports":
+      return <Reports initialTab={reportTab} />;
     case "pipe":
       return <PipeTable />;
     case "legend":
