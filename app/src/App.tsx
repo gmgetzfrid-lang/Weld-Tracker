@@ -67,7 +67,7 @@ const NAV: NavDef[] = [
 /** Where the Work Orders page should open when navigated to from elsewhere. */
 export type WoIntent =
   | { kind: "record"; wo: string }
-  | { kind: "wizard" }
+  | { kind: "wizard"; wo?: string }
   | null;
 
 export function App() {
@@ -232,7 +232,7 @@ export function App() {
         {entryOpen && (
           <NewEntryChooser
             onClose={() => setEntryOpen(false)}
-            onNew={() => { setEntryOpen(false); setWoIntent({ kind: "wizard" }); setPage("workorders"); }}
+            onNew={(wo) => { setEntryOpen(false); setWoIntent({ kind: "wizard", wo }); setPage("workorders"); }}
             onExisting={(wo) => { setEntryOpen(false); setWoIntent({ kind: "record", wo }); setPage("workorders"); }}
           />
         )}

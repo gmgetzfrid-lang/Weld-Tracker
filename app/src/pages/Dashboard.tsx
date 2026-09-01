@@ -40,7 +40,7 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
       done: drawingCount > 0,
       title: "Start a Weld Entry",
       body: "Hit “New Weld Entry” — create a work order (or add to one), attach the drawing, drop a bubble on each joint, then Fill attributes to walk each weld. Everything is scoped to the work order.",
-      cta: "New Weld Entry",
+      cta: "Add Welds",
       go: "weldlog",
       entry: true,
     },
@@ -84,7 +84,7 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
       {!fresh && (
         <div className="quick-row">
           <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Quick actions:</span>
-          <button className="btn btn-accent btn-sm" onClick={onNewEntry}>+ New Weld Entry</button>
+          <button className="btn btn-accent btn-sm" onClick={onNewEntry}>+ Add Welds</button>
           <button className="btn btn-sm" onClick={() => onNavigate("workorders")}>🗂️ Work Orders</button>
           <button className="btn btn-sm" onClick={() => onNavigate("roster")}>☺ Welder Roster</button>
         </div>

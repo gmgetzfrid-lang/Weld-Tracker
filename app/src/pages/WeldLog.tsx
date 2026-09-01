@@ -4,14 +4,7 @@ import { useAuth } from "../auth";
 import type { Lookups, Weld, WeldFilter, Welder } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, useToast } from "../components/ui";
 import { WeldTable } from "../components/WeldTable";
-
-function blankWeld(): Weld {
-  return {
-    id: 0, status: "Required",
-    spec_5: false, spec_10: false, spec_20: false, spec_25: false, spec_50: false, spec_100: false,
-    count_omission: false,
-  };
-}
+import { SingleWeldDialog } from "../components/WeldDialogs";
 
 /** The Weld Log is the searchable ledger of every weld. New entries and a work
  * order's records live in the Work Orders hub — this page routes there. */
@@ -63,13 +56,7 @@ export function WeldLog({
     return () => clearTimeout(t);
   }, [load]);
 
-  const addQuick = async () => {
-    try {
-      await api.createWeld(blankWeld());
-      toast.push("ok", "Blank weld added — click “Edit table” to fill it in");
-      load();
-    } catch (e) { toast.push("err", errMsg(e)); }
-  };
+  const [singleOpen, setSingleOpen] = useState(false);
 
   const exportCsv = () => {
     const header = ["Weld #", "Work Order", "Drawing", "NDE %", "Joint Type", "Size", "Sched", "Material", "Thk", "Weld Inches", "Welder", "Date Welded", "NDE Methods", "NDE Result", "NDE Date", "PWHT", "Brinell", "Pressure", "Status"];
@@ -101,8 +88,8 @@ export function WeldLog({
               click a work order to open its records.
             </div>
           </div>
-          <button className="btn btn-accent" onClick={onNewEntry}>＋ New Weld Entry</button>
-          <button className="btn" onClick={addQuick}>Quick single weld</button>
+          <button className="btn btn-accent" onClick={onNewEntry}>＋ Add Welds</button>
+          <button className="btn" onClick={() => setSingleOpen(true)}>Single weld</button>
         </div>
       )}
 
@@ -141,6 +128,15 @@ export function WeldLog({
           onChanged={load}
           showWorkOrder
           onOpenWorkOrder={onOpenWorkOrder}
+        />
+      )}
+      {singleOpen && (
+        <SingleWeldDialog
+          welders={welders}
+          lookups={lookups}
+          sizes={sizes}
+          onClose={() => setSingleOpen(false)}
+          onCreated={() => { setSingleOpen(false); load(); }}
         />
       )}
     </div>

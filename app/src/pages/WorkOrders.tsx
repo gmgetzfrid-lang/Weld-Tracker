@@ -38,7 +38,7 @@ export function WorkOrders({
   // clicking a work order in the Weld Log), then clear the one-shot intent.
   useEffect(() => {
     if (!initial) return;
-    if (initial.kind === "wizard") setView({ kind: "wizard", drawingId: null });
+    if (initial.kind === "wizard") setView({ kind: "wizard", drawingId: null, wo: initial.wo });
     else if (initial.kind === "record") setView({ kind: "record", wo: initial.wo });
     onConsumedInitial?.();
   }, [initial, onConsumedInitial]);
@@ -103,7 +103,7 @@ export function WorkOrders({
         <div className="spacer" />
         {can("editor") && (
           <button className="btn btn-accent" onClick={onNewEntry}>
-            + New Weld Entry
+            + Add Welds
           </button>
         )}
       </div>
@@ -122,7 +122,7 @@ export function WorkOrders({
           </p>
           {can("editor") && (
             <button className="btn btn-accent" onClick={() => setView({ kind: "wizard", drawingId: null })}>
-              + New Weld Entry
+              + Add Welds
             </button>
           )}
         </div>

@@ -913,3 +913,34 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, label.btn:focus
 .wt th:first-child, .wt td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 2; }
 .wt th:nth-child(2), .wt td:nth-child(2) { position: sticky; left: 26px; background: var(--surface); z-index: 2; box-shadow: 4px 0 6px -4px rgba(15,23,42,.12); }
 .wt thead th:first-child, .wt thead th:nth-child(2) { z-index: 4; }
+
+
+/* Work-order tabs + overflow menu */
+.wo-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin: 4px 0 16px; }
+.wo-tab { border: 0; background: transparent; color: var(--text-muted); font-size: 13.5px; font-weight: 600; padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.wo-tab:hover { color: var(--text); }
+.wo-tab.active { color: var(--navy); border-bottom-color: var(--navy); }
+.wo-more { position: relative; }
+.wo-more-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 6px; min-width: 220px; display: flex; flex-direction: column; }
+.wo-more-menu button { border: 0; background: transparent; text-align: left; padding: 8px 12px; border-radius: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+.wo-more-menu button:hover { background: var(--surface-2); }
+.wo-more-menu button.danger { color: var(--danger); }
+
+/* Batch NDE recorder */
+.nde-batch-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; margin-top: 4px; }
+.nde-batch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--border); }
+.nde-batch-row:last-child { border-bottom: 0; }
+.nde-batch-row.picked { background: #f2f7ff; }
+.nde-batch-pick { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; flex: 1; }
+.nde-batch-result { display: flex; gap: 4px; }
+.seg-mini { border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+.seg-mini.ok.on { background: var(--st-clear); border-color: var(--st-clear); color: #fff; }
+.seg-mini.bad.on { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* Smart Add-Welds chooser */
+.wo-picker-list { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow-y: auto; margin-top: 10px; }
+.wo-picker-row { display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer; text-align: left; }
+.wo-picker-row:hover { border-color: var(--blue); }
+.wo-picker-row b { font-size: 14px; }
+.wo-picker-row .muted { font-size: 12px; }
+.wo-picker-create { border-style: dashed; color: var(--blue); font-weight: 600; }
