@@ -1022,7 +1022,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, label.btn:focus
 .col-slot { position: relative; flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
 .col-slot:hover .col-bar { filter: brightness(1.12); }
 .col-bar { width: 70%; max-width: 24px; background: var(--blue); border-radius: 4px 4px 0 0; transition: height .25s ease; }
-.col-cap { position: absolute; bottom: 100%; margin-bottom: 2px; font-size: 10.5px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.col-cap { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 2px; font-size: 10.5px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .col-labels { display: flex; gap: 6px; padding: 4px 2px 0; margin-left: 38px; }
 .col-labels span { flex: 1 1 0; text-align: center; font-size: 10.5px; color: var(--text-faint); }
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
