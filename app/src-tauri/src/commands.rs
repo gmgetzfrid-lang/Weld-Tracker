@@ -11,8 +11,19 @@ use weldcore::{
     WorkOrderSummary,
 };
 
+/// The database opens on a background thread (integrity check, migrations,
+/// pre-migration backup and hash backfill can take seconds — longer when an
+/// antivirus scans every write or the file lives on a network share). The
+/// window must never freeze waiting on it, and a failed open must surface on
+/// screen instead of killing the process.
+pub enum BootState {
+    Starting,
+    Ready(std::sync::Arc<Store>),
+    Failed(String),
+}
+
 pub struct AppState {
-    pub store: Store,
+    pub boot: std::sync::RwLock<BootState>,
     pub session: Mutex<Option<User>>,
     pub db_path: String,
     pub db_shared: bool,
@@ -20,13 +31,29 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(store: Store, db_path: String, db_shared: bool, log_dir: String) -> Self {
+    pub fn new(db_path: String, db_shared: bool, log_dir: String) -> Self {
         AppState {
-            store,
+            boot: std::sync::RwLock::new(BootState::Starting),
             session: Mutex::new(None),
             db_path,
             db_shared,
             log_dir,
+        }
+    }
+    pub fn set_ready(&self, store: Store) {
+        *self.boot.write().unwrap() = BootState::Ready(std::sync::Arc::new(store));
+    }
+    pub fn set_failed(&self, err: String) {
+        *self.boot.write().unwrap() = BootState::Failed(err);
+    }
+    /// The store, once the background open finished. Commands issued during
+    /// the brief startup window get a clean retryable error (the frontend
+    /// holds a splash screen until boot_status says ready).
+    fn store(&self) -> Result<std::sync::Arc<Store>, String> {
+        match &*self.boot.read().unwrap() {
+            BootState::Ready(s) => Ok(s.clone()),
+            BootState::Starting => Err("the database is still starting".into()),
+            BootState::Failed(e) => Err(format!("database failed to open: {e}")),
         }
     }
     fn current(&self) -> Option<User> {
@@ -47,7 +74,7 @@ impl AppState {
     /// One indexed single-row SELECT — negligible next to the command's work.
     fn require_login(&self) -> Result<User, String> {
         let cached = self.session_user()?;
-        let u = match self.store.get_user(cached.id) {
+        let u = match self.store()?.get_user(cached.id) {
             Ok(fresh) => {
                 *self.session.lock().unwrap() = Some(fresh.clone());
                 fresh
@@ -96,7 +123,7 @@ fn e<T>(r: weldcore::Result<T>) -> R<T> {
 
 #[tauri::command]
 pub fn login(state: State<AppState>, username: String, password: String) -> R<User> {
-    let user = e(state.store.login(&username, &password))?;
+    let user = e(state.store()?.login(&username, &password))?;
     *state.session.lock().unwrap() = Some(user.clone());
     Ok(user)
 }
@@ -118,6 +145,18 @@ pub struct DbInfo {
     pub shared: bool,
 }
 
+/// Startup gate for the frontend splash: "starting" while the background
+/// open runs, "ready" once commands can serve, "failed: …" if the database
+/// could not be opened (shown on screen instead of a dead process).
+#[tauri::command]
+pub fn boot_status(state: State<AppState>) -> R<String> {
+    Ok(match &*state.boot.read().unwrap() {
+        BootState::Starting => "starting".into(),
+        BootState::Ready(_) => "ready".into(),
+        BootState::Failed(e) => format!("failed: {e}"),
+    })
+}
+
 /// Where the database lives and whether it is a shared (network) database.
 #[tauri::command]
 pub fn db_info(state: State<AppState>) -> R<DbInfo> {
@@ -135,10 +174,10 @@ pub fn change_password(
 ) -> R<()> {
     let user = state.session_user()?;
     e(state
-        .store
+        .store()?
         .change_password(&user.username, &current_password, &new_password))?;
     // refresh cached session (must_change cleared)
-    if let Ok(u) = state.store.get_user(user.id) {
+    if let Ok(u) = state.store()?.get_user(user.id) {
         *state.session.lock().unwrap() = Some(u);
     }
     Ok(())
@@ -149,7 +188,7 @@ pub fn change_password(
 #[tauri::command]
 pub fn list_users(state: State<AppState>) -> R<Vec<User>> {
     state.require_admin()?;
-    e(state.store.list_users())
+    e(state.store()?.list_users())
 }
 
 #[tauri::command]
@@ -162,7 +201,7 @@ pub fn create_user(
     must_change: bool,
 ) -> R<User> {
     let actor = state.require_admin()?;
-    e(state.store.create_user(
+    e(state.store()?.create_user(
         &actor.username,
         &actor.role,
         &username,
@@ -177,7 +216,7 @@ pub fn create_user(
 pub fn set_user_active(state: State<AppState>, id: i64, active: bool) -> R<()> {
     let actor = state.require_admin()?;
     e(state
-        .store
+        .store()?
         .set_user_active(&actor.username, &actor.role, id, active))
 }
 
@@ -185,7 +224,7 @@ pub fn set_user_active(state: State<AppState>, id: i64, active: bool) -> R<()> {
 pub fn set_user_role(state: State<AppState>, id: i64, role: String) -> R<()> {
     let actor = state.require_admin()?;
     e(state
-        .store
+        .store()?
         .set_user_role(&actor.username, &actor.role, id, &role))
 }
 
@@ -193,7 +232,7 @@ pub fn set_user_role(state: State<AppState>, id: i64, role: String) -> R<()> {
 pub fn admin_reset_password(state: State<AppState>, id: i64, new_password: String) -> R<()> {
     let actor = state.require_admin()?;
     e(state
-        .store
+        .store()?
         .admin_reset_password(&actor.username, &actor.role, id, &new_password))
 }
 
@@ -206,31 +245,31 @@ pub fn list_welders(
     sort_by: String,
 ) -> R<Vec<Welder>> {
     state.require_login()?;
-    e(state.store.list_welders(include_inactive, &sort_by))
+    e(state.store()?.list_welders(include_inactive, &sort_by))
 }
 
 #[tauri::command]
 pub fn get_welder(state: State<AppState>, id: i64) -> R<Welder> {
     state.require_login()?;
-    e(state.store.get_welder(id))
+    e(state.store()?.get_welder(id))
 }
 
 #[tauri::command]
 pub fn create_welder(state: State<AppState>, welder: Welder) -> R<i64> {
     state.require_editor()?;
-    e(state.store.create_welder(&welder))
+    e(state.store()?.create_welder(&welder))
 }
 
 #[tauri::command]
 pub fn update_welder(state: State<AppState>, welder: Welder) -> R<()> {
     state.require_editor()?;
-    e(state.store.update_welder(&welder))
+    e(state.store()?.update_welder(&welder))
 }
 
 #[tauri::command]
 pub fn delete_welder(state: State<AppState>, id: i64) -> R<()> {
     state.require_editor()?;
-    e(state.store.delete_welder(id))
+    e(state.store()?.delete_welder(id))
 }
 
 // --------------------------- welder certs / continuity ---------------------
@@ -238,31 +277,31 @@ pub fn delete_welder(state: State<AppState>, id: i64) -> R<()> {
 #[tauri::command]
 pub fn list_welder_certs(state: State<AppState>, welder_id: i64) -> R<Vec<WelderCert>> {
     state.require_login()?;
-    e(state.store.list_welder_certs(welder_id))
+    e(state.store()?.list_welder_certs(welder_id))
 }
 
 #[tauri::command]
 pub fn welder_cert_aliases(state: State<AppState>, stamp: String) -> R<Vec<String>> {
     state.require_login()?;
-    e(state.store.welder_cert_aliases(&stamp))
+    e(state.store()?.welder_cert_aliases(&stamp))
 }
 
 #[tauri::command]
 pub fn create_welder_cert(state: State<AppState>, cert: WelderCert) -> R<i64> {
     let actor = state.require_editor()?;
-    e(state.store.create_welder_cert(&cert, &actor.username))
+    e(state.store()?.create_welder_cert(&cert, &actor.username))
 }
 
 #[tauri::command]
 pub fn update_welder_cert(state: State<AppState>, cert: WelderCert) -> R<()> {
     state.require_editor()?;
-    e(state.store.update_welder_cert(&cert))
+    e(state.store()?.update_welder_cert(&cert))
 }
 
 #[tauri::command]
 pub fn delete_welder_cert(state: State<AppState>, id: i64) -> R<()> {
     state.require_editor()?;
-    e(state.store.delete_welder_cert(id))
+    e(state.store()?.delete_welder_cert(id))
 }
 
 #[tauri::command]
@@ -273,19 +312,19 @@ pub fn set_welder_cert_file(
     data_base64: String,
 ) -> R<()> {
     state.require_editor()?;
-    e(state.store.set_welder_cert_file(id, &name, &data_base64))
+    e(state.store()?.set_welder_cert_file(id, &name, &data_base64))
 }
 
 #[tauri::command]
 pub fn get_welder_cert_file(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
     state.require_login()?;
-    e(state.store.get_welder_cert_file(id))
+    e(state.store()?.get_welder_cert_file(id))
 }
 
 #[tauri::command]
 pub fn welder_continuity(state: State<AppState>, welder_id: i64) -> R<WelderContinuity> {
     state.require_login()?;
-    e(state.store.welder_continuity(welder_id))
+    e(state.store()?.welder_continuity(welder_id))
 }
 
 // --------------------------- welds -----------------------------------------
@@ -293,31 +332,31 @@ pub fn welder_continuity(state: State<AppState>, welder_id: i64) -> R<WelderCont
 #[tauri::command]
 pub fn list_welds(state: State<AppState>, filter: WeldFilter) -> R<Vec<Weld>> {
     state.require_login()?;
-    e(state.store.list_welds(&filter))
+    e(state.store()?.list_welds(&filter))
 }
 
 #[tauri::command]
 pub fn count_welds(state: State<AppState>, filter: WeldFilter) -> R<i64> {
     state.require_login()?;
-    e(state.store.count_welds(&filter))
+    e(state.store()?.count_welds(&filter))
 }
 
 #[tauri::command]
 pub fn get_weld(state: State<AppState>, id: i64) -> R<Weld> {
     state.require_login()?;
-    e(state.store.get_weld(id))
+    e(state.store()?.get_weld(id))
 }
 
 #[tauri::command]
 pub fn create_weld(state: State<AppState>, weld: Weld) -> R<i64> {
     let actor = state.require_editor()?;
-    e(state.store.create_weld(&weld, &actor.username))
+    e(state.store()?.create_weld(&weld, &actor.username))
 }
 
 #[tauri::command]
 pub fn update_weld(state: State<AppState>, weld: Weld) -> R<Weld> {
     let actor = state.require_editor()?;
-    e(state.store.update_weld(&weld, &actor.username))
+    e(state.store()?.update_weld(&weld, &actor.username))
 }
 
 /// Void (soft-delete) a weld — the normal "delete" for a QC record. The row is
@@ -326,7 +365,7 @@ pub fn update_weld(state: State<AppState>, weld: Weld) -> R<Weld> {
 pub fn void_weld(state: State<AppState>, id: i64, reason: String) -> R<()> {
     let actor = state.require_editor()?;
     e(state
-        .store
+        .store()?
         .void_weld(id, &actor.username, &actor.role, &reason))
 }
 
@@ -334,7 +373,7 @@ pub fn void_weld(state: State<AppState>, id: i64, reason: String) -> R<()> {
 #[tauri::command]
 pub fn restore_weld(state: State<AppState>, id: i64) -> R<()> {
     let actor = state.require_editor()?;
-    e(state.store.restore_weld(id, &actor.username, &actor.role))
+    e(state.store()?.restore_weld(id, &actor.username, &actor.role))
 }
 
 /// Permanently delete a weld (hard purge). Prefer `void_weld`, which retains the
@@ -343,7 +382,7 @@ pub fn restore_weld(state: State<AppState>, id: i64) -> R<()> {
 #[tauri::command]
 pub fn delete_weld(state: State<AppState>, id: i64) -> R<()> {
     let actor = state.require_editor()?;
-    e(state.store.delete_weld(id, &actor.username, &actor.role))
+    e(state.store()?.delete_weld(id, &actor.username, &actor.role))
 }
 
 /// The recent Activity log (audit trail), newest first. Any signed-in user may
@@ -356,7 +395,7 @@ pub fn recent_activity(
 ) -> R<Vec<AuditEntry>> {
     state.require_login()?;
     e(state
-        .store
+        .store()?
         .recent_activity(entity.as_deref(), limit.unwrap_or(100)))
 }
 
@@ -464,8 +503,8 @@ pub fn backup_database(state: State<AppState>) -> R<String> {
         .parent()
         .map(|p| p.join("backups"))
         .unwrap_or_else(|| std::path::PathBuf::from("backups"));
-    let dest = e(state.store.backup_now(&dir))?;
-    state.store.audit(
+    let dest = e(state.store()?.backup_now(&dir))?;
+    state.store()?.audit(
         &state.session.lock().unwrap().as_ref().map(|u| u.username.clone()).unwrap_or_default(),
         "backup",
         "database",
@@ -483,14 +522,14 @@ pub fn create_repair(
 ) -> R<Vec<i64>> {
     let actor = state.require_editor()?;
     e(state
-        .store
+        .store()?
         .create_repair(weld_id, include_tracers, &actor.username))
 }
 
 #[tauri::command]
 pub fn distinct_weld_values(state: State<AppState>, field: String) -> R<Vec<String>> {
     state.require_login()?;
-    e(state.store.distinct_weld_values(&field))
+    e(state.store()?.distinct_weld_values(&field))
 }
 
 /// One weld's disposition inside a batch NDE recording.
@@ -512,7 +551,7 @@ pub fn record_nde_batch(
 ) -> R<usize> {
     let actor = state.require_editor()?;
     let pairs: Vec<(i64, String)> = entries.into_iter().map(|e| (e.id, e.result)).collect();
-    e(state.store.record_nde_batch(
+    e(state.store()?.record_nde_batch(
         &pairs,
         &types,
         &date,
@@ -525,7 +564,7 @@ pub fn record_nde_batch(
 #[tauri::command]
 pub fn global_search(state: State<AppState>, query: String) -> R<Vec<weldcore::SearchHit>> {
     state.require_login()?;
-    e(state.store.global_search(&query, 6))
+    e(state.store()?.global_search(&query, 6))
 }
 
 /// Run the validation engine across the live weld population and return the
@@ -537,7 +576,7 @@ pub fn weld_exceptions(
     work_order: Option<String>,
 ) -> R<weldcore::validate::ExceptionsSummary> {
     state.require_login()?;
-    e(state.store.weld_exceptions(work_order.as_deref()))
+    e(state.store()?.weld_exceptions(work_order.as_deref()))
 }
 
 /// Compute the EP 5-5-1 Table 4 required NDE coverage for a (partial) weld —
@@ -555,43 +594,43 @@ pub fn compute_nde(state: State<AppState>, weld: Weld) -> R<weldcore::nde::NdeRe
 #[tauri::command]
 pub fn list_drawings(state: State<AppState>) -> R<Vec<Drawing>> {
     state.require_login()?;
-    e(state.store.list_drawings())
+    e(state.store()?.list_drawings())
 }
 
 #[tauri::command]
 pub fn list_work_orders(state: State<AppState>) -> R<Vec<WorkOrderSummary>> {
     state.require_login()?;
-    e(state.store.list_work_orders())
+    e(state.store()?.list_work_orders())
 }
 
 #[tauri::command]
 pub fn list_drawings_for_wo(state: State<AppState>, work_order: String) -> R<Vec<Drawing>> {
     state.require_login()?;
-    e(state.store.list_drawings_for_wo(&work_order))
+    e(state.store()?.list_drawings_for_wo(&work_order))
 }
 
 #[tauri::command]
 pub fn get_drawing(state: State<AppState>, id: i64) -> R<Drawing> {
     state.require_login()?;
-    e(state.store.get_drawing(id))
+    e(state.store()?.get_drawing(id))
 }
 
 #[tauri::command]
 pub fn create_drawing(state: State<AppState>, drawing: Drawing) -> R<i64> {
     let actor = state.require_editor()?;
-    e(state.store.create_drawing(&drawing, &actor.username))
+    e(state.store()?.create_drawing(&drawing, &actor.username))
 }
 
 #[tauri::command]
 pub fn update_drawing(state: State<AppState>, drawing: Drawing) -> R<()> {
     state.require_editor()?;
-    e(state.store.update_drawing(&drawing))
+    e(state.store()?.update_drawing(&drawing))
 }
 
 #[tauri::command]
 pub fn delete_drawing(state: State<AppState>, id: i64) -> R<()> {
     let actor = state.require_editor()?;
-    e(state.store.delete_drawing(id, &actor.username, &actor.role))
+    e(state.store()?.delete_drawing(id, &actor.username, &actor.role))
 }
 
 #[tauri::command]
@@ -600,14 +639,14 @@ pub fn delete_work_order(state: State<AppState>, work_order: String, reason: Str
     // reason from the confirm dialog lands in the audit trail.
     let actor = state.require_editor()?;
     e(state
-        .store
+        .store()?
         .delete_work_order(&work_order, &actor.username, &actor.role, &reason))
 }
 
 #[tauri::command]
 pub fn work_order_owner(state: State<AppState>, work_order: String) -> R<Option<String>> {
     state.require_login()?;
-    e(state.store.work_order_owner(&work_order))
+    e(state.store()?.work_order_owner(&work_order))
 }
 
 #[tauri::command]
@@ -620,7 +659,7 @@ pub fn set_drawing_pdf(
 ) -> R<()> {
     let actor = state.require_editor()?;
     e(state
-        .store
+        .store()?
         .set_drawing_pdf_b64(id, &name, &data_base64, page_count, &actor.username))
 }
 
@@ -630,7 +669,7 @@ pub fn get_drawing_pdf(
     id: i64,
 ) -> R<Option<(String, String, i64, i64)>> {
     state.require_login()?;
-    e(state.store.get_drawing_pdf(id))
+    e(state.store()?.get_drawing_pdf(id))
 }
 
 // ---- Document packages & revision control ----
@@ -645,20 +684,20 @@ pub fn create_package(
 ) -> R<i64> {
     let actor = state.require_editor()?;
     e(state
-        .store
+        .store()?
         .create_package(work_order.as_deref(), &name, &data_base64, page_count, &actor.username))
 }
 
 #[tauri::command]
 pub fn list_packages(state: State<AppState>, work_order: String) -> R<Vec<DocumentPackage>> {
     state.require_login()?;
-    e(state.store.list_packages(&work_order))
+    e(state.store()?.list_packages(&work_order))
 }
 
 #[tauri::command]
 pub fn get_package_pdf(state: State<AppState>, id: i64) -> R<Option<(String, String)>> {
     state.require_login()?;
-    e(state.store.get_package_pdf(id))
+    e(state.store()?.get_package_pdf(id))
 }
 
 // ----------------------- work-order quality package ------------------------
@@ -674,7 +713,7 @@ pub fn add_wo_file(
     note: Option<String>,
 ) -> R<i64> {
     let actor = state.require_editor()?;
-    e(state.store.add_wo_file(
+    e(state.store()?.add_wo_file(
         &work_order,
         category.as_deref(),
         &name,
@@ -688,20 +727,20 @@ pub fn add_wo_file(
 #[tauri::command]
 pub fn list_wo_files(state: State<AppState>, work_order: String) -> R<Vec<QualityFile>> {
     state.require_login()?;
-    e(state.store.list_wo_files(&work_order))
+    e(state.store()?.list_wo_files(&work_order))
 }
 
 #[tauri::command]
 pub fn get_wo_file(state: State<AppState>, id: i64) -> R<Option<(String, String, String)>> {
     state.require_login()?;
-    e(state.store.get_wo_file(id))
+    e(state.store()?.get_wo_file(id))
 }
 
 #[tauri::command]
 pub fn delete_wo_file(state: State<AppState>, id: i64) -> R<()> {
     let actor = state.require_editor()?;
     e(state
-        .store
+        .store()?
         .delete_wo_file(id, &actor.username, &actor.role))
 }
 
@@ -711,7 +750,7 @@ pub fn get_revision_pdf(
     rev_id: i64,
 ) -> R<Option<(String, String, i64, i64)>> {
     state.require_login()?;
-    e(state.store.get_revision_pdf(rev_id))
+    e(state.store()?.get_revision_pdf(rev_id))
 }
 
 #[tauri::command]
@@ -724,7 +763,7 @@ pub fn set_effective_source(
 ) -> R<()> {
     state.require_editor()?;
     e(state
-        .store
+        .store()?
         .set_effective_source(drawing_id, package_id, page_from, page_to))
 }
 
@@ -740,7 +779,7 @@ pub fn revise_drawing(
     page_to: Option<i64>,
 ) -> R<i64> {
     let actor = state.require_editor()?;
-    e(state.store.revise_drawing(
+    e(state.store()?.revise_drawing(
         drawing_id,
         &new_rev,
         reason.as_deref(),
@@ -757,19 +796,19 @@ pub fn list_drawing_revisions(
     drawing_id: i64,
 ) -> R<Vec<DrawingRevision>> {
     state.require_login()?;
-    e(state.store.list_drawing_revisions(drawing_id))
+    e(state.store()?.list_drawing_revisions(drawing_id))
 }
 
 #[tauri::command]
 pub fn list_drawing_welds(state: State<AppState>, drawing_id: i64) -> R<Vec<Weld>> {
     state.require_login()?;
-    e(state.store.list_drawing_welds(drawing_id))
+    e(state.store()?.list_drawing_welds(drawing_id))
 }
 
 #[tauri::command]
 pub fn next_weld_number(state: State<AppState>, drawing_id: i64) -> R<i64> {
     state.require_login()?;
-    e(state.store.next_weld_number(drawing_id))
+    e(state.store()?.next_weld_number(drawing_id))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -786,7 +825,7 @@ pub fn add_bubble_weld(
     joint_y: f64,
 ) -> R<Weld> {
     let actor = state.require_editor()?;
-    e(state.store.add_bubble_weld(
+    e(state.store()?.add_bubble_weld(
         drawing_id,
         stamp,
         &weld_number,
@@ -811,7 +850,7 @@ pub fn set_weld_bubble(
 ) -> R<()> {
     state.require_editor()?;
     e(state
-        .store
+        .store()?
         .set_weld_bubble(weld_id, page, bubble_x, bubble_y, joint_x, joint_y))
 }
 
@@ -828,7 +867,7 @@ pub fn apply_weld_attributes(
     material: Option<String>,
 ) -> R<()> {
     let actor = state.require_editor()?;
-    e(state.store.apply_weld_attributes(
+    e(state.store()?.apply_weld_attributes(
         &ids, size, joint_type, groove_type, process, schedule, material, &actor.username,
     ))
 }
@@ -838,61 +877,61 @@ pub fn apply_weld_attributes(
 #[tauri::command]
 pub fn list_pipe(state: State<AppState>) -> R<Vec<PipeRow>> {
     state.require_login()?;
-    e(state.store.list_pipe())
+    e(state.store()?.list_pipe())
 }
 
 #[tauri::command]
 pub fn pipe_sizes(state: State<AppState>) -> R<Vec<f64>> {
     state.require_login()?;
-    e(state.store.pipe_sizes())
+    e(state.store()?.pipe_sizes())
 }
 
 #[tauri::command]
 pub fn lookup_thickness(state: State<AppState>, nps: f64, schedule: String) -> R<Option<f64>> {
     state.require_login()?;
-    e(state.store.lookup_thickness(nps, &schedule))
+    e(state.store()?.lookup_thickness(nps, &schedule))
 }
 
 #[tauri::command]
 pub fn lookups_grouped(state: State<AppState>) -> R<HashMap<String, Vec<String>>> {
     state.require_login()?;
-    e(state.store.lookups_grouped())
+    e(state.store()?.lookups_grouped())
 }
 
 #[tauri::command]
 pub fn list_lookups(state: State<AppState>) -> R<Vec<Lookup>> {
     state.require_login()?;
-    e(state.store.list_lookups())
+    e(state.store()?.list_lookups())
 }
 
 #[tauri::command]
 pub fn add_lookup(state: State<AppState>, kind: String, value: String) -> R<()> {
     state.require_editor()?;
-    e(state.store.add_lookup(&kind, &value))
+    e(state.store()?.add_lookup(&kind, &value))
 }
 
 #[tauri::command]
 pub fn remove_lookup(state: State<AppState>, kind: String, value: String) -> R<()> {
     state.require_editor()?;
-    e(state.store.remove_lookup(&kind, &value))
+    e(state.store()?.remove_lookup(&kind, &value))
 }
 
 #[tauri::command]
 pub fn get_settings(state: State<AppState>) -> R<HashMap<String, String>> {
     // settings drive branding; readable pre-login for the splash screen
-    e(state.store.get_settings())
+    e(state.store()?.get_settings())
 }
 
 #[tauri::command]
 pub fn set_setting(state: State<AppState>, key: String, value: String) -> R<()> {
     state.require_admin()?;
-    e(state.store.set_setting(&key, &value))
+    e(state.store()?.set_setting(&key, &value))
 }
 
 #[tauri::command]
 pub fn list_criteria(state: State<AppState>) -> R<Vec<CriteriaRow>> {
     state.require_login()?;
-    e(state.store.list_criteria())
+    e(state.store()?.list_criteria())
 }
 
 // --------------------------- reports ---------------------------------------
@@ -900,55 +939,55 @@ pub fn list_criteria(state: State<AppState>) -> R<Vec<CriteriaRow>> {
 #[tauri::command]
 pub fn report_summary(state: State<AppState>) -> R<SummaryReport> {
     state.require_login()?;
-    e(state.store.report_summary())
+    e(state.store()?.report_summary())
 }
 
 #[tauri::command]
 pub fn report_job(state: State<AppState>, work_order: String) -> R<JobReport> {
     state.require_login()?;
-    e(state.store.report_job(&work_order))
+    e(state.store()?.report_job(&work_order))
 }
 
 #[tauri::command]
 pub fn report_daily(state: State<AppState>, date: String) -> R<DailyReport> {
     state.require_login()?;
-    e(state.store.report_daily(&date))
+    e(state.store()?.report_daily(&date))
 }
 
 #[tauri::command]
 pub fn report_monthly(state: State<AppState>, year: i32) -> R<MonthlyReport> {
     state.require_login()?;
-    e(state.store.report_monthly(year))
+    e(state.store()?.report_monthly(year))
 }
 
 #[tauri::command]
 pub fn report_welder_stats(state: State<AppState>, level: String) -> R<WelderStatsReport> {
     state.require_login()?;
-    e(state.store.report_welder_stats(&level))
+    e(state.store()?.report_welder_stats(&level))
 }
 
 #[tauri::command]
 pub fn report_welder(state: State<AppState>, stamp: String) -> R<WelderStatRow> {
     state.require_login()?;
-    e(state.store.report_welder(&stamp))
+    e(state.store()?.report_welder(&stamp))
 }
 
 #[tauri::command]
 pub fn report_client(state: State<AppState>, month: u32, year: i32) -> R<Vec<ClientReportRow>> {
     state.require_login()?;
-    e(state.store.report_client(month, year))
+    e(state.store()?.report_client(month, year))
 }
 
 #[tauri::command]
 pub fn report_qm(state: State<AppState>) -> R<Vec<WelderStatRow>> {
     state.require_login()?;
-    e(state.store.report_qm())
+    e(state.store()?.report_qm())
 }
 
 #[tauri::command]
 pub fn report_nde_compliance(state: State<AppState>) -> R<NdeComplianceReport> {
     state.require_login()?;
-    e(state.store.report_nde_compliance())
+    e(state.store()?.report_nde_compliance())
 }
 
 #[tauri::command]
@@ -958,5 +997,5 @@ pub fn report_performance(
     to: Option<String>,
 ) -> R<PerformanceReport> {
     state.require_login()?;
-    e(state.store.report_performance(from, to))
+    e(state.store()?.report_performance(from, to))
 }

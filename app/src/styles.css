@@ -92,6 +92,15 @@ button { font-family: inherit; }
 }
 .auth-footline { color: #64749e; font-size: 11.5px; letter-spacing: .04em; }
 
+/* Startup splash (shown while the database opens on the background thread) */
+.boot-splash { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 440px; text-align: center; }
+.boot-splash .brand-hero-word { color: #fff; }
+.boot-splash .brand-hero-tag { color: #8ea1cf; }
+.boot-spinner { margin-top: 10px; border-color: rgba(255,255,255,.25); border-top-color: #fff; }
+.boot-msg { color: #e6ecfb; font-size: 14px; margin: 6px 0 0; }
+.boot-msg.boot-err { color: #ffb4b4; font-weight: 600; }
+.boot-sub { color: #8ea1cf; font-size: 12.5px; margin: 0; line-height: 1.5; }
+
 /* ---------------- Layout: collapsing icon rail ---------------- */
 .app { display: grid; grid-template-columns: 64px 1fr; height: 100%; }
 /* the rail sits in a fixed 64px slot but expands over the content on hover */

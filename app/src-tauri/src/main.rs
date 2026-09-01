@@ -49,8 +49,8 @@ fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
             let shared_here = data.is_dir()
                 || dir.join("sentrix.portable").exists()
                 || dir.join("weld-tracker.portable").exists();
-            if shared_here {
-                if fs::create_dir_all(&data).is_ok() {
+            if shared_here && fs::create_dir_all(&data).is_ok() {
+                {
                     let probe = data.join(".write-test");
                     if fs::write(&probe, b"1").is_ok() {
                         let _ = fs::remove_file(&probe);
@@ -115,22 +115,41 @@ fn main() {
             if let Some(parent) = db_path.parent() {
                 fs::create_dir_all(parent).ok();
             }
-            let store = match Store::open(&db_path, shared) {
-                Ok(s) => s,
-                Err(e) => {
-                    app_log(&log_dir, &format!("FATAL open database failed: {e}"));
-                    panic!("failed to open database: {e}");
-                }
-            };
             app.manage(AppState::new(
-                store,
                 db_path.to_string_lossy().to_string(),
                 shared,
                 log_dir.to_string_lossy().to_string(),
             ));
+            // Open the database OFF the main thread. The open path (integrity
+            // check, migrations, pre-migration backup, hash backfill) can take
+            // seconds — much longer when an antivirus scans every write or the
+            // file lives on a network share — and blocking setup here is what
+            // made the window go "not responding". A failed open now surfaces
+            // on the splash screen instead of killing the process.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                use tauri::Manager;
+                let t0 = std::time::Instant::now();
+                let state = handle.state::<AppState>();
+                let log_dir = PathBuf::from(state.log_dir.clone());
+                match Store::open(&state.db_path, state.db_shared) {
+                    Ok(s) => {
+                        app_log(&log_dir, &format!("db ready in {:.1?}", t0.elapsed()));
+                        state.set_ready(s);
+                    }
+                    Err(e) => {
+                        app_log(
+                            &log_dir,
+                            &format!("FATAL open database failed after {:.1?}: {e}", t0.elapsed()),
+                        );
+                        state.set_failed(e.to_string());
+                    }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            boot_status,
             login,
             logout,
             current_user,

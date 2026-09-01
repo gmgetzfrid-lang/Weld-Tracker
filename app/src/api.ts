@@ -102,6 +102,8 @@ export const api = {
   deleteWeld: (id: number) => invoke<void>("delete_weld", { id }),
   recentActivity: (entity: string | null, limit?: number) =>
     invoke<AuditEntry[]>("recent_activity", { entity, limit }),
+  /** "starting" | "ready" | "failed: …" — the splash polls this until ready. */
+  bootStatus: () => invoke<string>("boot_status"),
   backupDatabase: () => invoke<string>("backup_database"),
   openLogFolder: () => invoke<string>("open_log_folder"),
   /**
