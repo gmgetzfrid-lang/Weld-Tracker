@@ -360,6 +360,80 @@ pub fn recent_activity(
         .recent_activity(entity.as_deref(), limit.unwrap_or(100)))
 }
 
+/// Save an exported report (PDF/CSV built in the frontend) into the per-user
+/// "SENTRIX Reports" folder under Documents, then hand it to the OS. Browser
+/// download links are inert inside the WebView, so every export flows through
+/// here. `mode`: "save" writes only; "open" also launches the file with its
+/// default app (the PDF viewer's Print serves the print path); "reveal" shows
+/// it selected in the file manager. Returns the full path written.
+#[tauri::command]
+pub fn save_export(app: tauri::AppHandle, state: State<AppState>, name: String, b64: String, mode: String) -> R<String> {
+    use base64::Engine;
+    use tauri::Manager;
+    state.require_login()?;
+    // The caller supplies only a file NAME — any path components are dropped
+    // so an export can never write outside the reports folder.
+    let fname = std::path::Path::new(&name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.trim().is_empty() && s != "." && s != "..")
+        .ok_or_else(|| "invalid file name".to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .map_err(|e| format!("bad file data: {e}"))?;
+    let dir = app
+        .path()
+        .document_dir()
+        .map(|d| d.join("SENTRIX Reports"))
+        .or_else(|_| app.path().app_data_dir().map(|d| d.join("exports")))
+        .map_err(|e| format!("no writable export folder: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let mut path = dir.join(&fname);
+    if std::fs::write(&path, &bytes).is_err() {
+        // Likely locked (the previous export still open in a viewer) — write a
+        // timestamped sibling instead of failing.
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let stem = std::path::Path::new(&fname)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "export".into());
+        let ext = std::path::Path::new(&fname)
+            .extension()
+            .map(|s| format!(".{}", s.to_string_lossy()))
+            .unwrap_or_default();
+        path = dir.join(format!("{stem}-{stamp}{ext}"));
+        std::fs::write(&path, &bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
+    let target = path.to_string_lossy().to_string();
+    match mode.as_str() {
+        "open" => {
+            #[cfg(target_os = "windows")]
+            let spawn = std::process::Command::new("explorer").arg(&target).spawn();
+            #[cfg(target_os = "macos")]
+            let spawn = std::process::Command::new("open").arg(&target).spawn();
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+            let spawn = std::process::Command::new("xdg-open").arg(&target).spawn();
+            spawn.map_err(|e| format!("saved to {target}, but cannot open it: {e}"))?;
+        }
+        "reveal" => {
+            #[cfg(target_os = "windows")]
+            let spawn = std::process::Command::new("explorer").arg(format!("/select,{target}")).spawn();
+            #[cfg(target_os = "macos")]
+            let spawn = std::process::Command::new("open").args(["-R", &target]).spawn();
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+            let spawn = std::process::Command::new("xdg-open")
+                .arg(dir.to_string_lossy().to_string())
+                .spawn();
+            spawn.map_err(|e| format!("saved to {target}, but cannot show it: {e}"))?;
+        }
+        _ => {}
+    }
+    Ok(target)
+}
+
 /// Open the per-user support-log folder in the OS file manager. The path is
 /// fixed by the app (never user input), so this cannot be steered elsewhere.
 #[tauri::command]

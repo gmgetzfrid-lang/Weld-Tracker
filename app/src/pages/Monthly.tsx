@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errMsg } from "../api";
 import type { MonthlyReport } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
+import { Columns } from "../components/charts";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -44,6 +45,23 @@ export function Monthly() {
       {!rep ? (
         <Spinner />
       ) : (
+        <>
+        <div className="card card-pad chart-card" style={{ marginBottom: 16 }}>
+          <h4>Welds per month — {year}</h4>
+          <p className="chart-sub">Hover a month for examinations, rejects and weld inches</p>
+          <Columns
+            points={MONTHS.map((m, i) => ({
+              key: m,
+              label: m,
+              value: rep.total_welds[i] ?? 0,
+              detail: [
+                ["RT'd", num(rep.total_rt[i] ?? 0)],
+                ["Rejected", num(rep.total_rejected[i] ?? 0)],
+                ["Weld inches", num(rep.total_inches[i] ?? 0, 1)],
+              ],
+            }))}
+          />
+        </div>
         <div className="table-wrap">
           <table className="data">
             <thead>
@@ -95,6 +113,7 @@ export function Monthly() {
             </tfoot>
           </table>
         </div>
+        </>
       )}
     </div>
   );

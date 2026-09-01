@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { api, bytesToB64, errMsg } from "../api";
 import { APP_NAME, APP_VERSION, NDE_RULE_SET } from "../version";
 
 export function Spinner() {
@@ -227,6 +228,13 @@ const ToastCtx = createContext<{
   push: (kind: "ok" | "err", msg: string) => void;
 }>({ push: () => {} });
 
+// Module-level bridge so plain helper functions (the CSV/PDF exporters) can
+// surface their outcome without threading a hook through every call site.
+let toastBridge: (kind: "ok" | "err", msg: string) => void = () => {};
+export function notify(kind: "ok" | "err", msg: string) {
+  toastBridge(kind, msg);
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const push = useCallback((kind: "ok" | "err", msg: string) => {
@@ -234,6 +242,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((t) => [...t, { id, kind, msg }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3800);
   }, []);
+  useEffect(() => {
+    toastBridge = push;
+    return () => { toastBridge = () => {}; };
+  }, [push]);
   return (
     <ToastCtx.Provider value={{ push }}>
       {children}
@@ -258,9 +270,11 @@ export function localTime(utc: string): string {
 }
 
 /**
- * Download rows as a CSV. When `meta` is given, a provenance block is prepended
- * so an exported record proves which build and rule set produced it, who
- * exported it, and under what filters — the audit trail an issued report needs.
+ * Export rows as a CSV into the SENTRIX Reports folder (browser download
+ * links are inert inside the WebView) and reveal the file when written. When
+ * `meta` is given, a provenance block is prepended so an exported record
+ * proves which build and rule set produced it, who exported it, and under
+ * what filters — the audit trail an issued report needs.
  */
 export function downloadCsv(
   filename: string,
@@ -282,11 +296,8 @@ export function downloadCsv(
     out = [...head, ...rows];
   }
   const csv = out.map((r) => r.map(esc).join(",")).join("\r\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  api
+    .saveExport(filename, bytesToB64(new TextEncoder().encode(csv)), "reveal")
+    .then((p) => notify("ok", `Saved ${p}`))
+    .catch((e) => notify("err", errMsg(e)));
 }

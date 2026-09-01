@@ -17,6 +17,7 @@ use weldcore::Store;
 ///      legacy `weld-tracker.portable`) marker file sits beside the exe and that
 ///      folder is writable (shared — the "drop it on a network drive" mode).
 ///   4. Otherwise the per-user app-data directory (local, single user).
+///
 /// Returns (path, shared). Legacy names are honoured so existing deployments
 /// keep working after the SENTRIX rename.
 fn resolve_db_path(app: &tauri::App) -> (PathBuf, bool) {
@@ -159,6 +160,7 @@ fn main() {
             recent_activity,
             backup_database,
             open_log_folder,
+            save_export,
             create_repair,
             distinct_weld_values,
             weld_exceptions,

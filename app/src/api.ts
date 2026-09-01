@@ -104,6 +104,15 @@ export const api = {
     invoke<AuditEntry[]>("recent_activity", { entity, limit }),
   backupDatabase: () => invoke<string>("backup_database"),
   openLogFolder: () => invoke<string>("open_log_folder"),
+  /**
+   * Save an export (PDF/CSV) into the per-user "SENTRIX Reports" folder.
+   * Browser-style download links are inert inside the WebView, so every
+   * export goes through this command. mode: "save" | "open" (launch with the
+   * default app) | "reveal" (show selected in the file manager). Returns the
+   * path written.
+   */
+  saveExport: (name: string, b64: string, mode: "save" | "open" | "reveal") =>
+    invoke<string>("save_export", { name, b64, mode }),
   /** Record one NDE report's results across many welds at once. */
   recordNdeBatch: (
     entries: { id: number; result: string }[],
@@ -303,6 +312,15 @@ export function errMsg(e: unknown): string {
  * must never fail invisibly either: logs what failed (visible in the webview
  * console and support diagnostics) instead of swallowing it.
  */
+/** Base64-encode raw bytes, chunked (String.fromCharCode has an argument cap). */
+export function bytesToB64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(s);
+}
+
 export function logErr(what: string): (e: unknown) => void {
   return (e: unknown) => console.warn(`[sentrix] ${what} failed:`, errMsg(e));
 }

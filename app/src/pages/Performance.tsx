@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, rejectThreshold } from "../api";
 import type { PerformanceReport } from "../types";
 import { ErrorBox, Spinner, StatCard, downloadCsv, num, pct, useToast } from "../components/ui";
+import { RankedBars, type BarRow } from "../components/charts";
 import { downloadPerformancePdf, openPerformancePdf } from "../reportPdf";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -55,15 +56,54 @@ export function Performance() {
     downloadCsv(`welder-performance-${rep.period_label.replace(/[^0-9A-Za-z]+/g, "-")}.csv`, [header, ...rows]);
   };
 
-  const genPdf = (open: boolean) => {
+  const genPdf = async (open: boolean) => {
     if (!rep) return;
     try {
-      if (open) openPerformancePdf(rep, company);
-      else downloadPerformancePdf(rep, company);
+      const path = open
+        ? await openPerformancePdf(rep, company)
+        : await downloadPerformancePdf(rep, company);
+      toast.push("ok", `${open ? "Opened" : "Saved"} ${path}`);
     } catch (e) { toast.push("err", errMsg(e)); }
   };
 
   const allIn = rep && rep.welders_below_spec === 0 && rep.rows.length > 0;
+
+  // Manager charts: who's producing, and whose rejects need a look. Top 12
+  // each — the full population stays in the tables below.
+  const TOP = 12;
+  const outputRows: BarRow[] = rep
+    ? [...rep.rows]
+        .sort((a, b) => b.weld_count - a.weld_count)
+        .slice(0, TOP)
+        .map((r) => ({
+          key: r.stamp,
+          label: r.name || r.stamp,
+          sub: r.stamp,
+          value: r.weld_count,
+          display: num(r.weld_count),
+          detail: [
+            ["Weld inches", num(r.weld_inches, 1)],
+            ["Examined", `${num(r.inspected)} (${pct(r.rt_pct)})`],
+            ["Rejects", num(r.rejects)],
+          ],
+        }))
+    : [];
+  const examined = rep ? rep.rows.filter((r) => r.inspected > 0) : [];
+  const rejectRows: BarRow[] = [...examined]
+    .sort((a, b) => b.reject_rate - a.reject_rate || b.rejects - a.rejects)
+    .slice(0, TOP)
+    .map((r) => ({
+      key: r.stamp,
+      label: r.name || r.stamp,
+      sub: r.stamp,
+      value: r.reject_rate * 100,
+      display: pct(r.reject_rate),
+      flag: r.reject_rate > warn,
+      detail: [
+        ["Rejects", `${num(r.rejects)} of ${num(r.inspected)} examined`],
+        ["Welds this period", num(r.weld_count)],
+      ],
+    }));
 
   return (
     <div>
@@ -128,6 +168,28 @@ export function Performance() {
             <StatCard label="Rejects" value={num(rep.total_rejects)} />
             <StatCard label="Reject rate" value={<span style={{ color: rep.fleet_reject_rate > warn ? "var(--danger)" : undefined }}>{pct(rep.fleet_reject_rate)}</span>} />
           </div>
+
+          {rep.rows.length > 0 && (
+            <div className="chart-grid">
+              <div className="card card-pad chart-card">
+                <h4>Output by welder</h4>
+                <p className="chart-sub">Welds made this period — hover a bar for inches and examinations</p>
+                <RankedBars rows={outputRows} totalCount={rep.rows.length} />
+              </div>
+              <div className="card card-pad chart-card">
+                <h4>Reject rate by welder</h4>
+                <p className="chart-sub">
+                  Share of examined welds rejected — the dashed rule is the {pct(warn)} action level
+                </p>
+                <RankedBars
+                  rows={rejectRows}
+                  totalCount={examined.length}
+                  threshold={warn * 100}
+                  thresholdLabel={`${(warn * 100).toFixed(0)}% action level`}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="section-head"><h3>Per-Welder Performance</h3></div>
           <div className="table-wrap" style={{ marginBottom: 22 }}>

@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { api, bytesToB64 } from "./api";
 import type { PerformanceReport, PerformanceRow } from "./types";
 
 // Brand palette (matches the app navy).
@@ -340,15 +341,25 @@ export function buildPerformancePdf(rep: PerformanceReport, company: string): js
   return doc;
 }
 
-/** Generate and download the report PDF. */
-export function downloadPerformancePdf(rep: PerformanceReport, company: string) {
-  const doc = buildPerformancePdf(rep, company);
-  const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
-  doc.save(`welder-performance-${tag}.pdf`);
+/** The built document's bytes, base64-encoded for the save command. */
+export function pdfB64(doc: jsPDF): string {
+  return bytesToB64(new Uint8Array(doc.output("arraybuffer")));
 }
 
-/** Open the report in a new tab (for print / Save-as-PDF from the viewer). */
-export function openPerformancePdf(rep: PerformanceReport, company: string) {
+/**
+ * Generate the report PDF into the SENTRIX Reports folder and reveal it in
+ * the file manager. Browser downloads are inert inside the WebView, so the
+ * file is written by the backend. Returns the path written.
+ */
+export function downloadPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
   const doc = buildPerformancePdf(rep, company);
-  doc.output("dataurlnewwindow");
+  const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
+  return api.saveExport(`welder-performance-${tag}.pdf`, pdfB64(doc), "reveal");
+}
+
+/** Generate the PDF and open it in the default viewer (print from there). */
+export function openPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
+  const doc = buildPerformancePdf(rep, company);
+  const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
+  return api.saveExport(`welder-performance-${tag}.pdf`, pdfB64(doc), "open");
 }

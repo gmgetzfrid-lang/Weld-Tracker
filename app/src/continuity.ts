@@ -1,33 +1,15 @@
 import { jsPDF } from "jspdf";
+import { api, bytesToB64, errMsg } from "./api";
+import { notify } from "./components/ui";
 import type { WelderContinuity } from "./types";
 
-const MIME: Record<string, string> = {
-  pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-  gif: "image/gif", tif: "image/tiff", tiff: "image/tiff", webp: "image/webp",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-};
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-/** Open an uploaded cert document (base64) to view it, or download if blocked. */
+/**
+ * Open an uploaded document (base64) with the OS default app. window.open and
+ * download links are inert inside the WebView, so the backend writes the file
+ * to the SENTRIX Reports folder and launches it.
+ */
 export function openBase64File(name: string, b64: string) {
-  const ext = (name.split(".").pop() ?? "").toLowerCase();
-  const blob = new Blob([base64ToBytes(b64) as BlobPart], { type: MIME[ext] ?? "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank");
-  if (!win) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  api.saveExport(name, b64, "open").catch((e) => notify("err", errMsg(e)));
 }
 
 /** A tiny table renderer with page breaks; returns the y after the table. */
@@ -82,8 +64,8 @@ function drawTable(
   return y;
 }
 
-/** Export a welder's continuity log as a downloadable PDF file. */
-export function continuityPdf(c: WelderContinuity) {
+/** Build the continuity-log PDF document. */
+function buildContinuityPdf(c: WelderContinuity): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const M = 40;
   let y = 50;
@@ -121,56 +103,25 @@ export function continuityPdf(c: WelderContinuity) {
     c.events.map((e) => [e.date, e.cert_alias, e.process ?? "", e.weld_number ?? "", e.work_order ?? "", e.drawing_no ?? "", e.result]),
     [70, 95, 60, 60, 85, 80, 60],
   );
-
-  doc.save(`continuity-${c.stamp}.pdf`);
+  return doc;
 }
 
-/** Open a print-friendly window of the continuity log (also Save-as-PDF from there). */
+/** Export a welder's continuity log to the SENTRIX Reports folder. */
+export function continuityPdf(c: WelderContinuity) {
+  const doc = buildContinuityPdf(c);
+  api
+    .saveExport(`continuity-${c.stamp}.pdf`, bytesToB64(new Uint8Array(doc.output("arraybuffer"))), "reveal")
+    .then((p) => notify("ok", `Saved ${p}`))
+    .catch((e) => notify("err", errMsg(e)));
+}
+
+/** Print the continuity log: generate the PDF and open it in the default
+ * viewer, whose Print button does the rest. (The old print-window approach is
+ * impossible here — window.open is blocked inside the hardened WebView.) */
 export function printContinuity(c: WelderContinuity) {
-  const esc = (s: unknown) =>
-    String(s ?? "").replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]!));
-  const certRows = c.certs
-    .map(
-      (ct) => `<tr><td>${esc(ct.alias)}</td><td>${esc(ct.process)}</td>
-      <td class="${ct.status === "Active" ? "ok" : "off"}">${esc(ct.status)}</td>
-      <td>${esc(ct.qualified_date)}</td><td>${esc(ct.last_activity)}</td><td>${esc(ct.continuous_through)}</td></tr>`,
-    )
-    .join("");
-  const eventRows = c.events
-    .map(
-      (e) => `<tr><td>${esc(e.date)}</td><td>${esc(e.cert_alias)}</td><td>${esc(e.process)}</td>
-      <td>${esc(e.weld_number)}</td><td>${esc(e.work_order)}</td><td>${esc(e.drawing_no)}</td><td>${esc(e.result)}</td></tr>`,
-    )
-    .join("");
-  const w = window.open("", "_blank");
-  if (!w) return;
-  w.document.write(`<!doctype html><html><head><title>Continuity Log — ${esc(c.stamp)}</title>
-    <style>
-      body{font-family:Segoe UI,Arial,sans-serif;color:#16233b;margin:32px;}
-      h1{color:#0a1f6b;font-size:20px;margin:0 0 4px;}
-      .sub{color:#64748b;margin:0 0 18px;font-size:13px;}
-      h2{color:#0a1f6b;font-size:14px;margin:22px 0 6px;}
-      table{width:100%;border-collapse:collapse;font-size:12px;}
-      th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;}
-      th{background:#0a1f6b;color:#fff;}
-      tr:nth-child(even) td{background:#f4f6fb;}
-      .ok{color:#16a34a;font-weight:700;} .off{color:#b91c1c;font-weight:700;}
-      @media print{.noprint{display:none;}}
-    </style></head><body>
-    <button class="noprint" id="print-btn" style="float:right;padding:8px 14px;">Print</button>
-    <h1>Welder Continuity Log</h1>
-    <p class="sub">${esc(c.name)} · Stamp ${esc(c.stamp)} · generated ${esc(c.generated_on)}</p>
-    <h2>Qualifications</h2>
-    <table><thead><tr><th>Cert (alias)</th><th>Process</th><th>Status</th><th>Qualified</th><th>Last X-ray</th><th>Continuous thru</th></tr></thead>
-    <tbody>${certRows || '<tr><td colspan="6">none</td></tr>'}</tbody></table>
-    <h2>X-ray Continuity Events</h2>
-    <table><thead><tr><th>Date</th><th>Cert</th><th>Process</th><th>Weld #</th><th>Work Order</th><th>Drawing</th><th>Result</th></tr></thead>
-    <tbody>${eventRows || '<tr><td colspan="7">none</td></tr>'}</tbody></table>
-    </body></html>`);
-  w.document.close();
-  // Wire the button from the opener side — an inline onclick would be blocked
-  // by the app's Content Security Policy, which the child window inherits.
-  w.document.getElementById("print-btn")?.addEventListener("click", () => w.print());
-  w.focus();
-  setTimeout(() => w.print(), 300);
+  const doc = buildContinuityPdf(c);
+  api
+    .saveExport(`continuity-${c.stamp}.pdf`, bytesToB64(new Uint8Array(doc.output("arraybuffer"))), "open")
+    .then((p) => notify("ok", `Opened ${p}`))
+    .catch((e) => notify("err", errMsg(e)));
 }

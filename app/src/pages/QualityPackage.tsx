@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { QualityFile } from "../types";
-import { useToast } from "../components/ui";
-import { fileToBase64, base64ToBytes } from "../pdf";
+import { ConfirmDialog, useToast } from "../components/ui";
+import { fileToBase64 } from "../pdf";
 
 // The categories a quality-package file can be filed under (mirrors
 // weldcore/src/wo_files.rs CATEGORIES).
@@ -69,27 +69,17 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
     try {
       const got = await api.getWoFile(f.id);
       if (!got) return;
-      const [name, mime, b64] = got;
-      const blob = new Blob([base64ToBytes(b64) as unknown as BlobPart], {
-        type: mime || "application/octet-stream",
-      });
-      const url = URL.createObjectURL(blob);
-      // Open in a new tab where possible; fall back to a download.
-      const w = window.open(url, "_blank");
-      if (!w) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name || "file";
-        a.click();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const [name, , b64] = got;
+      // window.open / download links are inert inside the WebView — the
+      // backend writes the file out and launches the OS default viewer.
+      await api.saveExport(name || "file", b64, "open");
     } catch (e) {
       toast.push("err", errMsg(e));
     }
   };
 
+  const [confirmDel, setConfirmDel] = useState<QualityFile | null>(null);
   const del = async (f: QualityFile) => {
-    if (!confirm(`Remove ${f.name ?? "this file"} from the quality package?`)) return;
     try {
       await api.deleteWoFile(f.id);
       load();
@@ -153,13 +143,24 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
                   <div className="spacer" />
                   {f.has_file && <button className="btn btn-sm" onClick={() => view(f)}>View</button>}
                   {editable && canDelete(f) && (
-                    <button className="btn btn-sm btn-danger" title="Remove (uploader or admin)" onClick={() => del(f)}>✕</button>
+                    <button className="btn btn-sm btn-danger" title="Remove (uploader or admin)" onClick={() => setConfirmDel(f)}>✕</button>
                   )}
                 </div>
               ))}
             </div>
           ))}
         </div>
+      )}
+
+      {confirmDel && (
+        <ConfirmDialog
+          title={`Remove ${confirmDel.name ?? "this file"}`}
+          body="The file is removed from this work order's quality package. This cannot be undone."
+          confirmLabel="Remove file"
+          danger
+          onConfirm={() => { const f = confirmDel; setConfirmDel(null); if (f) del(f); }}
+          onClose={() => setConfirmDel(null)}
+        />
       )}
     </div>
   );
