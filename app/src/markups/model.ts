@@ -64,6 +64,8 @@ export interface MData {
   items?: Prim[];
   /** built-in symbol key, when the group came from the library. */
   symbol?: string;
+  /** iso fitting spec (joint type, run axis, arms) the items were generated from. */
+  iso?: { fitting: string; joint: "bw" | "sw" | "thd" | "flg" | "none"; run: number; arms?: [number, number]; branch?: number; flip?: boolean };
   /** pen: draw as a smooth curve. */
   smooth?: boolean;
 }

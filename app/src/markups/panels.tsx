@@ -1,11 +1,15 @@
 // Tool Chest dock, properties bar, context menu, markups list, text editor.
+import type React from "react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, errMsg } from "../api";
 import type { MarkupKind, MarkupTool } from "../types";
 import { Modal, localTime, useToast } from "../components/ui";
 import type { DrawKind, MTool, MarkupEditor } from "./editor";
 import { GroupEl } from "./render";
-import { SYMBOLS, symbolTemplate } from "./symbols";
+import {
+  CATEGORIES, DIRECTIONS, FITTING_BY_KEY, JOINT_LABEL, RUN_AXES, defaultJoint, isoTemplate, specName,
+  type IsoSpec, type Joint,
+} from "./symbols";
 import {
   DEFAULT_STYLE, PALETTE, kindLabel, templateFrom, type PM, type Style, type ToolTemplate,
 } from "./model";
@@ -66,6 +70,101 @@ function noteRecent(name: string, tool: MTool, preview: ToolTemplate | DrawKind)
 }
 
 // ---------------------------------------------------------------------------
+// Iso direction picker — run axis, elbow arms / branch, flip, end type
+// ---------------------------------------------------------------------------
+
+export interface IsoPick { run: number; arms: [number, number]; branch: number; flip: boolean; joint: Joint }
+const DEFAULT_PICK: IsoPick = { run: 30, arms: [30, 90], branch: 90, flip: false, joint: "bw" };
+
+function Compass({ value, onPick, size = 92 }: { value: number[]; onPick: (deg: number) => void; size?: number }) {
+  const c = size / 2, r = size / 2 - 9;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  return (
+    <svg width={size} height={size} className="iso-compass">
+      <circle cx={c} cy={c} r={r} fill="none" stroke="var(--border-strong)" />
+      {/* the three iso axes as faint guides */}
+      {[30, 90, 150].map((d) => (
+        <line key={d} x1={c - r * Math.cos(rad(d))} y1={c + r * Math.sin(rad(d))} x2={c + r * Math.cos(rad(d))} y2={c - r * Math.sin(rad(d))} stroke="var(--border)" strokeDasharray="2 3" />
+      ))}
+      {value.map((d, i) => (
+        <line key={`v${i}`} x1={c} y1={c} x2={c + r * Math.cos(rad(d))} y2={c - r * Math.sin(rad(d))} stroke="var(--navy)" strokeWidth={2.2} />
+      ))}
+      {DIRECTIONS.map((d) => {
+        const on = value.includes(d);
+        return (
+          <circle key={d} cx={c + r * Math.cos(rad(d))} cy={c - r * Math.sin(rad(d))} r={on ? 5.5 : 4}
+            className={`iso-dot ${on ? "on" : ""} ${[30, 90, 150, 210, 270, 330].includes(d) ? "axis" : ""}`}
+            onClick={() => onPick(d)}>
+            <title>{d}°</title>
+          </circle>
+        );
+      })}
+    </svg>
+  );
+}
+
+function IsoPicker({ pick, setPick, need, showJoint }: {
+  pick: IsoPick; setPick: (p: IsoPick) => void; need: "run" | "elbow" | "tee" | "none"; showJoint: boolean;
+}) {
+  const [armSlot, setArmSlot] = useState<0 | 1>(0);
+  const onDir = (d: number) => {
+    if (need === "elbow") {
+      const arms: [number, number] = [...pick.arms] as [number, number];
+      arms[armSlot] = d;
+      setPick({ ...pick, arms });
+      setArmSlot(armSlot === 0 ? 1 : 0);
+    } else if (need === "tee") {
+      setPick({ ...pick, branch: d });
+    }
+  };
+  const compassValue = need === "elbow" ? pick.arms : need === "tee" ? [pick.run, pick.run + 180, pick.branch] : need === "run" ? [pick.run, pick.run + 180] : [];
+  return (
+    <div className="iso-picker">
+      <div className="iso-row">
+        <span className="iso-lab">Run</span>
+        <div className="pill-tabs mini">
+          {RUN_AXES.map((a) => (
+            <button key={a.deg} className={pick.run === a.deg ? "active" : ""} title={a.label} onClick={() => setPick({ ...pick, run: a.deg })}>{a.glyph}</button>
+          ))}
+        </div>
+        <button className={`btn btn-sm ${pick.flip ? "btn-primary" : ""}`} title="Flip: stem / branch / large end to the other side" onClick={() => setPick({ ...pick, flip: !pick.flip })}>⇋ Flip</button>
+      </div>
+      {showJoint && (
+        <div className="iso-row">
+          <span className="iso-lab">Ends</span>
+          <div className="pill-tabs mini">
+            {(["bw", "sw", "thd", "flg"] as Joint[]).map((j) => (
+              <button key={j} className={pick.joint === j ? "active" : ""} title={JOINT_LABEL[j]} onClick={() => setPick({ ...pick, joint: j })}>{j.toUpperCase()}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {need !== "none" && need !== "run" && (
+        <div className="iso-row" style={{ alignItems: "flex-start" }}>
+          <span className="iso-lab">{need === "elbow" ? "Arms" : "Branch"}</span>
+          <Compass value={compassValue} onPick={onDir} />
+          <span className="muted" style={{ fontSize: 11, lineHeight: 1.4 }}>
+            {need === "elbow"
+              ? <>Click two directions for the elbow arms.<br />Next click sets arm {armSlot + 1}.</>
+              : <>Run follows the axis above; click where the branch goes.</>}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Build a fitting spec from the picker for a given fitting + category joint. */
+function specFor(fitting: string, catJoint: Joint | null, pick: IsoPick): IsoSpec {
+  const f = FITTING_BY_KEY[fitting];
+  const joint = catJoint === null ? (f.joints.includes(pick.joint) ? pick.joint : f.joints[0]) : defaultJoint(f, catJoint);
+  const spec: IsoSpec = { fitting, joint, run: pick.run, flip: pick.flip };
+  if (f.kind === "elbow") spec.arms = pick.arms;
+  if (f.kind === "tee") spec.branch = pick.branch;
+  return spec;
+}
+
+// ---------------------------------------------------------------------------
 // Tool Chest
 // ---------------------------------------------------------------------------
 
@@ -76,38 +175,69 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem("wm-chest-open") || "{}"); } catch { return {}; }
   });
+  const [pinned, setPinned] = useState(false);
+  const [pick, setPick] = useState<IsoPick>(() => {
+    try { return { ...DEFAULT_PICK, ...JSON.parse(localStorage.getItem("wm-iso-pick") || "{}") }; } catch { return DEFAULT_PICK; }
+  });
+  const updatePick = (p: IsoPick) => { setPick(p); try { localStorage.setItem("wm-iso-pick", JSON.stringify(p)); } catch { /* ignore */ } };
   const [newSet, setNewSet] = useState("");
   const [toolMenu, setToolMenu] = useState<{ x: number; y: number; tool: MarkupTool } | null>(null);
   const [setMenu, setSetMenu] = useState<{ x: number; y: number; cat: string } | null>(null);
   const [rename, setRename] = useState<{ tool?: MarkupTool; cat?: string; value: string } | null>(null);
   const [moveTool, setMoveTool] = useState<MarkupTool | null>(null);
-  const isOpen = (k: string, dflt = true) => open[k] ?? dflt;
-  const toggle = (k: string, dflt = true) => setOpen((o) => { const n = { ...o, [k]: !isOpen(k, dflt) }; try { localStorage.setItem("wm-chest-open", JSON.stringify(n)); } catch { /* ignore */ } return n; });
+  const [pendingSets, setPendingSets] = useState<string[]>([]);
+  const isOpen = (k: string, dflt = false) => open[k] ?? dflt;
+  const toggle = (k: string, dflt = false) => setOpen((o) => { const n = { ...o, [k]: !isOpen(k, dflt) }; try { localStorage.setItem("wm-chest-open", JSON.stringify(n)); } catch { /* ignore */ } return n; });
 
   const cats = useMemo(() => {
     const m = new Map<string, MarkupTool[]>();
     for (const t of tools) { const arr = m.get(t.category) ?? []; arr.push(t); m.set(t.category, arr); }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [tools]);
+  const allCats = useMemo(() => [...new Set([...cats.map(([c]) => c), ...pendingSets])].sort(), [cats, pendingSets]);
 
-  const pickDraw = (kind: DrawKind, label: string) => {
-    const t: MTool = { type: "draw", kind, name: label };
+  // Which picker rows matter depends on the last fitting picked.
+  const [need, setNeed] = useState<"run" | "elbow" | "tee" | "none">("run");
+  const [needJoint, setNeedJoint] = useState(false);
+
+  const pickDraw = (kind: DrawKind, label: string, sticky = pinned) => {
+    const t: MTool = { type: "draw", kind, name: label, sticky };
     editor.setTool(t); noteRecent(label, t, kind);
   };
-  const pickSymbol = (key: string, name: string) => {
-    const tpl = symbolTemplate(key, editor.style.stroke);
-    if (!tpl) return;
-    const t: MTool = { type: "place", template: tpl, name };
+  const pickFitting = (fitting: string, catJoint: Joint | null, label?: string, sticky = pinned) => {
+    const f = FITTING_BY_KEY[fitting];
+    setNeed(f.kind === "elbow" ? "elbow" : f.kind === "tee" ? "tee" : f.kind === "free" ? "none" : "run");
+    setNeedJoint(catJoint === null && f.joints.length > 1);
+    const spec = specFor(fitting, catJoint, pick);
+    const tpl = isoTemplate(spec, editor.style.stroke, label);
+    const name = specName(spec, label);
+    const t: MTool = { type: "place", template: tpl, name, sticky };
     editor.setTool(t); noteRecent(name, t, tpl);
   };
-  const pickTool = (tool: MarkupTool) => {
+  const pickTool = (tool: MarkupTool, sticky = pinned) => {
     const tpl = parseTemplate(tool);
     if (!tpl) { toast.push("err", "This tool's data is unreadable"); return; }
-    const t: MTool = { type: "place", template: tpl, name: tool.name };
+    const t: MTool = { type: "place", template: tpl, name: tool.name, sticky };
     editor.setTool(t); noteRecent(tool.name, t, tpl);
   };
-  const active = (m: MTool) => JSON.stringify(m) === JSON.stringify(editor.tool);
+  // Re-aim the active fitting when the picker changes.
+  useEffect(() => {
+    if (editor.tool.type !== "place" || !editor.tool.template.d.iso) return;
+    const iso = editor.tool.template.d.iso;
+    const f = FITTING_BY_KEY[iso.fitting];
+    if (!f) return;
+    const catJoint: Joint | null = needJoint ? null : iso.joint;
+    const spec = specFor(iso.fitting, catJoint, pick);
+    if (JSON.stringify(spec) === JSON.stringify(iso)) return;
+    const label = editor.tool.name;
+    editor.setTool({ ...editor.tool, template: isoTemplate(spec, editor.style.stroke, label), sticky: editor.tool.sticky });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pick]);
+
+  const active = (m: MTool) => JSON.stringify({ ...m, sticky: undefined }) === JSON.stringify({ ...editor.tool, sticky: undefined });
   const selectOn = editor.tool.type === "select";
+  const activeFitting = editor.tool.type === "place" ? editor.tool.template.d.iso?.fitting : undefined;
+  const activeJoint = editor.tool.type === "place" ? editor.tool.template.d.iso?.joint : undefined;
 
   const saveRename = async () => {
     if (!rename) return;
@@ -130,29 +260,36 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
     try { await api.updateMarkupTool({ ...t, category: cat }); setMoveTool(null); onReloadTools(); }
     catch (e) { toast.push("err", errMsg(e)); }
   };
-  const [pendingSets, setPendingSets] = useState<string[]>([]);
   const createSet = () => {
     const name = newSet.trim();
     if (!name) return;
-    // A set exists once it has a tool; until then show it as pending.
     setPendingSets((p) => (p.includes(name) ? p : [...p, name]));
     setNewSet("");
     setOpen((o) => ({ ...o, [`cat:${name}`]: true }));
   };
-  const allCats = useMemo(() => {
-    const names = new Set([...cats.map(([c]) => c), ...pendingSets]);
-    return [...names].sort();
-  }, [cats, pendingSets]);
+
+  const Sec = ({ k, title, count, dflt = false, children, onMenu }: { k: string; title: string; count?: number; dflt?: boolean; children: React.ReactNode; onMenu?: (e: React.MouseEvent) => void }) => (
+    <section className="chest-sec">
+      <button className="chest-sec-head" onClick={() => toggle(k, dflt)} onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(e); } : undefined}>
+        <span>{isOpen(k, dflt) ? "▾" : "▸"}</span> {title}
+        {count != null && <span className="muted" style={{ marginLeft: "auto", fontSize: 11 }}>{count}</span>}
+        {onMenu && <span className="chest-more" title="Rename or delete this set" onClick={(e) => { e.stopPropagation(); onMenu(e); }}>⋯</span>}
+      </button>
+      {isOpen(k, dflt) && children}
+    </section>
+  );
 
   return (
     <aside className="anno-dock" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
       <div className="dock-head">
         <b>Tool Chest</b>
-        <span className="muted" style={{ fontSize: 11 }}>{editor.tool.type === "select" ? "Select" : editor.tool.type === "draw" ? editor.tool.name ?? editor.tool.kind : editor.tool.name}</span>
+        <span className="muted" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {editor.tool.type === "select" ? "Select" : editor.tool.type === "draw" ? editor.tool.name ?? editor.tool.kind : editor.tool.name}
+        </span>
+        <button className={`pin ${pinned ? "on" : ""}`} title={pinned ? "Tools stay active after each use (click to turn off)" : "Keep a tool active after each use (or double-click a tool)"} onClick={() => setPinned((v) => !v)}>📌</button>
         <button className="wm-x" title="Close (Esc)" onClick={onClose}>×</button>
       </div>
 
-      {/* Appearance for the next markup (and the selection) */}
       <div className="chest-swatches">
         {PALETTE.map((c) => (
           <button key={c} className={`swatch ${editor.style.stroke === c ? "on" : ""}`} style={{ background: c }} title={c} onClick={() => editor.setStyle({ stroke: c })} />
@@ -171,80 +308,75 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
         </button>
 
         {RECENT.length > 0 && (
-          <section className="chest-sec">
-            <button className="chest-sec-head" onClick={() => toggle("recent")}><span>{isOpen("recent") ? "▾" : "▸"}</span> Recent</button>
-            {isOpen("recent") && (
-              <div className="chest-grid">
-                {RECENT.map((r) => (
-                  <button key={r.name} className={`chest-tool ${active(r.tool) ? "on" : ""}`} title={r.name} onClick={() => editor.setTool(r.tool)} disabled={!editable}>
-                    {typeof r.preview === "string" ? <ToolIcon d={DRAW_TOOLS.find((d) => d.kind === r.preview)?.icon ?? ""} /> : <TemplatePreview t={r.preview} />}
-                    <span>{r.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        <section className="chest-sec">
-          <button className="chest-sec-head" onClick={() => toggle("redline")}><span>{isOpen("redline") ? "▾" : "▸"}</span> Redline</button>
-          {isOpen("redline") && (
+          <Sec k="recent" title="Recent" dflt>
             <div className="chest-grid">
-              {DRAW_TOOLS.map((t) => (
-                <button key={t.kind} className={`chest-tool ${editor.tool.type === "draw" && editor.tool.kind === t.kind && !editor.tool.styleOverride ? "on" : ""}`}
-                  title={`${t.label} (${t.key})`} onClick={() => pickDraw(t.kind, t.label)} disabled={!editable}>
-                  <ToolIcon d={t.icon} /><span>{t.label}</span>
+              {RECENT.map((r) => (
+                <button key={r.name} className={`chest-tool ${active(r.tool) ? "on" : ""}`} title={r.name}
+                  onClick={() => editor.setTool({ ...r.tool, sticky: pinned } as MTool)} onDoubleClick={() => { setPinned(true); editor.setTool({ ...r.tool, sticky: true } as MTool); }} disabled={!editable}>
+                  {typeof r.preview === "string" ? <ToolIcon d={DRAW_TOOLS.find((d) => d.kind === r.preview)?.icon ?? ""} /> : <TemplatePreview t={r.preview} />}
+                  <span>{r.name}</span>
                 </button>
               ))}
             </div>
-          )}
-        </section>
+          </Sec>
+        )}
 
-        <section className="chest-sec">
-          <button className="chest-sec-head" onClick={() => toggle("piping")}><span>{isOpen("piping") ? "▾" : "▸"}</span> Piping</button>
-          {isOpen("piping") && (
+        <Sec k="redline" title="Redline" dflt>
+          <div className="chest-grid">
+            {DRAW_TOOLS.map((t) => (
+              <button key={t.kind} className={`chest-tool ${editor.tool.type === "draw" && editor.tool.kind === t.kind && !editor.tool.styleOverride ? "on" : ""}`}
+                title={`${t.label} (${t.key}) · double-click to keep active`} onClick={() => pickDraw(t.kind, t.label)} onDoubleClick={() => { setPinned(true); pickDraw(t.kind, t.label, true); }} disabled={!editable}>
+                <ToolIcon d={t.icon} /><span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </Sec>
+
+        <div className="chest-iso-head">Iso fittings</div>
+        <div className="muted" style={{ fontSize: 11, padding: "0 4px 4px" }}>Set the run axis (and arms or branch), then click a fitting. One click places one.</div>
+        <IsoPicker pick={pick} setPick={updatePick} need={need} showJoint={needJoint} />
+
+        {CATEGORIES.map((cat) => (
+          <Sec key={cat.key} k={`iso:${cat.key}`} title={cat.name} dflt={cat.key === "bw"}>
             <div className="chest-grid">
-              {SYMBOLS.map((s) => {
-                const tpl = symbolTemplate(s.key, editor.style.stroke)!;
-                const on = editor.tool.type === "place" && editor.tool.template.d.symbol === s.key;
+              {cat.items.map((it) => {
+                const spec = specFor(it.fitting, cat.joint, pick);
+                const tpl = isoTemplate(spec, editor.style.stroke, it.label);
+                const on = activeFitting === it.fitting && (cat.joint === null ? true : activeJoint === spec.joint);
+                const name = specName(spec, it.label);
                 return (
-                  <button key={s.key} className={`chest-tool ${on ? "on" : ""}`} title={s.name} onClick={() => pickSymbol(s.key, s.name)} disabled={!editable}>
-                    <TemplatePreview t={tpl} /><span>{s.name}</span>
+                  <button key={`${cat.key}-${it.fitting}`} className={`chest-tool ${on ? "on" : ""}`} title={`${name} · double-click to keep active`}
+                    onClick={() => pickFitting(it.fitting, cat.joint, it.label)} onDoubleClick={() => { setPinned(true); pickFitting(it.fitting, cat.joint, it.label, true); }} disabled={!editable}>
+                    <TemplatePreview t={tpl} size={34} /><span>{it.label ?? FITTING_BY_KEY[it.fitting].name}</span>
                   </button>
                 );
               })}
             </div>
-          )}
-        </section>
+          </Sec>
+        ))}
 
         {allCats.map((cat) => {
           const list = cats.find(([c]) => c === cat)?.[1] ?? [];
-          const k = `cat:${cat}`;
           return (
-            <section className="chest-sec" key={cat}>
-              <button className="chest-sec-head" onClick={() => toggle(k)} onContextMenu={(e) => { e.preventDefault(); setSetMenu({ x: e.clientX, y: e.clientY, cat }); }}>
-                <span>{isOpen(k) ? "▾" : "▸"}</span> {cat} <span className="muted" style={{ marginLeft: "auto", fontSize: 11 }}>{list.length}</span>
-                <span className="chest-more" title="Rename or delete this set" onClick={(e) => { e.stopPropagation(); setSetMenu({ x: e.clientX, y: e.clientY, cat }); }}>⋯</span>
-              </button>
-              {isOpen(k) && (
-                <div className="chest-grid">
-                  {list.length === 0 && <div className="muted" style={{ fontSize: 11.5, padding: "2px 4px", gridColumn: "1 / -1" }}>Empty — right-click a markup and send it here.</div>}
-                  {list.map((t) => {
-                    const tpl = parseTemplate(t);
-                    const on = editor.tool.type === "place" && editor.tool.name === t.name && JSON.stringify(editor.tool.template) === JSON.stringify(tpl);
-                    return (
-                      <button key={t.id} className={`chest-tool ${on ? "on" : ""} ${t.mode === "properties" ? "props" : ""}`}
-                        title={`${t.name} · ${t.mode === "properties" ? "Properties mode: you draw, it styles" : "Drawing mode: places an exact copy"}\nRight-click for options`}
-                        onClick={() => pickTool(t)} onContextMenu={(e) => { e.preventDefault(); setToolMenu({ x: e.clientX, y: e.clientY, tool: t }); }} disabled={!editable}>
-                        {tpl ? <TemplatePreview t={tpl} /> : <ToolIcon d="M2 8h12" />}
-                        <span>{t.name}</span>
-                        {t.mode === "properties" && <i className="chest-mode" title="Properties mode">P</i>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+            <Sec key={cat} k={`cat:${cat}`} title={cat} count={list.length} dflt onMenu={(e) => setSetMenu({ x: e.clientX, y: e.clientY, cat })}>
+              <div className="chest-grid">
+                {list.length === 0 && <div className="muted" style={{ fontSize: 11.5, padding: "2px 4px", gridColumn: "1 / -1" }}>Empty — right-click a markup and send it here.</div>}
+                {list.map((t) => {
+                  const tpl = parseTemplate(t);
+                  const on = editor.tool.type === "place" && editor.tool.name === t.name && JSON.stringify(editor.tool.template) === JSON.stringify(tpl);
+                  return (
+                    <button key={t.id} className={`chest-tool ${on ? "on" : ""} ${t.mode === "properties" ? "props" : ""}`}
+                      title={`${t.name} · ${t.mode === "properties" ? "Properties mode: you draw, it styles" : "Drawing mode: places an exact copy"}\nRight-click for options · double-click to keep active`}
+                      onClick={() => pickTool(t)} onDoubleClick={() => { setPinned(true); pickTool(t, true); }}
+                      onContextMenu={(e) => { e.preventDefault(); setToolMenu({ x: e.clientX, y: e.clientY, tool: t }); }} disabled={!editable}>
+                      {tpl ? <TemplatePreview t={tpl} /> : <ToolIcon d="M2 8h12" />}
+                      <span>{t.name}</span>
+                      {t.mode === "properties" && <i className="chest-mode" title="Properties mode">P</i>}
+                    </button>
+                  );
+                })}
+              </div>
+            </Sec>
           );
         })}
 
@@ -255,7 +387,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
           </div>
         )}
         <div className="muted" style={{ fontSize: 11, padding: "8px 4px 2px", lineHeight: 1.5 }}>
-          Draw, then right-click a markup → <b>Add to Tool Chest</b> to reuse it. Sets are shared with the team.
+          One click places one fitting and returns to Select. Double-click a tool (or 📌) to keep it active. Right-click a markup → <b>Add to Tool Chest</b> to reuse it; sets are shared with the team.
         </div>
       </div>
 
@@ -448,10 +580,43 @@ export function MarkupBar({ editor, onAddToChest, onEditText, onClose }: {
           </label>
         )}
       </div>
+      {one?.d.iso && (
+        <div className="mk-bar-row">
+          <span className="muted" style={{ fontSize: 11.5 }}>Fitting</span>
+          {FITTING_BY_KEY[one.d.iso.fitting]?.joints.length > 1 && (
+            <div className="pill-tabs mini">
+              {FITTING_BY_KEY[one.d.iso.fitting].joints.map((j) => (
+                <button key={j} className={one.d.iso!.joint === j ? "active" : ""} title={JOINT_LABEL[j]} disabled={locked} onClick={() => editor.setIso(one.id, { joint: j })}>{j.toUpperCase()}</button>
+              ))}
+            </div>
+          )}
+          {FITTING_BY_KEY[one.d.iso.fitting]?.kind !== "free" && FITTING_BY_KEY[one.d.iso.fitting]?.kind !== "elbow" && (
+            <div className="pill-tabs mini" title="Run axis">
+              {RUN_AXES.map((a) => <button key={a.deg} className={one.d.iso!.run === a.deg ? "active" : ""} title={a.label} disabled={locked} onClick={() => editor.setIso(one.id, { run: a.deg })}>{a.glyph}</button>)}
+            </div>
+          )}
+          {FITTING_BY_KEY[one.d.iso.fitting]?.kind === "tee" && (
+            <select value={one.d.iso.branch ?? 90} disabled={locked} onChange={(e) => editor.setIso(one.id, { branch: Number(e.target.value) })} title="Branch direction">
+              {DIRECTIONS.map((d) => <option key={d} value={d}>branch {d}°</option>)}
+            </select>
+          )}
+          {FITTING_BY_KEY[one.d.iso.fitting]?.kind === "elbow" && (
+            <>
+              <select value={one.d.iso.arms?.[0] ?? 30} disabled={locked} onChange={(e) => editor.setIso(one.id, { arms: [Number(e.target.value), one.d.iso!.arms?.[1] ?? 90] })} title="Arm 1">
+                {DIRECTIONS.map((d) => <option key={d} value={d}>arm 1: {d}°</option>)}
+              </select>
+              <select value={one.d.iso.arms?.[1] ?? 90} disabled={locked} onChange={(e) => editor.setIso(one.id, { arms: [one.d.iso!.arms?.[0] ?? 30, Number(e.target.value)] })} title="Arm 2">
+                {DIRECTIONS.map((d) => <option key={d} value={d}>arm 2: {d}°</option>)}
+              </select>
+            </>
+          )}
+          <button className={`btn btn-sm ${one.d.iso.flip ? "btn-primary" : ""}`} disabled={locked} title="Flip stem / branch / large end" onClick={() => editor.setIso(one.id, { flip: !one.d.iso!.flip })}>⇋ Flip</button>
+        </div>
+      )}
       <div className="mk-bar-row">
         {textual && one && <button className="btn btn-sm" onClick={() => onEditText(one.id)} disabled={locked}>✎ Edit text</button>}
-        <button className="btn btn-sm" title="Rotate −15° ( [ )" onClick={() => editor.rotate(-15)} disabled={locked}>↺</button>
-        <button className="btn btn-sm" title="Rotate +15° ( ] )" onClick={() => editor.rotate(15)} disabled={locked}>↻</button>
+        <button className="btn btn-sm" title="Rotate −30° ( [ ) · Alt for 5°" onClick={() => editor.rotate(-30)} disabled={locked}>↺</button>
+        <button className="btn btn-sm" title="Rotate +30° ( ] ) · Alt for 5°" onClick={() => editor.rotate(30)} disabled={locked}>↻</button>
         <button className="btn btn-sm" title="Rotate 90°" onClick={() => editor.rotate(90)} disabled={locked}>90°</button>
         <button className="btn btn-sm" title="Flip horizontally" onClick={editor.flip} disabled={locked}>⇋</button>
         {sel.length > 1 && <button className="btn btn-sm" title="Group (Ctrl+G)" onClick={editor.group}>⧉ Group</button>}

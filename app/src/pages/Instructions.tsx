@@ -81,6 +81,22 @@ export function Instructions() {
       </div>
 
       <div className="card card-pad">
+        <h3>Weld Map Markups &amp; Tool Chest</h3>
+        <p>
+          The ✎ tool on a weld map opens the <b>Tool Chest</b>: redline tools (text, callout, arrow, cloud, dimension…) and
+          <b> isometric fittings</b> drawn the way they appear on an iso — a butt weld is a dot on the line, a socket weld is the
+          socket face with its fillet dot, a threaded joint is a tick, a flange is a pair of lines.
+        </p>
+        <ul>
+          <li><b>Categories:</b> Butt weld, Socket weld, Threaded, Flanged, Valves (pick the end type), Supports &amp; marks, plus your own sets.</li>
+          <li><b>Aim first.</b> Choose the run axis (⟋ east–west, ⟍ north–south, │ vertical), the elbow arms or the branch direction on the compass, then click the fitting. <kbd>[</kbd> <kbd>]</kbd> rotate 30° at a time.</li>
+          <li><b>One click places one.</b> The tool returns to Select so you can grab, resize, rotate or edit right away. Double-click a tool (or 📌) to keep it active.</li>
+          <li><b>Reuse.</b> Right-click any markup → <b>Add to Tool Chest</b>. Drawing mode places an exact copy; Properties mode keeps only the look. Sets are shared with the team.</li>
+          <li><b>Export.</b> ⭳ Weld map flattens the drawing, bubbles, legend and markups into a PDF, or files it straight into the work order's quality package.</li>
+        </ul>
+      </div>
+
+      <div className="card card-pad">
         <h3>Key Concepts</h3>
         <ul style={{ lineHeight: 1.7, paddingLeft: 20 }}>
           <li><strong>Joint types:</strong> BW (butt weld), SW (socket weld), O-Let (branch/olet), Fillet, Other.</li>

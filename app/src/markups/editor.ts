@@ -8,12 +8,13 @@ import {
   DEFAULT_STYLE, HIGHLIGHT, bboxPx, groupOf, instantiate, normBox, parseMarkup, resizeBox, rotatePt, simplify,
   toRow, translated, type Box, type Handle, type MData, type PM, type Pt, type Style, type ToolTemplate,
 } from "./model";
+import { isoPrims, type IsoSpec } from "./symbols";
 
 export type DrawKind = "line" | "arrow" | "polyline" | "pen" | "rect" | "ellipse" | "cloud" | "highlight" | "text" | "callout" | "dimension";
 export type MTool =
   | { type: "select" }
-  | { type: "draw"; kind: DrawKind; styleOverride?: Partial<Style>; name?: string }
-  | { type: "place"; template: ToolTemplate; name: string };
+  | { type: "draw"; kind: DrawKind; styleOverride?: Partial<Style>; name?: string; sticky?: boolean }
+  | { type: "place"; template: ToolTemplate; name: string; sticky?: boolean };
 
 export interface Draft { kind: DrawKind; start: Pt; cur: Pt; pts: Pt[] }
 
@@ -163,6 +164,15 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
 
   // ---- create helpers --------------------------------------------------------
   const norm = (p: Pt): Pt => ({ x: p.x / W, y: p.y / H });
+  /** After a markup is made: keep the tool only if it is pinned, else go back
+   *  to Select with the new markup selected so its grips are live at once. */
+  const afterCreate = useCallback((created: PM | null) => {
+    if (!created) return;
+    const sticky = tool.type !== "select" && !!tool.sticky;
+    if (!sticky) setToolState({ type: "select" });
+    setSelection([created.id]);
+    pushHistory();
+  }, [tool, pushHistory]);
   const finishDraft = useCallback(async (dr: Draft) => {
     const s = { ...effStyle };
     const box: Box = normBox({ x: dr.start.x, y: dr.start.y, w: dr.cur.x - dr.start.x, h: dr.cur.y - dr.start.y });
@@ -195,15 +205,15 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
       case "polyline": case "pen":
         break; // handled by their own finishers
     }
-    if (created) { setSelection([created.id]); pushHistory(); }
-  }, [effStyle, W, H, persistCreate, pushHistory]);
+    afterCreate(created);
+  }, [effStyle, W, H, persistCreate, afterCreate]);
 
   const finishPolyline = useCallback(async (pts: Pt[]) => {
     setDraft(null);
     if (pts.length < 2) return;
     const created = await persistCreate("polyline", { style: { ...effStyle }, pts });
-    if (created) { setSelection([created.id]); pushHistory(); }
-  }, [effStyle, persistCreate, pushHistory]);
+    afterCreate(created);
+  }, [effStyle, persistCreate, afterCreate]);
 
   const finishPen = useCallback(async (pts: Pt[]) => {
     setDraft(null);
@@ -211,16 +221,18 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
     const px = pts.map((p) => ({ x: p.x * W, y: p.y * H }));
     const simp = simplify(px, 1.4).map(norm);
     const created = await persistCreate("pen", { style: { ...effStyle }, pts: simp, smooth: true });
-    if (created) { setSelection([created.id]); pushHistory(); }
+    afterCreate(created);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effStyle, W, H, persistCreate, pushHistory]);
+  }, [effStyle, W, H, persistCreate, afterCreate]);
 
   const placeTemplate = useCallback(async (t: ToolTemplate, atPx: Pt, name: string) => {
-    if (t.mode === "properties") { setTool({ type: "draw", kind: t.kind as DrawKind, styleOverride: t.d.style, name }); return; }
+    if (t.mode === "properties") { setTool({ type: "draw", kind: t.kind as DrawKind, styleOverride: t.d.style, name, sticky: tool.type !== "select" && !!tool.sticky }); return; }
     const inst = instantiate(t, atPx, W, H);
-    const created = await persistCreate(inst.kind, inst.d, t.d.symbol ? undefined : name);
-    if (created) { setSelection([created.id]); pushHistory(); }
-  }, [W, H, persistCreate, pushHistory, setTool]);
+    // Library fittings carry their own colour from the chest's swatch.
+    const d = t.d.iso ? { ...inst.d, style: { ...inst.d.style, stroke: style.stroke } } : inst.d;
+    const created = await persistCreate(inst.kind, d, t.d.symbol ? undefined : name);
+    afterCreate(created);
+  }, [W, H, persistCreate, afterCreate, setTool, tool, style.stroke]);
 
   // ---- stage pointer events (pt = px on the page) ----------------------------
   const onDown = useCallback((e: React.MouseEvent, px: Pt): boolean => {
@@ -374,6 +386,15 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
     pushHistory();
   }, [H, persistUpdate, pushHistory]);
 
+  /** Change a placed iso fitting (joint type, run axis, branch, flip) and redraw it. */
+  const setIso = useCallback((id: number, patch: Partial<IsoSpec>) => {
+    const m = allRef.current.find((x) => x.id === id);
+    if (!m || !m.d.iso || m.locked) return;
+    const iso: IsoSpec = { ...m.d.iso, ...patch };
+    persistUpdate({ ...m, d: { ...m.d, iso, items: isoPrims(iso) } });
+    pushHistory();
+  }, [persistUpdate, pushHistory]);
+
   const setMeta = useCallback((id: number, patch: Partial<Pick<PM, "subject" | "comment" | "status" | "locked">>) => {
     const m = allRef.current.find((x) => x.id === id);
     if (!m) return;
@@ -502,8 +523,8 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
     if (ctrl && (e.key === "v" || e.key === "V")) { paste(); return true; }
     if (ctrl && e.shiftKey && (e.key === "g" || e.key === "G")) { ungroup(); return true; }
     if (ctrl && (e.key === "g" || e.key === "G")) { group(); return true; }
-    if (e.key === "[") { rotate(e.shiftKey ? -90 : -15); return true; }
-    if (e.key === "]") { rotate(e.shiftKey ? 90 : 15); return true; }
+    if (e.key === "[") { rotate(e.shiftKey ? -90 : e.altKey ? -5 : -30); return true; }
+    if (e.key === "]") { rotate(e.shiftKey ? 90 : e.altKey ? 5 : 30); return true; }
     if (e.key === "ArrowLeft") { nudge(e.shiftKey ? -10 : -1, 0); return true; }
     if (e.key === "ArrowRight") { nudge(e.shiftKey ? 10 : 1, 0); return true; }
     if (e.key === "ArrowUp") { nudge(0, e.shiftKey ? -10 : -1); return true; }
@@ -516,7 +537,7 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
     tool, setTool, style, setStyle, effStyle, draft, editingText, setEditingText,
     load, onDown, onMove, onUp, onDouble, onKey, cancel,
     grab, grabHandle, grabVertex, grabAnchor, grabRotate,
-    setText, setMeta, remove, duplicate, copy, paste, group, ungroup, rotate, flip, reorder, toggleLock, setStatus,
+    setText, setMeta, setIso, remove, duplicate, copy, paste, group, ungroup, rotate, flip, reorder, toggleLock, setStatus,
     undo, redo, canUndo, canRedo, histVersion, placeTemplate,
     recent: recentRef.current,
     dragging: dragRef.current != null,
