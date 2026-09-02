@@ -239,7 +239,28 @@ fn main() {
             report_client,
             report_qm,
             report_nde_compliance,
-            report_performance
+            report_performance,
+            lot_config,
+            set_lot_config,
+            setup_lots,
+            list_lots,
+            get_lot_card,
+            create_lot,
+            turn_over_lot,
+            stop_lot_intake,
+            close_lot,
+            reopen_lot,
+            update_lot_notes,
+            pin_work_order,
+            unpin_work_order,
+            move_work_order_to_lot,
+            set_weld_lot,
+            lot_attention,
+            lots_auto_maintain,
+            suggest_examinations,
+            snooze_turnover,
+            wo_lot_summary,
+            lot_work_order_choices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Weld Tracker");

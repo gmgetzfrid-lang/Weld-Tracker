@@ -47,6 +47,22 @@ export function Instructions() {
       </div>
 
       <div className="card card-pad">
+        <h3>NDE Lots (ASME B31.3)</h3>
+        <p>
+          A <b>lot</b> is the population a welder's random-examination percentage is measured against. Without lots the
+          denominator never stops growing: "5% of everything a welder ever did" can mean hundreds of welds before the next
+          film is due. A lot bounds it — the shop convention is one every three months — and every weld belongs to exactly one.
+        </p>
+        <ul>
+          <li><b>Receiving lot.</b> New welds land in it automatically. Pin a work order to a side lot when a job or crew should be judged on its own.</li>
+          <li><b>Turnover.</b> At the expected length the lot stops taking welds (<i>Awaiting closeout</i>) and the next one opens — automatically, or you're asked at sign-in. A work order that is still active carries on in the new lot.</li>
+          <li><b>Closeout.</b> Film keeps landing against the old lot. When every welder meets their coverage it closes itself. Closing <i>short</i> is allowed but never silent: a reason is required and what was owed is frozen on the lot record.</li>
+          <li><b>Progressive sampling (341.3.4).</b> A rejected random examination adds two more of that welder's welds <i>from the same lot</i>; a reject among those adds two more; a third means every remaining weld of theirs in the lot.</li>
+          <li><b>Welds to shoot.</b> The lot page picks random un-examined welds to cover what's owed and exports an RT request list. It's a helper, not a cage — re-roll anytime.</li>
+        </ul>
+      </div>
+
+      <div className="card card-pad">
         <h3>Key Concepts</h3>
         <ul style={{ lineHeight: 1.7, paddingLeft: 20 }}>
           <li><strong>Joint types:</strong> BW (butt weld), SW (socket weld), O-Let (branch/olet), Fillet, Other.</li>

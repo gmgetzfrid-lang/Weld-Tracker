@@ -1022,7 +1022,162 @@ pub fn report_performance(
     state: State<AppState>,
     from: Option<String>,
     to: Option<String>,
+    lot_id: Option<i64>,
 ) -> R<PerformanceReport> {
     state.require_login()?;
-    e(state.store()?.report_performance(from, to))
+    match lot_id {
+        Some(id) => e(state
+            .store()?
+            .report_performance_scoped(weldcore::reports::ReportScope::Lot(id))),
+        None => e(state.store()?.report_performance(from, to)),
+    }
+}
+
+// --------------------------- NDE lots ---------------------------------------
+// ASME B31.3 lots: the bounded population each welder's random-examination
+// percentage (and progressive sampling) is judged against. See weldcore::lots.
+
+use weldcore::lots::{
+    AttentionItem, LotCard, LotConfig, LotWoChoice, MaintainOutcome, NdeLot, SuggestedExam,
+    WoLotSummary,
+};
+
+#[tauri::command]
+pub fn lot_config(state: State<AppState>) -> R<LotConfig> {
+    state.require_login()?;
+    e(state.store()?.lot_config())
+}
+
+#[tauri::command]
+pub fn set_lot_config(state: State<AppState>, config: LotConfig) -> R<LotConfig> {
+    let actor = state.require_admin()?;
+    e(state.store()?.set_lot_config(&config, &actor.username))
+}
+
+/// First-run setup: save config, open the first receiving lot, sweep history
+/// ("all" | "none" | "from:YYYY-MM-DD"). Returns [lot, welds swept].
+#[tauri::command]
+pub fn setup_lots(state: State<AppState>, config: LotConfig, history: String) -> R<(NdeLot, i64)> {
+    let actor = state.require_admin()?;
+    e(state.store()?.setup_lots(&config, &history, &actor.username))
+}
+
+#[tauri::command]
+pub fn list_lots(state: State<AppState>) -> R<Vec<NdeLot>> {
+    state.require_login()?;
+    e(state.store()?.list_lots())
+}
+
+#[tauri::command]
+pub fn get_lot_card(state: State<AppState>, id: i64) -> R<LotCard> {
+    state.require_login()?;
+    e(state.store()?.lot_card(id))
+}
+
+#[tauri::command]
+pub fn create_lot(state: State<AppState>, label: Option<String>, make_default: bool) -> R<NdeLot> {
+    let actor = state.require_editor()?;
+    e(state.store()?.create_lot(&actor.username, label, make_default))
+}
+
+/// Turn the receiving lot over. Returns [old lot (now Closing) or null, new lot].
+#[tauri::command]
+pub fn turn_over_lot(state: State<AppState>, reason: Option<String>) -> R<(Option<NdeLot>, NdeLot)> {
+    let actor = state.require_editor()?;
+    e(state.store()?.turn_over(&actor.username, reason.as_deref()))
+}
+
+#[tauri::command]
+pub fn stop_lot_intake(state: State<AppState>, id: i64) -> R<NdeLot> {
+    let actor = state.require_editor()?;
+    e(state.store()?.stop_intake(id, &actor.username))
+}
+
+#[tauri::command]
+pub fn close_lot(state: State<AppState>, id: i64, reason: Option<String>, force: bool) -> R<NdeLot> {
+    let actor = state.require_editor()?;
+    e(state.store()?.close_lot(id, &actor.username, reason.as_deref(), force))
+}
+
+#[tauri::command]
+pub fn reopen_lot(state: State<AppState>, id: i64, reason: String) -> R<NdeLot> {
+    let actor = state.require_admin()?;
+    e(state.store()?.reopen_lot(id, &actor.username, &reason))
+}
+
+#[tauri::command]
+pub fn update_lot_notes(
+    state: State<AppState>,
+    id: i64,
+    label: Option<String>,
+    notes: Option<String>,
+) -> R<NdeLot> {
+    let actor = state.require_editor()?;
+    e(state.store()?.update_lot_notes(id, label.as_deref(), notes.as_deref(), &actor.username))
+}
+
+#[tauri::command]
+pub fn pin_work_order(state: State<AppState>, work_order: String, lot_id: i64) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store()?.pin_work_order(&work_order, lot_id, &actor.username))
+}
+
+#[tauri::command]
+pub fn unpin_work_order(state: State<AppState>, work_order: String) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state.store()?.unpin_work_order(&work_order, &actor.username))
+}
+
+#[tauri::command]
+pub fn move_work_order_to_lot(state: State<AppState>, work_order: String, lot_id: i64) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store()?.move_work_order(&work_order, lot_id, &actor.username))
+}
+
+#[tauri::command]
+pub fn set_weld_lot(state: State<AppState>, weld_id: i64, lot_id: Option<i64>) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state.store()?.set_weld_lot(weld_id, lot_id, &actor.username))
+}
+
+#[tauri::command]
+pub fn lot_attention(state: State<AppState>) -> R<Vec<AttentionItem>> {
+    state.require_login()?;
+    e(state.store()?.lot_attention())
+}
+
+/// The autonomous pass (run after every login): ensure a receiving lot, roll
+/// over when due and configured, close complete lots, report a due prompt.
+#[tauri::command]
+pub fn lots_auto_maintain(state: State<AppState>) -> R<MaintainOutcome> {
+    state.require_login()?;
+    e(state.store()?.lots_auto_maintain())
+}
+
+#[tauri::command]
+pub fn suggest_examinations(
+    state: State<AppState>,
+    lot_id: i64,
+    stamp: Option<String>,
+) -> R<Vec<SuggestedExam>> {
+    state.require_login()?;
+    e(state.store()?.suggest_examinations(lot_id, stamp.as_deref()))
+}
+
+#[tauri::command]
+pub fn snooze_turnover(state: State<AppState>, days: i64) -> R<LotConfig> {
+    let actor = state.require_editor()?;
+    e(state.store()?.snooze_turnover(days, &actor.username))
+}
+
+#[tauri::command]
+pub fn wo_lot_summary(state: State<AppState>, work_order: String) -> R<WoLotSummary> {
+    state.require_login()?;
+    e(state.store()?.wo_lot_summary(&work_order))
+}
+
+#[tauri::command]
+pub fn lot_work_order_choices(state: State<AppState>) -> R<Vec<LotWoChoice>> {
+    state.require_login()?;
+    e(state.store()?.lot_work_order_choices())
 }

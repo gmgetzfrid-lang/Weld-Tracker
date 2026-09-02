@@ -317,6 +317,11 @@ pub struct Weld {
     /// so the record shows both the calculated basis and the reason.
     #[serde(default)]
     pub nde_override_reason: Option<String>,
+    /// The NDE lot this weld is examined within (see lots.rs). Assigned by the
+    /// backend on create — the receiving lot, a pinned lot, or the lot that was
+    /// receiving on the weld date — and moved only through the lot commands.
+    #[serde(default)]
+    pub nde_lot_id: Option<i64>,
     /// Optimistic-concurrency token. Incremented on every update; a save must
     /// carry the version it last read or it is rejected as a conflict. Round-
     /// trips through the UI so the client always sends back the version it has.

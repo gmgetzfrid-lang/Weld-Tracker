@@ -7,6 +7,8 @@ import { Login } from "./pages/Login";
 import { ChangePassword } from "./pages/ChangePassword";
 import { Dashboard } from "./pages/Dashboard";
 import { Exceptions } from "./pages/Exceptions";
+import { Lots } from "./pages/Lots";
+import { AttentionBadge, LotMaintenance } from "./components/lots";
 import { WorkOrders } from "./pages/WorkOrders";
 import { WeldLog } from "./pages/WeldLog";
 import { NewEntryChooser } from "./components/NewEntryChooser";
@@ -22,6 +24,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 type PageKey =
   | "dashboard"
   | "exceptions"
+  | "lots"
   | "weldlog"
   | "workorders"
   | "roster"
@@ -53,6 +56,7 @@ interface NavDef {
 const NAV: NavDef[] = [
   { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "What needs attention now, plus your at-a-glance totals." },
   { key: "exceptions", label: "Exceptions", icon: "⚠", group: "Overview", desc: "Every weld the validation engine flags — unresolved NDE, below-spec coverage, rejects awaiting repair, missing heat-treat." },
+  { key: "lots", label: "NDE Lots", icon: "▦", group: "Overview", desc: "ASME B31.3 examination lots — the bounded populations each welder's NDE percentage and progressive sampling are judged in. Turnover, closeout and what's owed." },
   { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory. Start here." },
   { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The searchable ledger of every weld across all work orders." },
   { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
@@ -78,6 +82,9 @@ export function App() {
   const [entryOpen, setEntryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [woIntent, setWoIntent] = useState<WoIntent>(null);
+  const [lotIntent, setLotIntent] = useState<number | null>(null);
+  // Bumped whenever lots change so the topbar attention badge refreshes.
+  const [attnTick, setAttnTick] = useState(0);
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [dbShared, setDbShared] = useState<boolean | null>(null);
   const [reportTab, setReportTab] = useState<ReportTab>("performance");
@@ -98,6 +105,7 @@ export function App() {
   };
   const openNewEntry = () => setEntryOpen(true);
   const openWorkOrder = (wo: string) => { setWoIntent({ kind: "record", wo }); setPage("workorders"); };
+  const openLot = (id: number | null) => { setLotIntent(id); setPage("lots"); };
 
   useEffect(() => {
     api.getSettings().then(setSettings).catch(logErr("loading settings"));
@@ -203,6 +211,7 @@ export function App() {
         <header className="topbar">
           <h2 title={current?.desc}>{title}</h2>
           <div className="spacer" />
+          <AttentionBadge tick={`${page}-${attnTick}`} onClick={() => setPage("lots")} />
           {dbShared != null && (
             <span
               className={`env-chip ${dbShared ? "shared" : "local"}`}
@@ -225,10 +234,14 @@ export function App() {
             onNavigate={navigate}
             onNewEntry={openNewEntry}
             onOpenWorkOrder={openWorkOrder}
+            onOpenLot={openLot}
             woIntent={woIntent}
             clearWoIntent={() => setWoIntent(null)}
+            lotIntent={lotIntent}
+            clearLotIntent={() => setLotIntent(null)}
           />
         </div>
+        <LotMaintenance onOpenLots={() => setPage("lots")} onChanged={() => setAttnTick((t) => t + 1)} />
         {entryOpen && (
           <NewEntryChooser
             onClose={() => setEntryOpen(false)}
@@ -255,22 +268,30 @@ function PageView({
   onNavigate,
   onNewEntry,
   onOpenWorkOrder,
+  onOpenLot,
   woIntent,
   clearWoIntent,
+  lotIntent,
+  clearLotIntent,
 }: {
   page: PageKey;
   reportTab: ReportTab;
   onNavigate: (p: PageKey) => void;
   onNewEntry: () => void;
   onOpenWorkOrder: (wo: string) => void;
+  onOpenLot: (id: number | null) => void;
   woIntent: WoIntent;
   clearWoIntent: () => void;
+  lotIntent: number | null;
+  clearLotIntent: () => void;
 }) {
   switch (page) {
     case "dashboard":
-      return <Dashboard onNavigate={onNavigate} onNewEntry={onNewEntry} />;
+      return <Dashboard onNavigate={onNavigate} onNewEntry={onNewEntry} onOpenWorkOrder={onOpenWorkOrder} onOpenLot={onOpenLot} />;
     case "exceptions":
       return <Exceptions onOpenWorkOrder={onOpenWorkOrder} />;
+    case "lots":
+      return <Lots onOpenWorkOrder={onOpenWorkOrder} initialLotId={lotIntent} onConsumedInitial={clearLotIntent} />;
     case "workorders":
       return (
         <WorkOrders

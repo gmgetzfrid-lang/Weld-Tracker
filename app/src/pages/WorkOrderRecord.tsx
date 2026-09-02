@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
-import type { Drawing, ExceptionsSummary, Lookups, Weld, Welder } from "../types";
-import { ConfirmDialog, ErrorBox, Spinner, num, useToast } from "../components/ui";
+import type { Drawing, ExceptionsSummary, Lookups, NdeLot, Weld, Welder, WoLotSummary } from "../types";
+import { ConfirmDialog, ErrorBox, Modal, Spinner, num, useToast } from "../components/ui";
 import { WeldTable } from "../components/WeldTable";
 import { RecordNdeDialog, SingleWeldDialog } from "../components/WeldDialogs";
 import { docName, RevisePanel, RevisionHistory, PackageIngest } from "../docControl";
@@ -41,6 +41,8 @@ export function WorkOrderRecord({
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [welds, setWelds] = useState<Weld[]>([]);
   const [exc, setExc] = useState<ExceptionsSummary | null>(null);
+  const [lotSum, setLotSum] = useState<WoLotSummary | null>(null);
+  const [moveLot, setMoveLot] = useState(false);
   const [owner, setOwner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,9 @@ export function WorkOrderRecord({
     api.workOrderOwner(workOrder)
       .then((o) => { if (seq === loadSeq.current) setOwner(o); })
       .catch((e) => { logErr("loading work-order owner")(e); if (seq === loadSeq.current) setOwner(null); });
+    api.woLotSummary(workOrder)
+      .then((x) => { if (seq === loadSeq.current) setLotSum(x); })
+      .catch(logErr("loading lot summary"));
     api.weldExceptions(workOrder)
       .then((x) => { if (seq === loadSeq.current) setExc(x); })
       .catch(logErr("loading WO exceptions"));
@@ -202,6 +207,9 @@ export function WorkOrderRecord({
                 {editable && (
                   <button onClick={() => { setMoreOpen(false); setNdeDialog(true); }}>📋 Record NDE results</button>
                 )}
+                {editable && lotSum?.enabled && (
+                  <button onClick={() => { setMoreOpen(false); setMoveLot(true); }}>▦ Move to NDE lot…</button>
+                )}
                 {canDeleteWo && (
                   <button className="danger" onClick={() => { setMoreOpen(false); setConfirmDel({ kind: "wo" }); }}>
                     🗑 Delete work order
@@ -212,6 +220,32 @@ export function WorkOrderRecord({
           </div>
         )}
       </div>
+
+      {lotSum?.enabled && (
+        <div className={`wo-lot-banner ${lotSum.total_owed_here > 0 ? "owed" : ""}`}>
+          <span className="wo-lot-chips">
+            {lotSum.lots.length === 0 && <span className="muted">Not in an NDE lot yet</span>}
+            {lotSum.lots.map((l) => (
+              <span key={l.lot_id} className={`lot-chip ${l.status.toLowerCase()}`} title={`${num(l.weld_count)} welds of this work order are in ${l.lot_no}`}>
+                {l.lot_no} · {num(l.weld_count)}
+              </span>
+            ))}
+            {lotSum.pinned_lot_id != null && <span className="badge badge-blue" title="New welds on this work order go to the pinned lot">pinned</span>}
+          </span>
+          {lotSum.total_owed_here > 0 ? (
+            <>
+              <span>
+                <b>{num(lotSum.total_owed_here)} NDE examination{lotSum.total_owed_here === 1 ? "" : "s"} can be shot on this work order</b>
+                <span className="muted"> — {lotSum.owed.map((o) => `${o.name || o.stamp} ${o.spec}: ${num(o.owed)} owed, ${num(o.candidates_here)} candidate${o.candidates_here === 1 ? "" : "s"} here (${o.lot_no})`).join(" · ")}</span>
+              </span>
+              <div className="spacer" />
+              {editable && <button className="btn btn-sm btn-accent" onClick={() => setNdeDialog(true)}>📋 Record NDE results</button>}
+            </>
+          ) : (
+            <span className="muted">No NDE owed on this work order right now</span>
+          )}
+        </div>
+      )}
 
       <div className="wo-tabs">
         {([
@@ -315,6 +349,14 @@ export function WorkOrderRecord({
           onDone={() => { setNdeDialog(false); load(); }}
         />
       )}
+      {moveLot && (
+        <MoveToLotDialog
+          workOrder={workOrder}
+          current={lotSum}
+          onClose={() => setMoveLot(false)}
+          onDone={() => { setMoveLot(false); load(); }}
+        />
+      )}
       {addWeldOpen && (
         <SingleWeldDialog
           workOrder={workOrder}
@@ -347,5 +389,87 @@ export function WorkOrderRecord({
         />
       ))}
     </div>
+  );
+}
+
+
+/** Move this work order's welds into another lot, optionally pinning it there. */
+function MoveToLotDialog({
+  workOrder, current, onClose, onDone,
+}: {
+  workOrder: string;
+  current: WoLotSummary | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  const [lots, setLots] = useState<NdeLot[] | null>(null);
+  const [lotId, setLotId] = useState<number | null>(null);
+  const [pin, setPin] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.listLots()
+      .then((ls) => {
+        const open = ls.filter((l) => l.status !== "Closed");
+        setLots(open);
+        setLotId(open.find((l) => l.is_default)?.id ?? open[0]?.id ?? null);
+      })
+      .catch(logErr("loading lots"));
+  }, []);
+  const target = lots?.find((l) => l.id === lotId) ?? null;
+  const canPin = target?.status === "Open";
+  const go = async () => {
+    if (lotId == null) return;
+    setBusy(true);
+    try {
+      const moved = pin && canPin
+        ? await api.pinWorkOrder(workOrder, lotId)
+        : await api.moveWorkOrderToLot(workOrder, lotId);
+      toast.push("ok", `${num(moved)} weld${moved === 1 ? "" : "s"} moved to ${target?.lot_no ?? "the lot"}${pin && canPin ? " · work order pinned" : ""}`);
+      onDone();
+    } catch (e) { toast.push("err", errMsg(e)); }
+    finally { setBusy(false); }
+  };
+  const unpin = async () => {
+    setBusy(true);
+    try { await api.unpinWorkOrder(workOrder); toast.push("ok", "Work order unpinned — new welds follow the receiving lot"); onDone(); }
+    catch (e) { toast.push("err", errMsg(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal title={`Move ${workOrder} to an NDE lot`} onClose={onClose}
+      footer={
+        <>
+          {current?.pinned_lot_id != null && <button className="btn" disabled={busy} onClick={unpin}>Unpin</button>}
+          <div className="spacer" />
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || lotId == null} onClick={go}>{busy ? "Moving…" : "Move"}</button>
+        </>
+      }>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+        Every live weld on this work order moves into the chosen lot. Welds already frozen in a closed lot stay where they are.
+      </p>
+      {lots == null ? <Spinner /> : lots.length === 0 ? <p className="muted">No open lots.</p> : (
+        <>
+          <div className="field">
+            <label>Lot</label>
+            <select value={lotId ?? ""} onChange={(e) => setLotId(Number(e.target.value))}>
+              {lots.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.lot_no}{l.label ? ` · ${l.label}` : ""} — {l.is_default ? "receiving" : l.status === "Open" ? "open" : "awaiting closeout"} · {num(l.weld_count)} welds
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="check" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13 }}>
+            <input type="checkbox" checked={pin && canPin} disabled={!canPin} onChange={(e) => setPin(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>
+              <b>Pin the work order here.</b> New welds on it go to this lot too, not the receiving lot.
+              {!canPin && <span className="muted"> (Only an Open lot can be pinned to — this one no longer takes new welds.)</span>}
+            </span>
+          </label>
+        </>
+      )}
+    </Modal>
   );
 }

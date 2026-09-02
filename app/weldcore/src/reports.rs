@@ -192,6 +192,11 @@ pub struct NdeSpecStat {
     pub rejected: i64,      // examined welds that were rejected
     pub actual_pct: f64,    // examined / population * 100
     pub compliant: bool,    // examined >= required
+    /// Examinations added on top of the base random sample by B31.3 341.3.4
+    /// progressive sampling (lot scope only; 0 in a date window).
+    pub progressive_extra: i64,
+    /// "Random" | "+2 after 1 reject" | "+4 after 2 rejects" | "100% after 3 rejects"
+    pub sampling_level: String,
 }
 
 impl NdeSpecStat {
@@ -206,7 +211,31 @@ impl NdeSpecStat {
             rejected: 0,
             actual_pct: 0.0,
             compliant: true,
+            progressive_extra: 0,
+            sampling_level: "Random".to_string(),
         }
+    }
+    /// ASME B31.3 341.3.4 progressive sampling, per welder within a lot. Each
+    /// reject found by random examination calls for two more of that welder's
+    /// welds from the same lot; a reject among those calls for two more again;
+    /// a third reject means every remaining weld of theirs in the lot (100%).
+    /// Specs that already demand every weld (100%, API 570) have nothing to add.
+    fn apply_progressive(mut self, is_full_coverage: bool) -> Self {
+        if is_full_coverage || self.rejected == 0 || self.population == 0 {
+            return self;
+        }
+        let base = self.required;
+        let (required, level) = match self.rejected {
+            1 => ((base + 2).min(self.population), "+2 after 1 reject"),
+            2 => ((base + 4).min(self.population), "+4 after 2 rejects"),
+            _ => (self.population, "100% after 3 rejects"),
+        };
+        self.required = required;
+        self.progressive_extra = required - base;
+        self.sampling_level = level.to_string();
+        self.shortfall = (self.required - self.examined).max(0);
+        self.compliant = self.examined >= self.required;
+        self
     }
     /// Finalise a per-welder spec: required = ceil(population * pct / 100), or
     /// the whole population for API 570 (every weld needs its two NDE forms).
@@ -293,11 +322,33 @@ pub struct PerfWorkOrder {
 
 /// The full performance & NDE-compliance report — the data behind the
 /// distribution PDF.
+/// The lot a lot-scoped report was computed on.
+#[derive(Debug, Clone, Serialize)]
+pub struct LotRef {
+    pub id: i64,
+    pub lot_no: String,
+    pub status: String,
+}
+
+/// What population a performance / compliance report is computed over: a
+/// date window of weld dates, or one NDE lot (where progressive sampling
+/// applies).
+#[derive(Debug, Clone)]
+pub enum ReportScope {
+    Window { from: Option<String>, to: Option<String> },
+    Lot(i64),
+}
+
 #[derive(Debug, Serialize)]
 pub struct PerformanceReport {
     pub period_label: String,
     pub from: Option<String>,
     pub to: Option<String>,
+    /// Set when the report is scoped to one NDE lot.
+    pub lot: Option<LotRef>,
+    /// True when B31.3 progressive sampling was applied to the requirements
+    /// (lot scope). Date-window reports show the base random requirement.
+    pub progressive_sampling: bool,
     pub generated_on: String,
     pub total_welds: i64,
     pub total_inches: f64,
@@ -984,6 +1035,13 @@ impl Store {
         from: Option<String>,
         to: Option<String>,
     ) -> Result<PerformanceReport> {
+        self.report_performance_scoped(ReportScope::Window { from, to })
+    }
+
+    /// Per-welder NDE compliance and performance over a date window or one
+    /// NDE lot. In lot scope the requirement per welder per spec includes
+    /// B31.3 progressive sampling on top of the base random percentage.
+    pub fn report_performance_scoped(&self, scope: ReportScope) -> Result<PerformanceReport> {
         const SPECS: &[(&str, f64)] = &[
             ("5%", 5.0), ("10%", 10.0), ("20%", 20.0), ("100%", 100.0), ("API 570", 100.0),
         ];
@@ -997,17 +1055,37 @@ impl Store {
             ]
         };
 
-        // Date-window predicate.
+        // Scope predicate: a date window, or one lot.
         let mut where_extra = String::new();
         let mut args: Vec<Value> = Vec::new();
-        if let Some(f) = &from {
-            where_extra.push_str(" AND date_welded >= ?");
-            args.push(Value::Text(f.clone()));
-        }
-        if let Some(t) = &to {
-            where_extra.push_str(" AND date_welded <= ?");
-            args.push(Value::Text(t.clone()));
-        }
+        let (from, to, lot_ref) = match &scope {
+            ReportScope::Window { from, to } => {
+                if let Some(f) = from {
+                    where_extra.push_str(" AND date_welded >= ?");
+                    args.push(Value::Text(f.clone()));
+                }
+                if let Some(t) = to {
+                    where_extra.push_str(" AND date_welded <= ?");
+                    args.push(Value::Text(t.clone()));
+                }
+                (from.clone(), to.clone(), None)
+            }
+            ReportScope::Lot(id) => {
+                where_extra.push_str(" AND nde_lot_id = ?");
+                args.push(Value::Integer(*id));
+                let lot_ref = {
+                    let conn = self.conn.lock().unwrap();
+                    conn.query_row(
+                        "SELECT lot_no, status FROM nde_lots WHERE id = ?1",
+                        [id],
+                        |r| Ok(LotRef { id: *id, lot_no: r.get(0)?, status: r.get(1)? }),
+                    )
+                    .map_err(|_| crate::Error::NotFound)?
+                };
+                (None, None, Some(lot_ref))
+            }
+        };
+        let progressive = lot_ref.is_some();
 
         struct Raw {
             stamp: String,
@@ -1143,7 +1221,11 @@ impl Store {
                 if s.population == 0 {
                     continue;
                 }
-                let s = s.finish_welder(i == 4);
+                let mut s = s.finish_welder(i == 4);
+                if progressive {
+                    // 100% and API 570 already require every weld.
+                    s = s.apply_progressive(i == 3 || i == 4);
+                }
                 in_spec &= s.compliant;
                 worst = worst.max(s.shortfall);
                 min_actual = min_actual.min(s.actual_pct);
@@ -1226,17 +1308,20 @@ impl Store {
             let conn = self.conn.lock().unwrap();
             conn.query_row("SELECT date('now')", [], |r| r.get(0))?
         };
-        let period_label = match (&from, &to) {
-            (Some(f), Some(t)) => format!("{f} to {t}"),
-            (Some(f), None) => format!("from {f}"),
-            (None, Some(t)) => format!("through {t}"),
-            (None, None) => "All time".to_string(),
+        let period_label = match (&lot_ref, &from, &to) {
+            (Some(l), _, _) => format!("Lot {}", l.lot_no),
+            (None, Some(f), Some(t)) => format!("{f} to {t}"),
+            (None, Some(f), None) => format!("from {f}"),
+            (None, None, Some(t)) => format!("through {t}"),
+            (None, None, None) => "All time".to_string(),
         };
 
         Ok(PerformanceReport {
             period_label,
             from,
             to,
+            lot: lot_ref,
+            progressive_sampling: progressive,
             generated_on,
             total_welds: tot_w,
             total_inches: tot_in,
@@ -1256,7 +1341,7 @@ impl Store {
 /// Map a weld's `nde_percent` value to a canonical spec index into `SPECS`
 /// (0=5%, 1=10%, 2=20%, 3=100%, 4=API 570). Returns None for unrecognised /
 /// unset specs so those welds sit outside compliance tracking.
-fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
+pub(crate) fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
     let p = nde_percent?.trim();
     if p.is_empty() {
         return None;
@@ -1279,9 +1364,22 @@ fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
 /// result, or a legacy RT date. A planned NDE type or a bare date does NOT
 /// count, so coverage is never overstated and a welder below spec is never
 /// hidden.
-fn was_examined(nde_result: Option<&str>, rt_date: Option<&str>) -> bool {
+pub(crate) fn was_examined(nde_result: Option<&str>, rt_date: Option<&str>) -> bool {
     let has = |o: Option<&str>| o.map(|s| !s.trim().is_empty()).unwrap_or(false);
     has(nde_result) || has(rt_date)
+}
+
+/// SQL predicate selecting welds whose `nde_percent` maps to canonical spec
+/// index `idx` (mirrors `canonical_spec_index` closely enough for candidate
+/// picking: the digits of the text, or an API 570 mention).
+pub(crate) fn spec_predicate_sql(idx: usize) -> &'static str {
+    match idx {
+        0 => "CAST(nde_percent AS INTEGER) = 5 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
+        1 => "CAST(nde_percent AS INTEGER) = 10 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
+        2 => "CAST(nde_percent AS INTEGER) = 20 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
+        3 => "CAST(nde_percent AS INTEGER) = 100 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
+        _ => "(UPPER(nde_percent) LIKE '%API%' OR UPPER(nde_percent) LIKE '%570%')",
+    }
 }
 
 /// Whether an API-570 in-lieu-of-hydro weld carries its required two forms of

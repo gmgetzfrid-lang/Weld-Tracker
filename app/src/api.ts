@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AttentionItem,
   AuditEntry,
+  LotCard,
+  LotConfig,
+  LotWoChoice,
+  MaintainOutcome,
+  NdeLot,
+  SuggestedExam,
+  WoLotSummary,
   ClientReportRow,
   CriteriaRow,
   DailyReport,
@@ -294,8 +302,40 @@ export const api = {
   reportQm: () => invoke<WelderStatRow[]>("report_qm"),
   reportNdeCompliance: () =>
     invoke<NdeComplianceReport>("report_nde_compliance"),
-  reportPerformance: (from: string | null, to: string | null) =>
-    invoke<PerformanceReport>("report_performance", { from, to }),
+  reportPerformance: (from: string | null, to: string | null, lotId: number | null = null) =>
+    invoke<PerformanceReport>("report_performance", { from, to, lotId }),
+
+  // NDE lots
+  lotConfig: () => invoke<LotConfig>("lot_config"),
+  setLotConfig: (config: LotConfig) => invoke<LotConfig>("set_lot_config", { config }),
+  setupLots: (config: LotConfig, history: string) =>
+    invoke<[NdeLot, number]>("setup_lots", { config, history }),
+  listLots: () => invoke<NdeLot[]>("list_lots"),
+  getLotCard: (id: number) => invoke<LotCard>("get_lot_card", { id }),
+  createLot: (label: string | null, makeDefault: boolean) =>
+    invoke<NdeLot>("create_lot", { label, makeDefault }),
+  turnOverLot: (reason: string | null = null) =>
+    invoke<[NdeLot | null, NdeLot]>("turn_over_lot", { reason }),
+  stopLotIntake: (id: number) => invoke<NdeLot>("stop_lot_intake", { id }),
+  closeLot: (id: number, reason: string | null, force: boolean) =>
+    invoke<NdeLot>("close_lot", { id, reason, force }),
+  reopenLot: (id: number, reason: string) => invoke<NdeLot>("reopen_lot", { id, reason }),
+  updateLotNotes: (id: number, label: string | null, notes: string | null) =>
+    invoke<NdeLot>("update_lot_notes", { id, label, notes }),
+  pinWorkOrder: (workOrder: string, lotId: number) =>
+    invoke<number>("pin_work_order", { workOrder, lotId }),
+  unpinWorkOrder: (workOrder: string) => invoke<void>("unpin_work_order", { workOrder }),
+  moveWorkOrderToLot: (workOrder: string, lotId: number) =>
+    invoke<number>("move_work_order_to_lot", { workOrder, lotId }),
+  setWeldLot: (weldId: number, lotId: number | null) =>
+    invoke<void>("set_weld_lot", { weldId, lotId }),
+  lotAttention: () => invoke<AttentionItem[]>("lot_attention"),
+  lotsAutoMaintain: () => invoke<MaintainOutcome>("lots_auto_maintain"),
+  suggestExaminations: (lotId: number, stamp: string | null = null) =>
+    invoke<SuggestedExam[]>("suggest_examinations", { lotId, stamp }),
+  snoozeTurnover: (days: number) => invoke<LotConfig>("snooze_turnover", { days }),
+  woLotSummary: (workOrder: string) => invoke<WoLotSummary>("wo_lot_summary", { workOrder }),
+  lotWorkOrderChoices: () => invoke<LotWoChoice[]>("lot_work_order_choices"),
 };
 
 /** Reject-rate warning threshold (as a 0..1 fraction) from settings. */

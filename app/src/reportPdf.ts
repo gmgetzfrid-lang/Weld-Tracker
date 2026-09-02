@@ -4,42 +4,42 @@ import { api, bytesToB64 } from "./api";
 import type { PerformanceReport, PerformanceRow } from "./types";
 
 // Brand palette (matches the app navy).
-const NAVY: [number, number, number] = [10, 31, 107];
-const BLUE: [number, number, number] = [42, 120, 214];
-const GREEN: [number, number, number] = [22, 128, 61];
-const AMBER: [number, number, number] = [176, 84, 8];
-const RED: [number, number, number] = [176, 28, 28];
-const INK: [number, number, number] = [24, 35, 59];
-const MUTED: [number, number, number] = [110, 116, 130];
-const LINE: [number, number, number] = [222, 227, 236];
-const ZEBRA: [number, number, number] = [244, 246, 251];
+export const NAVY: [number, number, number] = [10, 31, 107];
+export const BLUE: [number, number, number] = [42, 120, 214];
+export const GREEN: [number, number, number] = [22, 128, 61];
+export const AMBER: [number, number, number] = [176, 84, 8];
+export const RED: [number, number, number] = [176, 28, 28];
+export const INK: [number, number, number] = [24, 35, 59];
+export const MUTED: [number, number, number] = [110, 116, 130];
+export const LINE: [number, number, number] = [222, 227, 236];
+export const ZEBRA: [number, number, number] = [244, 246, 251];
 
 /** Fraction (0..1) -> "12.3%". */
-const pctF = (v: number) => `${(v * 100).toFixed(1)}%`;
+export const pctF = (v: number) => `${(v * 100).toFixed(1)}%`;
 /** Already a percentage (0..100) -> "12%". */
-const pct100 = (v: number) => `${v.toFixed(0)}%`;
-const n1 = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
-const n0 = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+export const pct100 = (v: number) => `${v.toFixed(0)}%`;
+export const n1 = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+export const n0 = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-type Cell =
+export type Cell =
   | string
   | { text: string; color?: [number, number, number]; bold?: boolean };
-interface Col {
+export interface Col {
   header: string;
   width: number;
   align?: "l" | "r";
 }
 
-const M = 42; // page margin
-const PAGE_W = 612; // letter, pt
-const CONTENT_W = PAGE_W - M * 2;
+export const M = 42; // page margin
+export const PAGE_W = 612; // letter, pt
+export const CONTENT_W = PAGE_W - M * 2;
 
 function cellText(c: Cell): string {
   return typeof c === "string" ? c : c.text;
 }
 
 /** A paginated table with a repeating header. Returns the y below the table. */
-function table(
+export function table(
   doc: jsPDF,
   x: number,
   y0: number,
@@ -101,7 +101,7 @@ function table(
   return y;
 }
 
-function sectionTitle(doc: jsPDF, y: number, text: string): number {
+export function sectionTitle(doc: jsPDF, y: number, text: string): number {
   const pageH = doc.internal.pageSize.getHeight();
   if (y + 40 > pageH - 46) {
     doc.addPage();
@@ -121,7 +121,7 @@ function sectionTitle(doc: jsPDF, y: number, text: string): number {
 }
 
 /** The stat tiles across the executive summary. */
-function statTiles(
+export function statTiles(
   doc: jsPDF,
   y: number,
   tiles: { label: string; value: string; color?: [number, number, number] }[],
@@ -156,7 +156,7 @@ function statTiles(
  * mirroring the on-screen chart. Value labels sit at each bar tip so the
  * chart needs no axis.
  */
-function barChart(
+export function barChart(
   doc: jsPDF,
   y0: number,
   rows: { label: string; value: number; display: string }[],
@@ -188,6 +188,22 @@ function barChart(
   });
   doc.setFont("helvetica", "normal");
   return y;
+}
+
+/** Hairline + running title + page numbers on every page. */
+export function footer(doc: jsPDF, left: string): void {
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    const h = doc.internal.pageSize.getHeight();
+    doc.setDrawColor(...LINE);
+    doc.line(M, h - 34, PAGE_W - M, h - 34);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text(left, M, h - 20);
+    doc.text(`Page ${p} of ${pages}`, PAGE_W - M, h - 20, { align: "right" });
+  }
 }
 
 /** Build the whole report document. */
@@ -326,6 +342,49 @@ async function buildPerformancePdf(rep: PerformanceReport, company: string): Pro
   );
   y += 20;
 
+  // ---- Progressive sampling (lot scope) -----------------------------------
+  if (rep.progressive_sampling) {
+    const prog = rep.rows.flatMap((r) => r.specs.filter((s) => (s.progressive_extra ?? 0) > 0).map((s) => ({ r, s })));
+    y = sectionTitle(doc, y, "Progressive Sampling — ASME B31.3 341.3.4");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text(
+      "Requirements above include progressive sampling within this lot: each reject adds two more of that welder's welds; a third reject means every remaining weld.",
+      M, y, { maxWidth: CONTENT_W },
+    );
+    doc.setTextColor(...INK);
+    y += 22;
+    if (prog.length) {
+      y = table(
+        doc, M, y,
+        [
+          { header: "Welder", width: 130 },
+          { header: "Stamp", width: 50 },
+          { header: "Spec", width: 60 },
+          { header: "Rejects", width: 60, align: "r" },
+          { header: "Base req.", width: 70, align: "r" },
+          { header: "Added", width: 60, align: "r" },
+          { header: "Level", width: CONTENT_W - 430 },
+        ],
+        prog.map(({ r, s }) => [
+          r.name || r.stamp,
+          r.stamp,
+          s.spec,
+          n0(s.rejected),
+          n0(s.required - (s.progressive_extra ?? 0)),
+          { text: `+${n0(s.progressive_extra ?? 0)}`, color: AMBER, bold: true },
+          s.sampling_level ?? "",
+        ]),
+      );
+    } else {
+      doc.setFontSize(9);
+      doc.text("No rejects in this lot — every welder is on the base random sample.", M, y);
+      y += 10;
+    }
+    y += 20;
+  }
+
   // ---- Below-spec detail (only if any) -----------------------------------
   const below = rep.rows.filter((r) => !r.in_spec && r.specs.length > 0);
   if (below.length) {
@@ -388,20 +447,7 @@ async function buildPerformancePdf(rep: PerformanceReport, company: string): Pro
     );
   }
 
-  // ---- Footer on every page ----------------------------------------------
-  const pages = doc.getNumberOfPages();
-  for (let p = 1; p <= pages; p++) {
-    doc.setPage(p);
-    const h = doc.internal.pageSize.getHeight();
-    doc.setDrawColor(...LINE);
-    doc.line(M, h - 34, PAGE_W - M, h - 34);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...MUTED);
-    doc.text(`${company || "SENTRIX"} — Welder Performance & NDE Compliance`, M, h - 20);
-    doc.text(`Page ${p} of ${pages}`, PAGE_W - M, h - 20, { align: "right" });
-  }
-
+  footer(doc, `${company || "SENTRIX"} — Welder Performance & NDE Compliance`);
   return doc;
 }
 

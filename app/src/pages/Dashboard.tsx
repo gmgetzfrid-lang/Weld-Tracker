@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
-import type { AuditEntry, ExceptionsSummary, NdeComplianceReport, SummaryReport } from "../types";
+import type { AttentionItem, AuditEntry, ExceptionsSummary, NdeComplianceReport, NdeLot, SummaryReport } from "../types";
 import { BarChart, ErrorBox, Spinner, StatCard, localTime, num, pct } from "../components/ui";
+import { AttentionList } from "../components/lots";
 
-export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => void; onNewEntry: () => void }) {
+export function Dashboard({
+  onNavigate, onNewEntry, onOpenWorkOrder, onOpenLot,
+}: {
+  onNavigate: (p: any) => void;
+  onNewEntry: () => void;
+  onOpenWorkOrder: (wo: string) => void;
+  onOpenLot: (id: number | null) => void;
+}) {
   const { user } = useAuth();
+  const [attention, setAttention] = useState<AttentionItem[]>([]);
+  const [lots, setLots] = useState<NdeLot[] | null>(null);
   const [rep, setRep] = useState<SummaryReport | null>(null);
   const [nde, setNde] = useState<NdeComplianceReport | null>(null);
   const [drawingCount, setDrawingCount] = useState(0);
@@ -19,6 +29,10 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
     api.listDrawings().then((d) => setDrawingCount(d.length)).catch(logErr("loading drawings"));
     api.weldExceptions(null).then(setExc).catch(logErr("loading exceptions"));
     api.recentActivity(null, 8).then(setActivity).catch(logErr("loading activity"));
+    api.lotAttention().then(setAttention).catch(logErr("loading lot attention"));
+    api.lotConfig()
+      .then((c) => (c.enabled ? api.listLots().then(setLots) : setLots([])))
+      .catch(logErr("loading lots"));
   }, []);
 
   if (error) return <ErrorBox message={error} />;
@@ -27,6 +41,11 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
   const t = rep.total;
   const fresh = t.welds === 0;
   const ndeOwed = nde ? nde.by_spec.reduce((a, sp) => a + sp.shortfall, 0) : 0;
+  // With lots on, "owed" means owed in the lots still taking results — the
+  // number that actually drives the next film request.
+  const lotsOn = (lots?.length ?? 0) > 0;
+  const receiving = lots?.find((l) => l.is_default) ?? null;
+  const lotOwed = lots ? lots.filter((l) => l.status !== "Closed").reduce((a, l) => a + l.owed, 0) : 0;
 
   const steps = [
     {
@@ -90,6 +109,17 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
         </div>
       )}
 
+      {attention.length > 0 && (
+        <div className="card card-pad">
+          <div className="toolbar" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>Needs attention</h3>
+            <div className="spacer" />
+            <button className="btn btn-sm" onClick={() => onOpenLot(null)}>NDE Lots →</button>
+          </div>
+          <AttentionList items={attention} max={6} onOpenLot={onOpenLot} onOpenWorkOrder={onOpenWorkOrder} />
+        </div>
+      )}
+
       {!fresh && exc && nde && (
         <div className="exc-tiles" style={{ marginBottom: 0 }}>
           <button className={`exc-tile sev-error ${exc.errors ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
@@ -102,11 +132,20 @@ export function Dashboard({ onNavigate, onNewEntry }: { onNavigate: (p: any) => 
             <span className="exc-num">{num(exc.by_code["result.rejected_unrepaired"] ?? 0)}</span>
             <span className="exc-cap">Rejects awaiting repair</span>
           </button>
-          <button className={`exc-tile sev-warning ${ndeOwed ? "" : "quiet"}`} onClick={() => onNavigate("statistics")}
-            title="Examinations still owed to keep every welder at or above their NDE spec.">
-            <span className="exc-num">{num(ndeOwed)}</span>
-            <span className="exc-cap">NDE exams owed</span>
-          </button>
+          {lotsOn ? (
+            <button className={`exc-tile sev-warning ${lotOwed ? "" : "quiet"}`} onClick={() => onOpenLot(receiving?.id ?? null)}
+              title="Examinations owed across the lots still taking results — includes B31.3 progressive sampling.">
+              <span className="exc-num">{num(lotOwed)}</span>
+              <span className="exc-cap">NDE exams owed</span>
+              <span className="exc-sub">{receiving ? `${receiving.lot_no} receiving · day ${num(receiving.age_days)} of ${num(receiving.target_days)}` : "no receiving lot"}</span>
+            </button>
+          ) : (
+            <button className={`exc-tile sev-warning ${ndeOwed ? "" : "quiet"}`} onClick={() => onNavigate("statistics")}
+              title="Examinations still owed to keep every welder at or above their NDE spec.">
+              <span className="exc-num">{num(ndeOwed)}</span>
+              <span className="exc-cap">NDE exams owed</span>
+            </button>
+          )}
           <button className={`exc-tile sev-warning ${exc.warnings ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
             title="Warnings — below-spec coverage, missing fields, PWHT/PMI owed.">
             <span className="exc-num">{num(exc.warnings)}</span>

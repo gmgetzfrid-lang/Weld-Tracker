@@ -125,7 +125,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <p style={{ marginTop: 0 }}>{body}</p>
+      <div style={{ marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>{body}</div>
       {requireReason && (
         <div className="field" style={{ marginBottom: 0 }}>
           <label>{reasonLabel ?? "Reason"}</label>

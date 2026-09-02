@@ -155,6 +155,8 @@ export interface Weld {
   nde_report_no?: string | null;
   /** Why the entered NDE % deliberately differs from the calculated requirement. */
   nde_override_reason?: string | null;
+  /** The NDE lot this weld is examined within (backend-assigned). */
+  nde_lot_id?: number | null;
   /** Optimistic-concurrency token; sent back on update to detect a clash. */
   row_version?: number;
   /** Repair chain: id of the weld this one repairs, if any. */
@@ -472,6 +474,10 @@ export interface NdeSpecStat {
   rejected: number;
   actual_pct: number;
   compliant: boolean;
+  /** Extra examinations from B31.3 progressive sampling (lot scope only). */
+  progressive_extra?: number;
+  /** "Random" | "+2 after 1 reject" | "+4 after 2 rejects" | "100% after 3 rejects" */
+  sampling_level?: string;
 }
 
 export interface WelderNdeCompliance {
@@ -525,10 +531,20 @@ export interface PerfWorkOrder {
   reject_rate: number;
 }
 
+export interface LotRef {
+  id: number;
+  lot_no: string;
+  status: string;
+}
+
 export interface PerformanceReport {
   period_label: string;
   from?: string | null;
   to?: string | null;
+  /** Set when the report is scoped to one NDE lot. */
+  lot?: LotRef | null;
+  /** Requirements include B31.3 progressive sampling (lot scope). */
+  progressive_sampling?: boolean;
   generated_on: string;
   total_welds: number;
   total_inches: number;
@@ -545,3 +561,147 @@ export interface PerformanceReport {
 
 export type Lookups = Record<string, string[]>;
 export type Settings = Record<string, string>;
+
+// ---------------------------------------------------------------------------
+// NDE lots (ASME B31.3 lot-based random examination)
+// ---------------------------------------------------------------------------
+
+export type LotStatus = "Open" | "Closing" | "Closed";
+
+export interface LotConfig {
+  enabled: boolean;
+  target_months: number;
+  auto_rollover: boolean;
+  prefix: string;
+  snooze_until?: string | null;
+  setup_done: boolean;
+}
+
+export interface NdeLot {
+  id: number;
+  lot_no: string;
+  label?: string | null;
+  status: LotStatus;
+  is_default: boolean;
+  was_default: boolean;
+  opened_on: string;
+  target_days: number;
+  closing_on?: string | null;
+  closed_on?: string | null;
+  closed_by?: string | null;
+  close_reason?: string | null;
+  closed_short: boolean;
+  shortfall_snapshot?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+  weld_count: number;
+  weld_inches: number;
+  first_weld?: string | null;
+  last_weld?: string | null;
+  work_order_count: number;
+  welder_count: number;
+  examined: number;
+  rejects: number;
+  owed: number;
+  unresolved: number;
+  age_days: number;
+  due_on: string;
+  overdue_days: number;
+}
+
+export interface LotWorkOrder {
+  work_order: string;
+  weld_count: number;
+  weld_inches: number;
+  examined: number;
+  rejects: number;
+  first_weld?: string | null;
+  last_weld?: string | null;
+  spans_other_lots: boolean;
+  welders: string;
+}
+
+export interface NdeTypeCount {
+  method: string;
+  count: number;
+}
+
+export interface LotCard {
+  lot: NdeLot;
+  report: PerformanceReport;
+  work_orders: LotWorkOrder[];
+  nde_by_type: NdeTypeCount[];
+  owed: number;
+  unresolved: number;
+  clean: boolean;
+  spanning_work_orders: number;
+  generated_on: string;
+}
+
+export interface AttentionItem {
+  kind: "turnover_due" | "closeout" | "closeout_ready" | "current_owed" | "unresolved" | "wo_nde" | string;
+  severity: "error" | "warning" | "info";
+  title: string;
+  detail: string;
+  lot_id?: number | null;
+  lot_no?: string | null;
+  work_order?: string | null;
+  count: number;
+}
+
+export interface MaintainOutcome {
+  enabled: boolean;
+  created_default?: string | null;
+  turned_over?: [string, string] | null;
+  auto_closed: string[];
+  turnover_due?: NdeLot | null;
+}
+
+export interface SuggestedExam {
+  weld_id: number;
+  weld_number?: string | null;
+  work_order?: string | null;
+  drawing_no?: string | null;
+  stamp: string;
+  name: string;
+  spec: string;
+  joint_type?: string | null;
+  size?: number | null;
+  date_welded?: string | null;
+  required_nde_method?: string | null;
+  reason: string;
+}
+
+export interface WoLotOwed {
+  lot_id: number;
+  lot_no: string;
+  lot_status: LotStatus;
+  stamp: string;
+  name: string;
+  spec: string;
+  owed: number;
+  candidates_here: number;
+}
+
+export interface WoLotRef {
+  lot_id: number;
+  lot_no: string;
+  status: LotStatus;
+  weld_count: number;
+}
+
+export interface WoLotSummary {
+  enabled: boolean;
+  lots: WoLotRef[];
+  pinned_lot_id?: number | null;
+  owed: WoLotOwed[];
+  total_owed_here: number;
+}
+
+export interface LotWoChoice {
+  work_order: string;
+  weld_count: number;
+  lots: string[];
+  pinned_lot_id?: number | null;
+  last_activity?: string | null;
+}

@@ -15,6 +15,7 @@
 pub mod auth;
 pub mod certs;
 pub mod drawings;
+pub mod lots;
 pub mod models;
 pub mod nde;
 pub mod pipe;
@@ -150,6 +151,7 @@ impl Store {
             (12, include_str!("migrations/0012_repair_chain.sql")),
             (13, include_str!("migrations/0013_doc_hashes_nde_batch.sql")),
             (14, include_str!("migrations/0014_perf_indexes.sql")),
+            (15, include_str!("migrations/0015_nde_lots.sql")),
         ];
 
         let pending: Vec<&(i64, &str)> =

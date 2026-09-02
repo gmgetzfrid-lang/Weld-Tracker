@@ -75,7 +75,7 @@ const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     b31_temp_f, b31_pressure_psig, required_nde_method,
     nde_rule_set, expected_nde_percent, expected_nde_method, expected_nde_note,
     expected_nde_resolved, expected_nde_blockers,
-    nde_report_no, nde_override_reason,
+    nde_report_no, nde_override_reason, nde_lot_id,
     voided_at, voided_by, void_reason, row_version, parent_weld_id,
     drawing_id, groove_type, process, bubble_page, bubble_x, bubble_y, joint_x, joint_y,
     created_by, created_at, updated_at";
@@ -241,6 +241,7 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         parent_weld_id: r.get("parent_weld_id")?,
         nde_report_no: r.get("nde_report_no")?,
         nde_override_reason: r.get("nde_override_reason")?,
+        nde_lot_id: r.get("nde_lot_id")?,
     };
     // Legacy rows saved before migration 0009 have no snapshot — compute it live
     // so the readout is never blank. (New writes always persist the snapshot.)
@@ -652,13 +653,17 @@ impl Store {
     pub fn create_weld(&self, w: &Weld, actor: &str) -> Result<i64> {
         let mut w = w.clone();
         self.apply_derived(&mut w)?;
+        // Which NDE lot this weld is examined within — decided here, never by
+        // the client (a repair inherits its parent's lot via w.nde_lot_id).
+        let lot_id = self.lot_for_new_weld(&w)?;
         let cols = WRITE_COLS.join(", ");
         let placeholders = WRITE_COLS.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let sql = format!(
-            "INSERT INTO welds ({cols}, created_by) VALUES ({placeholders}, ?)"
+            "INSERT INTO welds ({cols}, created_by, nde_lot_id) VALUES ({placeholders}, ?, ?)"
         );
         let mut vals = weld_write_values(&w);
         vals.push(Box::new(actor.to_string()));
+        vals.push(Box::new(lot_id));
         let conn = self.conn.lock().unwrap();
         conn.execute(&sql, params_from_iter(vals.iter().map(|v| v.as_ref())))?;
         let id = conn.last_insert_rowid();
