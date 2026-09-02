@@ -932,3 +932,71 @@ impl Store {
         Ok(max + 1)
     }
 }
+
+
+/// Welds on one work order that still lack attributes.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IncompleteDrawing {
+    pub drawing_id: Option<i64>,
+    pub drawing_no: Option<String>,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IncompleteWo {
+    pub work_order: String,
+    pub count: i64,
+    /// How many welds miss each attribute ("welder" → 3, "date" → 12 …).
+    pub missing: std::collections::BTreeMap<String, i64>,
+    pub drawings: Vec<IncompleteDrawing>,
+    /// When the oldest of them was logged.
+    pub oldest: Option<String>,
+}
+
+impl Store {
+    /// Every work order with welds still missing attributes, most first. This
+    /// is the "don't walk away with 200 half-filled welds" signal: it feeds the
+    /// attention list, the topbar badge, the work-order directory and record.
+    pub fn incomplete_work_orders(&self) -> Result<Vec<IncompleteWo>> {
+        let welds: Vec<Weld> = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {COLS} FROM welds WHERE voided_at IS NULL AND count_omission = 0 ORDER BY id"
+            ))?;
+            let rows = stmt.query_map([], weld_from_row)?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let mut by_wo: std::collections::BTreeMap<String, IncompleteWo> = std::collections::BTreeMap::new();
+        for w in &welds {
+            let missing = crate::validate::missing_attributes(w);
+            if missing.is_empty() {
+                continue;
+            }
+            let name = w.work_order.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or("(no work order)");
+            let e = by_wo.entry(name.to_uppercase()).or_insert_with(|| IncompleteWo {
+                work_order: name.to_string(),
+                count: 0,
+                missing: Default::default(),
+                drawings: Vec::new(),
+                oldest: None,
+            });
+            e.count += 1;
+            for m in missing {
+                *e.missing.entry(m.to_string()).or_insert(0) += 1;
+            }
+            match e.drawings.iter_mut().find(|d| d.drawing_id == w.drawing_id) {
+                Some(d) => d.count += 1,
+                None => e.drawings.push(IncompleteDrawing { drawing_id: w.drawing_id, drawing_no: w.drawing_no.clone(), count: 1 }),
+            }
+            if e.oldest.as_deref().map(|o| w.created_at.as_str() < o).unwrap_or(true) {
+                e.oldest = Some(w.created_at.clone());
+            }
+        }
+        let mut out: Vec<IncompleteWo> = by_wo.into_values().collect();
+        for wo in &mut out {
+            wo.drawings.sort_by_key(|d| std::cmp::Reverse(d.count));
+        }
+        out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.work_order.cmp(&b.work_order)));
+        Ok(out)
+    }
+}

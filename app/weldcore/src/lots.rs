@@ -1485,12 +1485,50 @@ impl Store {
     // Attention + autonomous maintenance
     // -----------------------------------------------------------------------
 
-    /// Everything lot-related the user must not forget, most urgent first.
+    /// Everything the user must not be allowed to forget, most urgent first:
+    /// lot turnover / closeout / owed NDE (when lots are on) and welds left
+    /// without attributes on any work order (always).
     pub fn lot_attention(&self) -> Result<Vec<AttentionItem>> {
         let cfg = self.lot_config()?;
-        if !cfg.enabled {
-            return Ok(Vec::new());
+        let mut items: Vec<AttentionItem> = Vec::new();
+        if cfg.enabled {
+            items.extend(self.lot_items(&cfg)?);
         }
+        for wo in self.incomplete_work_orders()? {
+            let fields = wo
+                .missing
+                .iter()
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect::<Vec<_>>()
+                .join(" · ");
+            items.push(AttentionItem {
+                kind: "wo_incomplete".into(),
+                severity: if wo.count >= 10 { "error".into() } else { "warning".into() },
+                title: format!(
+                    "WO {}: {} weld{} missing attributes",
+                    wo.work_order,
+                    wo.count,
+                    if wo.count == 1 { "" } else { "s" }
+                ),
+                detail: format!(
+                    "Missing — {fields}. Open the work order and use Fill attributes; it starts at the first weld that needs data."
+                ),
+                lot_id: None,
+                lot_no: None,
+                work_order: Some(wo.work_order.clone()),
+                count: wo.count,
+            });
+        }
+        let rank = |s: &str| match s {
+            "error" => 0,
+            "warning" => 1,
+            _ => 2,
+        };
+        items.sort_by(|a, b| rank(&a.severity).cmp(&rank(&b.severity)).then(b.count.cmp(&a.count)));
+        Ok(items)
+    }
+
+    fn lot_items(&self, cfg: &LotConfig) -> Result<Vec<AttentionItem>> {
         let lots = self.list_lots()?;
         let mut items: Vec<AttentionItem> = Vec::new();
         let snoozed = cfg

@@ -1183,6 +1183,13 @@ pub fn lot_work_order_choices(state: State<AppState>) -> R<Vec<LotWoChoice>> {
 }
 
 
+/// Work orders with welds still missing attributes (the "don't walk away" list).
+#[tauri::command]
+pub fn incomplete_work_orders(state: State<AppState>) -> R<Vec<weldcore::welds::IncompleteWo>> {
+    state.require_login()?;
+    e(state.store()?.incomplete_work_orders())
+}
+
 // --------------------------- Markups & Tool Chest ---------------------------
 // Redlines on a controlled sheet, and the reusable tools they are saved as.
 

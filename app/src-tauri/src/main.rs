@@ -261,6 +261,7 @@ fn main() {
             snooze_turnover,
             wo_lot_summary,
             lot_work_order_choices,
+            incomplete_work_orders,
             list_markups,
             create_markup,
             update_markup,

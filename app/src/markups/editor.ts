@@ -36,12 +36,23 @@ interface Opts {
 
 const HISTORY_MAX = 60;
 
-export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts) {
+export function useMarkupEditor({ drawingId, page, W, H, editable, toast: toastIn }: Opts) {
+  // The caller usually hands us a fresh closure each render; hold it in a ref
+  // so nothing below re-runs because of it (a dependency on it made the
+  // "load markups" effect fire after every render — a request storm that
+  // froze the map).
+  const toastRef = useRef(toastIn);
+  toastRef.current = toastIn;
+  const toast = useCallback((k: "ok" | "err", m: string) => toastRef.current(k, m), []);
   const [all, setAll] = useState<PM[]>([]);
   const [selection, setSelection] = useState<number[]>([]);
   const [tool, setToolState] = useState<MTool>({ type: "select" });
   const [style, setStyleState] = useState<Style>({ ...DEFAULT_STYLE });
   const [draft, setDraft] = useState<Draft | null>(null);
+  // Double-click and Enter arrive faster than React re-renders — read the
+  // live draft, not the closure's copy, or the last point goes missing.
+  const draftRef = useRef<Draft | null>(null);
+  draftRef.current = draft;
   const [editingText, setEditingText] = useState<number | null>(null);
   const [histVersion, setHistVersion] = useState(0);
   const dragRef = useRef<Drag | null>(null);
@@ -221,12 +232,15 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
     afterCreate(created);
   }, [effStyle, W, H, persistCreate, afterCreate]);
 
-  const finishPolyline = useCallback(async (pts: Pt[]) => {
+  const finishPolyline = useCallback(async (raw: Pt[]) => {
     setDraft(null);
+    // A double-click adds its point twice; drop consecutive near-duplicates.
+    const pts = raw.filter((p, i) => i === 0 || Math.hypot((p.x - raw[i - 1].x) * W, (p.y - raw[i - 1].y) * H) > 2);
     if (pts.length < 2) return;
     const created = await persistCreate("polyline", { style: { ...effStyle }, pts });
     afterCreate(created);
-  }, [effStyle, persistCreate, afterCreate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effStyle, W, H, persistCreate, afterCreate]);
 
   const finishPen = useCallback(async (pts: Pt[]) => {
     setDraft(null);
@@ -326,9 +340,10 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
   }, [draft, finishDraft, finishPen, persistUpdate, pushHistory]);
 
   const onDouble = useCallback((_e: React.MouseEvent, _px: Pt): boolean => {
-    if (draft?.kind === "polyline") { finishPolyline(draft.pts); return true; }
+    const dr = draftRef.current;
+    if (dr?.kind === "polyline") { finishPolyline(dr.pts); return true; }
     return false;
-  }, [draft, finishPolyline]);
+  }, [finishPolyline]);
 
   // ---- grabs from the layer ---------------------------------------------------
   const grab = useCallback((pm: PM, e: React.MouseEvent, px: Pt) => {
@@ -531,7 +546,7 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
     if (typing || editingText != null) return false;
     const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === "Escape") { cancel(); return true; }
-    if (e.key === "Enter" && draft?.kind === "polyline") { finishPolyline(draft.pts); return true; }
+    if (e.key === "Enter" && draftRef.current?.kind === "polyline") { finishPolyline(draftRef.current.pts); return true; }
     if (!editable) return false;
     if (ctrl && (e.key === "z" || e.key === "Z")) { if (e.shiftKey) redo(); else undo(); return true; }
     if (ctrl && (e.key === "y" || e.key === "Y")) { redo(); return true; }

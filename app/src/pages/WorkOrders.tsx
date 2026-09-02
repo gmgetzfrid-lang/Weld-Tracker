@@ -133,6 +133,7 @@ export function WorkOrders({
               <tr>
                 <th>Work Order #</th><th>Unit</th>
                 <th className="num">Isometrics</th><th className="num">Welds</th>
+                <th>Needs data</th>
                 <th>Last Activity</th><th></th>{can("editor") && <th></th>}
               </tr>
             </thead>
@@ -143,6 +144,11 @@ export function WorkOrders({
                   <td>{r.unit ?? "—"}</td>
                   <td className="num">{num(r.drawing_count)}</td>
                   <td className="num">{num(r.weld_count)}</td>
+                  <td>
+                    {(r.incomplete_count ?? 0) > 0
+                      ? <span className="badge badge-amber" title="Welds still missing attributes — open the record and use Fill attributes">{num(r.incomplete_count ?? 0)} incomplete</span>
+                      : r.weld_count > 0 ? <span className="badge badge-green">complete</span> : <span className="faint">—</span>}
+                  </td>
                   <td className="faint">{r.last_activity ?? "—"}</td>
                   <td><span className="btn btn-sm">Open records ›</span></td>
                   {can("editor") && (

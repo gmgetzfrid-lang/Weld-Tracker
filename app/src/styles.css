@@ -1224,3 +1224,10 @@ button.link:hover { color: var(--navy); }
 .iso-compass .iso-dot.on { fill: var(--navy); stroke: var(--navy); }
 .dock-head .pin { border: 0; background: transparent; cursor: pointer; font-size: 13px; opacity: .45; padding: 2px 4px; border-radius: 6px; }
 .dock-head .pin.on { opacity: 1; background: #fff3c4; }
+
+/* Welds still missing attributes */
+.wm-g.incomplete .anno-bubble { stroke-dasharray: 4 2.5; }
+.wm-glyph.todo circle { stroke: var(--warn); }
+.wm-glyph.todo text { fill: var(--warn); }
+.wm-legend-status .todo { color: var(--warn); }
+.walk-scope { display: flex; align-items: center; gap: 8px; padding: 8px 10px 0; }

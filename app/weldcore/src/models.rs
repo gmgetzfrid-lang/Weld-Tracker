@@ -522,6 +522,9 @@ pub struct WorkOrderSummary {
     /// Who created the work order (its first record). The owner — or an admin —
     /// may delete the whole work order; anyone else only their own records.
     pub owner: Option<String>,
+    /// Live welds still missing attributes (welder, date, size, joint, NDE).
+    #[serde(default)]
+    pub incomplete_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

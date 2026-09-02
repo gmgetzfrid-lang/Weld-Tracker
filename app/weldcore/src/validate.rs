@@ -44,6 +44,32 @@ fn digits(s: &str) -> Option<i64> {
     d.parse().ok()
 }
 
+/// The attributes a weld must carry before it counts as filled in — what a QC
+/// tech walks each bubble to enter. Returns the ones still missing, in the
+/// order the guided fill asks for them.
+pub fn missing_attributes(w: &Weld) -> Vec<&'static str> {
+    let mut m = Vec::new();
+    if blank(&w.stamp_number) {
+        m.push("welder");
+    }
+    if blank(&w.date_welded) {
+        m.push("date");
+    }
+    if w.size.is_none() {
+        m.push("size");
+    }
+    if nde::classify_joint(w.joint_type.as_deref()) == nde::Joint::Other {
+        m.push("joint type");
+    }
+    if blank(&w.nde_percent) {
+        m.push("NDE %");
+    }
+    if !requirement_for_weld(w).resolved {
+        m.push("NDE drivers");
+    }
+    m
+}
+
 /// Validate a single weld against the QC rules that can be judged from the weld
 /// alone. Cross-weld rules (a rejected weld's repair child, cert continuity)
 /// are layered on at the store level — see `Store::weld_exceptions`.

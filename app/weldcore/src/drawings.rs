@@ -122,9 +122,21 @@ impl Store {
                 weld_count: r.get(3)?,
                 last_activity: r.get(4)?,
                 owner: r.get(5)?,
+                incomplete_count: 0,
             })
         })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut list: Vec<WorkOrderSummary> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        drop(conn);
+        // Same definition of "incomplete" as the attention list, so the numbers
+        // agree everywhere.
+        let inc = self.incomplete_work_orders()?;
+        for wo in &mut list {
+            if let Some(i) = inc.iter().find(|i| i.work_order.eq_ignore_ascii_case(&wo.work_order)) {
+                wo.incomplete_count = i.count;
+            }
+        }
+        Ok(list)
     }
 
     /// Drawings belonging to a work order.

@@ -11,6 +11,7 @@ import { AddToChestDialog, ContextMenu, DRAW_TOOLS, MarkupBar, MarkupsList, Text
 import { attachWeldMap, exportWeldMap } from "../../markups/exportMap";
 import { bboxPx, normBox, type PM, type Style } from "../../markups/model";
 import type { MarkupTool } from "../../types";
+import { isIncomplete, missingAttributes } from "../../incomplete";
 
 interface Pt { x: number; y: number }
 type Tool = "bubble" | "select" | "pan" | "legend" | "markup";
@@ -100,12 +101,15 @@ const WeldLayer = memo(function WeldLayer({
         // once one exists, else "R" to flag an unexamined repair weld. Voided
         // welds dim as a whole instead.
         const voided = !!w.voided_at;
+        const todo = !voided && isIncomplete(w);
         const glyph =
           w.nde_result === "Rejected" ? { t: "!", cls: "bad" } :
           w.nde_result === "Accepted" ? { t: "✓", cls: "ok" } :
-          w.parent_weld_id != null ? { t: "R", cls: "rep" } : null;
+          w.parent_weld_id != null ? { t: "R", cls: "rep" } :
+          todo ? { t: "?", cls: "todo" } : null;
         return (
-          <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""} ${voided ? "voided" : ""}`}
+          <g key={w.id} className={`${active ? "wm-g active" : "wm-g"} ${editing ? "editing" : ""} ${voided ? "voided" : ""} ${todo ? "incomplete" : ""}`}
+            data-missing={todo ? missingAttributes(w).join(", ") : undefined}
             // Modeless (Bluebeam-style): any bubble is directly selectable and
             // draggable regardless of the active tool, unless a new bubble is
             // mid-placement.
@@ -216,7 +220,10 @@ export function WeldAnnotator({
   const [legendPos, setLegendPos] = useState<Pt>({ x: 0.72, y: 0.04 });
   const legendKey = `wm-legend-${drawing.id}`;
 
-  const [guided, setGuided] = useState<number | null>(null); // index into ordered welds
+  // Guided fill: the weld being walked (by id — the list shifts as welds get
+  // filled) and whether the walk visits every weld or only the ones missing data.
+  const [guidedId, setGuidedId] = useState<number | null>(null);
+  const [walkAll, setWalkAll] = useState(false);
   // Carry-forward: the driver values last entered in the guided walk, so the
   // next weld inherits them and the welder only changes what differs.
   const stickyRef = useRef<Partial<Weld>>({});
@@ -247,6 +254,7 @@ export function WeldAnnotator({
     const rows = await api.listDrawingWelds(drawing.id);
     setWelds(rows);
     onChange?.(rows);
+    return rows;
   }, [drawing.id, onChange]);
 
   useEffect(() => {
@@ -361,6 +369,33 @@ export function WeldAnnotator({
   // Voided welds stay on the map (dimmed — the record still exists) but drop
   // out of the guided walk: there's nothing to fill on an excluded weld.
   const fillable = useMemo(() => ordered.filter((w) => !w.voided_at), [ordered]);
+  const incomplete = useMemo(() => fillable.filter(isIncomplete), [fillable]);
+  /** The welds this walk visits, in map order. */
+  const walk = useMemo(() => (walkAll || incomplete.length === 0 ? fillable : incomplete), [walkAll, incomplete, fillable]);
+  // Index of the current weld in `fillable` (what the rest of the map keys on).
+  const guided = useMemo(() => {
+    if (guidedId == null) return null;
+    const i = fillable.findIndex((w) => w.id === guidedId);
+    return i >= 0 ? i : null;
+  }, [guidedId, fillable]);
+  /** Start walking: at the first weld missing data, else at the newest weld. */
+  const startWalk = useCallback(() => {
+    if (incomplete.length) { setWalkAll(false); setGuidedId(incomplete[0].id); return; }
+    if (!fillable.length) return;
+    setWalkAll(true);
+    setGuidedId(fillable.reduce((a, b) => (b.id > a.id ? b : a)).id);
+  }, [incomplete, fillable]);
+  /** The next weld after `fromId` that the walk should visit, from fresh rows. */
+  const nextInWalk = useCallback((fromId: number, rows: Weld[], includeAll: boolean, dir: 1 | -1 = 1): Weld | null => {
+    const order = rows.filter((w) => !w.voided_at).sort((a, b) => (a.weld_number ?? "").localeCompare(b.weld_number ?? "", undefined, { numeric: true }));
+    const pos = order.findIndex((w) => w.id === fromId);
+    const pass = (w: Weld) => includeAll || isIncomplete(w);
+    if (dir === 1) {
+      return order.slice(pos + 1).find(pass) ?? (includeAll ? null : order.slice(0, Math.max(0, pos)).find(pass) ?? null);
+    }
+    for (let i = pos - 1; i >= 0; i--) if (pass(order[i])) return order[i];
+    return null;
+  }, []);
 
   // number-key welder shortcuts, Esc to cancel, Delete to remove the selection
   useEffect(() => {
@@ -655,10 +690,11 @@ export function WeldAnnotator({
   // another view), clamp the index so the drawer never silently vanishes
   // while guided mode stays on with no way out.
   useEffect(() => {
-    if (guided !== null && guided >= fillable.length) {
-      setGuided(fillable.length > 0 ? fillable.length - 1 : null);
+    if (guidedId !== null && guided === null) {
+      setGuidedId(fillable.length > 0 ? fillable[fillable.length - 1].id : null);
     }
-  }, [guided, fillable]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guided, guidedId, fillable]);
 
   // guided fill: pan the active bubble to the centre of the stage — once per
   // weld. The welds list refreshes after every save (and after bubble drags),
@@ -763,7 +799,7 @@ export function WeldAnnotator({
   const placing = editable && tool === "bubble" && stamp && !pending;
 
   const hint = !editable ? "Read-only — drag to pan, Ctrl+scroll to zoom." :
-    guided !== null ? `Guided fill — weld ${guided + 1} of ${fillable.length}. Enter for the next field, Save & next on the last.` :
+    guided !== null ? `Guided fill — ${walk.findIndex((w) => w.id === guidedId) + 1} of ${walk.length}${walkAll ? "" : " missing data"}. Enter for the next field, Save & next on the last.` :
     tool === "markup" ? (
       editor.suspendedTool ? `Editing — drag to move, grips resize, the top handle rotates · click empty space or Esc to resume ${editor.suspendedTool.type === "place" ? editor.suspendedTool.name : (editor.suspendedTool.type === "draw" ? editor.suspendedTool.name ?? editor.suspendedTool.kind : "")}`
       : editor.tool.type === "select" ? "Markups: click to select · drag to move · right-click for options · pick a tool in the chest (T text · A arrow · C cloud …)."
@@ -888,7 +924,13 @@ export function WeldAnnotator({
         {/* floating actions (top-right) */}
         <div className="anno-hud tr" onMouseDown={(e) => e.stopPropagation()}>
           {editable && guided === null && fillable.length > 0 && (
-            <button className="btn btn-accent btn-sm" title="Walk each weld in order and fill its data" onClick={() => setGuided(0)}>▶ Fill attributes ({fillable.length})</button>
+            incomplete.length > 0 ? (
+              <button className="btn btn-accent btn-sm" title={`${incomplete.length} weld${incomplete.length === 1 ? "" : "s"} still missing data — the walk starts at the first one and skips the rest`} onClick={startWalk}>
+                ▶ Fill attributes ({incomplete.length} to do)
+              </button>
+            ) : (
+              <button className="btn btn-sm" title="Every weld has its attributes. Walk them anyway, starting from the newest." onClick={startWalk}>✓ All filled · review</button>
+            )
           )}
           <button className="btn btn-sm" title="Markups list — every redline on this sheet" onClick={() => setListOpen((v) => !v)}>☰{editor.pageMarkups.length ? ` ${editor.pageMarkups.length}` : ""}</button>
           <div className="wo-more">
@@ -970,11 +1012,18 @@ export function WeldAnnotator({
         {/* guided-fill — docked right drawer with guaranteed space */}
         {guided !== null && gActive && (
           <aside className="anno-drawer" style={{ width: DRAWER_W }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="walk-scope" onMouseDown={(e) => e.stopPropagation()}>
+            <span className="badge badge-amber" title="Welds on this sheet still missing data">{incomplete.length} missing data</span>
+            <div className="pill-tabs mini">
+              <button className={!walkAll ? "active" : ""} disabled={incomplete.length === 0} onClick={() => setWalkAll(false)}>Only missing</button>
+              <button className={walkAll ? "active" : ""} onClick={() => setWalkAll(true)}>All welds</button>
+            </div>
+          </div>
           <GuidedPopup
             key={gActive.id}
             weld={gActive}
-            index={guided}
-            total={fillable.length}
+            index={Math.max(0, walk.findIndex((w) => w.id === gActive.id))}
+            total={walk.length}
             welders={welders}
             lookups={lookups}
             sizes={sizes}
@@ -994,19 +1043,22 @@ export function WeldAnnotator({
                 return;
               }
               stickyRef.current = { ...stickyRef.current, ...pickSticky(changes) };
-              await refreshWelds();
-              if (guided + 1 >= fillable.length) {
-                setGuided(null);
-                toast.push("ok", "All welds filled — review & save");
+              const rows = await refreshWelds();
+              const next = nextInWalk(w.id, rows, walkAll);
+              if (!next) {
+                setGuidedId(null);
+                const left = rows.filter(isIncomplete).length;
+                toast.push("ok", left ? `Walk finished — ${left} weld${left === 1 ? "" : "s"} still missing data` : "All welds filled — review & save");
                 onComplete?.();
-              } else setGuided(guided + 1);
+              } else setGuidedId(next.id);
             }}
-            onBack={() => setGuided((g) => (g && g > 0 ? g - 1 : 0))}
+            onBack={() => { const prev = nextInWalk(gActive.id, welds, walkAll, -1); if (prev) setGuidedId(prev.id); }}
             onSkip={() => {
-              if (guided + 1 >= fillable.length) { setGuided(null); onComplete?.(); }
-              else setGuided(guided + 1);
+              const next = nextInWalk(gActive.id, welds, walkAll);
+              if (!next) { setGuidedId(null); onComplete?.(); }
+              else setGuidedId(next.id);
             }}
-            onExit={() => setGuided(null)}
+            onExit={() => setGuidedId(null)}
           />
           </aside>
         )}
@@ -1167,6 +1219,7 @@ function Legend({
         <span className="ok">✓ accepted</span>
         <span className="bad">! rejected</span>
         <span className="rep">R repair</span>
+        <span className="todo">? needs data</span>
       </div>
       <div className="wm-legend-tot">
         <div className="wm-legend-toth">Welders on this map</div>

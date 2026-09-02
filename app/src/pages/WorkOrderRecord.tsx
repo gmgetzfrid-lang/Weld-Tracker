@@ -7,6 +7,7 @@ import { WeldTable } from "../components/WeldTable";
 import { RecordNdeDialog, SingleWeldDialog } from "../components/WeldDialogs";
 import { docName, RevisePanel, RevisionHistory, PackageIngest } from "../docControl";
 import { QualityPackage } from "./QualityPackage";
+import { isIncomplete } from "../incomplete";
 
 type WoTab = "overview" | "drawings" | "welds" | "quality";
 
@@ -56,6 +57,17 @@ export function WorkOrderRecord({
   // The work order's owner (its creator) or an admin may delete the whole thing.
   const canDeleteWo =
     user != null && (user.role === "admin" || (owner != null && owner === user.username));
+
+  // Welds still missing attributes, and the drawing holding most of them (the
+  // one the "need data" badge opens straight into).
+  const incompleteWelds = welds.filter(isIncomplete);
+  const incompleteDrawing: number | null = (() => {
+    const tally = new Map<number, number>();
+    for (const w of incompleteWelds) if (w.drawing_id != null) tally.set(w.drawing_id, (tally.get(w.drawing_id) ?? 0) + 1);
+    let best: number | null = null, n = 0;
+    for (const [id, c] of tally) if (c > n) { best = id; n = c; }
+    return best;
+  })();
 
   // Monotonic request token: only the NEWEST load may write state, so a slow
   // response can't overwrite a fresher one (rapid autosaves, or switching to
@@ -192,6 +204,12 @@ export function WorkOrderRecord({
         <span className="badge badge-blue">{num(drawings.length)} drawings</span>
         <span className="badge badge-gray">{num(welds.length)} welds</span>
         {errorsN > 0 && <span className="badge badge-red" title="Validation errors on this work order — see Overview">{num(errorsN)} errors</span>}
+        {incompleteWelds.length > 0 && (
+          <button className="badge badge-amber" style={{ border: 0, cursor: "pointer" }} title="Welds still missing attributes — open the drawing and use Fill attributes"
+            onClick={() => onOpenDrawing(incompleteDrawing)}>
+            {num(incompleteWelds.length)} need data
+          </button>
+        )}
         <div className="spacer" />
         {editable && (
           <button className="btn btn-accent" onClick={() => onOpenDrawing(null)}>＋ Add Drawing &amp; Welds</button>
@@ -285,6 +303,20 @@ export function WorkOrderRecord({
             </button>
           </div>
 
+          {incompleteWelds.length > 0 && (
+            <div className="lot-banner warn" style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span>
+                  <b>{num(incompleteWelds.length)} weld{incompleteWelds.length === 1 ? "" : "s"} still missing attributes</b>
+                  <span className="muted"> — welder, date, size, joint or NDE not filled in. They stay flagged here and on the dashboard until they are.</span>
+                </span>
+                <div className="spacer" />
+                {editable && incompleteDrawing != null && (
+                  <button className="btn btn-sm btn-accent" onClick={() => onOpenDrawing(incompleteDrawing)}>▶ Fill attributes</button>
+                )}
+              </div>
+            </div>
+          )}
           {openItems.length > 0 ? (
             <div className="card card-pad" style={{ marginTop: 14 }}>
               <h3>Open items</h3>

@@ -462,6 +462,17 @@ export interface WorkOrderSummary {
   last_activity?: string | null;
   /** Who created the work order. The owner (or an admin) may delete the whole thing. */
   owner?: string | null;
+  /** Live welds still missing attributes (welder, date, size, joint, NDE). */
+  incomplete_count?: number;
+}
+
+export interface IncompleteDrawing { drawing_id?: number | null; drawing_no?: string | null; count: number }
+export interface IncompleteWo {
+  work_order: string;
+  count: number;
+  missing: Record<string, number>;
+  drawings: IncompleteDrawing[];
+  oldest?: string | null;
 }
 
 export interface NdeSpecStat {

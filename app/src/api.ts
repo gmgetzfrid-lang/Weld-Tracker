@@ -4,6 +4,7 @@ import type {
   AuditEntry,
   LotCard,
   LotConfig,
+  IncompleteWo,
   LotWoChoice,
   MaintainOutcome,
   Markup,
@@ -338,6 +339,8 @@ export const api = {
   snoozeTurnover: (days: number) => invoke<LotConfig>("snooze_turnover", { days }),
   woLotSummary: (workOrder: string) => invoke<WoLotSummary>("wo_lot_summary", { workOrder }),
   lotWorkOrderChoices: () => invoke<LotWoChoice[]>("lot_work_order_choices"),
+
+  incompleteWorkOrders: () => invoke<IncompleteWo[]>("incomplete_work_orders"),
 
   // drawing markups (redlines) + tool chest
   listMarkups: (drawingId: number) => invoke<Markup[]>("list_markups", { drawingId }),

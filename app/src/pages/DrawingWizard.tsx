@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import type { Drawing, Lookups, Weld, Welder } from "../types";
-import { ErrorBox, Spinner, useToast } from "../components/ui";
+import { ErrorBox, Modal, Spinner, useToast } from "../components/ui";
 import { Coach, Stepper } from "../components/Stepper";
 import { Combobox } from "../components/inline";
 import { WeldAnnotator } from "./annotator/WeldAnnotator";
+import { isIncomplete } from "../incomplete";
 import { WeldTable } from "../components/WeldTable";
 import { fileToBase64, loadPdf, base64ToBytes } from "../pdf";
 import { docName } from "../docControl";
@@ -41,6 +42,16 @@ export function DrawingWizard({
   const [loading, setLoading] = useState(!!drawingId);
   const [sizes, setSizes] = useState<number[]>([]);
   useEffect(() => { api.pipeSizes().then(setSizes).catch(logErr("loading pipe sizes")); }, []);
+  // Welds on this sheet still missing attributes — shown while you work and
+  // checked before you leave, so a half-filled map is never walked away from
+  // silently.
+  const [incompleteN, setIncompleteN] = useState(0);
+  const [exitPrompt, setExitPrompt] = useState(false);
+  const refreshIncomplete = useCallback((id: number) => {
+    api.listDrawingWelds(id).then((rows) => setIncompleteN(rows.filter(isIncomplete).length)).catch(logErr("counting incomplete welds"));
+  }, []);
+  useEffect(() => { if (drawing.id) refreshIncomplete(drawing.id); }, [drawing.id, step, refreshIncomplete]);
+  const guardedClose = () => { if (incompleteN > 0 && step > 0) setExitPrompt(true); else onClose(); };
 
   useEffect(() => {
     if (drawingId) {
@@ -111,7 +122,7 @@ export function DrawingWizard({
   return (
     <div>
       <div className="toolbar" style={{ marginBottom: 8 }}>
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>← Back</button>
+        <button className="btn btn-ghost btn-sm" onClick={guardedClose}>← Back</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>
           {drawing.work_order ? `WO ${drawing.work_order}` : "New entry"}
@@ -132,7 +143,7 @@ export function DrawingWizard({
             welders={welders}
             lookups={lookups}
             sizes={sizes}
-            onChange={() => api.getDrawing(drawing.id).then(setDrawing).catch(logErr("refreshing drawing"))}
+            onChange={(rows) => { setIncompleteN(rows.filter(isIncomplete).length); api.getDrawing(drawing.id).then(setDrawing).catch(logErr("refreshing drawing")); }}
             onComplete={() => setStep(2)}
           />
         )}
@@ -141,7 +152,12 @@ export function DrawingWizard({
         )}
 
         <div className={`wizard-foot ${step === 1 ? "wiz-flush-foot" : ""}`}>
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {step > 0 && incompleteN > 0 && (
+              <span className="badge badge-amber" title="These welds are flagged on the dashboard and the work order until they are filled in">
+                {incompleteN} weld{incompleteN === 1 ? "" : "s"} still need attributes
+              </span>
+            )}
             {step === 1 && <button className="btn" onClick={() => setStep(0)}>Back to header</button>}
             {step === 2 && <button className="btn" onClick={() => setStep(1)}>Back to map</button>}
           </div>
@@ -159,12 +175,32 @@ export function DrawingWizard({
                 <button className="btn" onClick={addAnother} title="Save this and start another drawing or sheet on the same work order">
                   ＋ Add another drawing / sheet
                 </button>
-                <button className="btn btn-accent" onClick={onClose}>Finish ✓</button>
+                <button className="btn btn-accent" onClick={guardedClose}>Finish ✓</button>
               </>
             )}
           </div>
         </div>
       </div>
+      {exitPrompt && (
+        <Modal
+          title={`${incompleteN} weld${incompleteN === 1 ? "" : "s"} still need attributes`}
+          onClose={() => setExitPrompt(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => { setExitPrompt(false); onClose(); }}>Leave — keep them flagged</button>
+              <button className="btn btn-accent" onClick={() => { setExitPrompt(false); setStep(1); }}>Finish them now</button>
+            </>
+          }
+        >
+          <p style={{ marginTop: 0 }}>
+            You can leave and come back — nothing is lost. Until they're filled in, these welds stay marked <b>?</b> on the map and
+            the work order and dashboard keep a <b>"{incompleteN} missing attributes"</b> notice, so they can't be forgotten.
+          </p>
+          <p className="muted" style={{ marginBottom: 0, fontSize: 13 }}>
+            <b>Fill attributes</b> on the map starts at the first weld that needs data and skips the ones already done.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }
