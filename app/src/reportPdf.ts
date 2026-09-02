@@ -207,7 +207,7 @@ export function footer(doc: jsPDF, left: string): void {
 }
 
 /** Build the whole report document. */
-async function buildPerformancePdf(rep: PerformanceReport, company: string): Promise<jsPDF> {
+async function buildPerformancePdf(rep: PerformanceReport, company: string, periodTitle?: string): Promise<jsPDF> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
@@ -223,7 +223,10 @@ async function buildPerformancePdf(rep: PerformanceReport, company: string): Pro
   doc.text(company || "SENTRIX", M, 52);
   doc.setFontSize(9);
   doc.setTextColor(206, 214, 240);
-  doc.text(`Period: ${rep.period_label}`, M, 66);
+  const period = periodTitle && periodTitle !== rep.period_label && rep.from && rep.to
+    ? `${periodTitle} (${rep.from} to ${rep.to})`
+    : (periodTitle ?? rep.period_label);
+  doc.text(`Period: ${period}`, M, 66);
   doc.text(`Generated ${rep.generated_on}`, PAGE_W - M, 66, { align: "right" });
 
   let y = 100;
@@ -461,15 +464,15 @@ export function pdfB64(doc: jsPDF): string {
  * the file manager. Browser downloads are inert inside the WebView, so the
  * file is written by the backend. Returns the path written.
  */
-export async function downloadPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
-  const doc = await buildPerformancePdf(rep, company);
-  const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
+export async function downloadPerformancePdf(rep: PerformanceReport, company: string, periodTitle?: string): Promise<string> {
+  const doc = await buildPerformancePdf(rep, company, periodTitle);
+  const tag = (periodTitle || rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
   return api.saveExport(`welder-performance-${tag}.pdf`, pdfB64(doc), "reveal");
 }
 
 /** Generate the PDF and open it in the default viewer (print from there). */
-export async function openPerformancePdf(rep: PerformanceReport, company: string): Promise<string> {
-  const doc = await buildPerformancePdf(rep, company);
-  const tag = (rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
+export async function openPerformancePdf(rep: PerformanceReport, company: string, periodTitle?: string): Promise<string> {
+  const doc = await buildPerformancePdf(rep, company, periodTitle);
+  const tag = (periodTitle || rep.period_label || "all").replace(/[^0-9A-Za-z]+/g, "-");
   return api.saveExport(`welder-performance-${tag}.pdf`, pdfB64(doc), "open");
 }

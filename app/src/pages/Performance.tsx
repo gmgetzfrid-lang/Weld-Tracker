@@ -12,22 +12,136 @@ const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", 
 type Metric = "welds" | "inches" | "rate";
 type Bucket = "day" | "week" | "month" | "year";
 
-type Mode = "month" | "year" | "all" | "lot";
+type Mode = "day" | "week" | "month" | "quarter" | "half" | "year" | "all" | "custom" | "lot";
+const MODE_LABEL: Record<Mode, string> = {
+  day: "Day", week: "Week", month: "Month", quarter: "Quarter", half: "6 months", year: "Year", all: "All time", custom: "Custom", lot: "Lot",
+};
 
-function windowFor(mode: Mode, month: number, year: number, lot?: NdeLot | null): [string | null, string | null] {
-  if (mode === "all") return [null, null];
-  if (mode === "lot") return [lot?.first_weld?.slice(0, 10) ?? null, lot?.last_weld?.slice(0, 10) ?? null];
-  if (mode === "year") return [`${year}-01-01`, `${year}-12-31`];
-  const mm = String(month).padStart(2, "0");
-  return [`${year}-${mm}-01`, `${year}-${mm}-31`];
+const pad2 = (n: number) => String(n).padStart(2, "0");
+function iso(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function parseIso(s: string): Date {
+  const [y, m, d] = s.slice(0, 10).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+function addDays(s: string, n: number): string {
+  const d = parseIso(s);
+  d.setDate(d.getDate() + n);
+  return iso(d);
+}
+/** Last day of month `m` (1–12) in year `y`. */
+function monthEnd(y: number, m: number): string {
+  return iso(new Date(y, m, 0));
+}
+/** The Monday on or before `s`. */
+function weekStart(s: string): string {
+  const d = parseIso(s);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return iso(d);
+}
+function human(s: string): string {
+  const d = parseIso(s);
+  return `${MONTHS3[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+function spanDays(from: string, to: string): number {
+  return Math.round((parseIso(to).getTime() - parseIso(from).getTime()) / 86_400_000) + 1;
+}
+
+/** Everything that pins down the report window. */
+interface PeriodState {
+  mode: Mode;
+  /** A day inside the day / week being viewed. */
+  anchor: string;
+  month: number;   // 1–12
+  quarter: number; // 1–4
+  half: number;    // 1 | 2
+  year: number;
+  from: string;    // custom
+  to: string;      // custom
+}
+
+interface Window {
+  from: string | null;
+  to: string | null;
+  /** Human title for the screen, CSV and PDF ("Q3 2026 (Jul–Sep)"). */
+  title: string;
+}
+
+function windowFor(p: PeriodState, lot: NdeLot | null): Window {
+  switch (p.mode) {
+    case "all":
+      return { from: null, to: null, title: "All time" };
+    case "lot":
+      return {
+        from: lot?.first_weld?.slice(0, 10) ?? null,
+        to: lot?.last_weld?.slice(0, 10) ?? null,
+        title: lot ? `Lot ${lot.lot_no}` : "Lot",
+      };
+    case "day":
+      return { from: p.anchor, to: p.anchor, title: human(p.anchor) };
+    case "week": {
+      const a = weekStart(p.anchor);
+      const b = addDays(a, 6);
+      return { from: a, to: b, title: `Week of ${human(a)} – ${human(b)}` };
+    }
+    case "month":
+      return { from: `${p.year}-${pad2(p.month)}-01`, to: monthEnd(p.year, p.month), title: `${MONTHS[p.month - 1]} ${p.year}` };
+    case "quarter": {
+      const m0 = (p.quarter - 1) * 3 + 1;
+      return {
+        from: `${p.year}-${pad2(m0)}-01`,
+        to: monthEnd(p.year, m0 + 2),
+        title: `Q${p.quarter} ${p.year} (${MONTHS3[m0 - 1]}–${MONTHS3[m0 + 1]})`,
+      };
+    }
+    case "half": {
+      const m0 = p.half === 1 ? 1 : 7;
+      return {
+        from: `${p.year}-${pad2(m0)}-01`,
+        to: monthEnd(p.year, m0 + 5),
+        title: `${p.half === 1 ? "Jan–Jun" : "Jul–Dec"} ${p.year}`,
+      };
+    }
+    case "year":
+      return { from: `${p.year}-01-01`, to: `${p.year}-12-31`, title: String(p.year) };
+    case "custom":
+      return {
+        from: p.from || null,
+        to: p.to || null,
+        title: `${p.from ? human(p.from) : "Start"} – ${p.to ? human(p.to) : "today"}`,
+      };
+  }
+}
+
+/** A sensible chart granularity for a window; the user can still switch. */
+function defaultBucket(mode: Mode, from: string | null, to: string | null): Bucket {
+  if (mode === "day" || mode === "week" || mode === "month") return "day";
+  if (mode === "quarter" || mode === "half" || mode === "lot") return "week";
+  if (mode === "year" || mode === "all") return "month";
+  if (from && to) {
+    const n = spanDays(from, to);
+    return n <= 45 ? "day" : n <= 200 ? "week" : "month";
+  }
+  return "month";
 }
 
 export function Performance() {
   const toast = useToast();
   const now = new Date();
-  const [mode, setMode] = useState<Mode>("month");
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const [period, setPeriod] = useState<PeriodState>(() => ({
+    mode: "month",
+    anchor: iso(now),
+    month: now.getMonth() + 1,
+    quarter: Math.floor(now.getMonth() / 3) + 1,
+    half: now.getMonth() < 6 ? 1 : 2,
+    year: now.getFullYear(),
+    from: addDays(iso(now), -29),
+    to: iso(now),
+  }));
+  const mode = period.mode;
+  const setMode = (m: Mode) => setPeriod((p) => ({ ...p, mode: m }));
+  const patch = (x: Partial<PeriodState>) => setPeriod((p) => ({ ...p, ...x }));
   const [rep, setRep] = useState<PerformanceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,30 +169,52 @@ export function Performance() {
       .catch(logErr("loading lots"));
   }, []);
 
+  const win = windowFor(period, lot);
+  const { from, to, title } = win;
+
   const load = useCallback(() => {
     if (mode === "lot" && lotId == null) { setRep(null); setLoading(false); return; }
     setLoading(true);
-    const [from, to] = windowFor(mode, month, year, lot);
     api
       .reportPerformance(from, to, mode === "lot" ? lotId : null)
       .then((r) => { setRep(r); setError(null); })
       .catch((e) => setError(errMsg(e)))
       .finally(() => setLoading(false));
-    // `lot` is derived from lotId + lots; lots only matter for the date window.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, month, year, lotId]);
+  }, [mode, from, to, lotId]);
   useEffect(load, [load]);
 
-  // A sensible default granularity for each window; the user can still switch.
   useEffect(() => {
-    setBucket(mode === "month" ? "day" : mode === "lot" ? "week" : "month");
-  }, [mode]);
+    setBucket(defaultBucket(mode, from, to));
+  }, [mode, from, to]);
 
   useEffect(() => {
-    const [from, to] = windowFor(mode, month, year, lot);
     api.welderOutputSeries(from, to, bucket).then(setSeries).catch(logErr("loading output series"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, month, year, bucket, lotId, lots.length]);
+  }, [from, to, bucket]);
+
+  // ‹ › step the window by one unit of the current mode.
+  const step = (dir: 1 | -1) => {
+    setPeriod((p) => {
+      switch (p.mode) {
+        case "day": return { ...p, anchor: addDays(p.anchor, dir) };
+        case "week": return { ...p, anchor: addDays(p.anchor, 7 * dir) };
+        case "month": {
+          const m = p.month + dir;
+          return m < 1 ? { ...p, month: 12, year: p.year - 1 } : m > 12 ? { ...p, month: 1, year: p.year + 1 } : { ...p, month: m };
+        }
+        case "quarter": {
+          const q = p.quarter + dir;
+          return q < 1 ? { ...p, quarter: 4, year: p.year - 1 } : q > 4 ? { ...p, quarter: 1, year: p.year + 1 } : { ...p, quarter: q };
+        }
+        case "half": {
+          const h = p.half + dir;
+          return h < 1 ? { ...p, half: 2, year: p.year - 1 } : h > 2 ? { ...p, half: 1, year: p.year + 1 } : { ...p, half: h };
+        }
+        case "year": return { ...p, year: p.year + dir };
+        default: return p;
+      }
+    });
+  };
+  const steppable = !["all", "custom", "lot"].includes(mode);
 
   const exportCsv = () => {
     if (!rep) return;
@@ -89,15 +225,15 @@ export function Performance() {
       r.specs.length ? r.min_actual_pct.toFixed(0) + "%" : "—",
       r.specs.length === 0 ? "—" : r.in_spec ? "IN SPEC" : "BELOW",
     ]);
-    downloadCsv(`welder-performance-${rep.period_label.replace(/[^0-9A-Za-z]+/g, "-")}.csv`, [header, ...rows]);
+    downloadCsv(`welder-performance-${title.replace(/[^0-9A-Za-z]+/g, "-")}.csv`, [header, ...rows]);
   };
 
   const genPdf = async (open: boolean) => {
     if (!rep) return;
     try {
       const path = open
-        ? await openPerformancePdf(rep, company)
-        : await downloadPerformancePdf(rep, company);
+        ? await openPerformancePdf(rep, company, title)
+        : await downloadPerformancePdf(rep, company, title);
       toast.push("ok", `${open ? "Opened" : "Saved"} ${path}`);
     } catch (e) { toast.push("err", errMsg(e)); }
   };
@@ -202,15 +338,60 @@ export function Performance() {
 
   return (
     <div>
-      <div className="toolbar">
+      <div className="toolbar" style={{ flexWrap: "wrap", rowGap: 8 }}>
         <div className="pill-tabs">
-          <button className={mode === "month" ? "active" : ""} onClick={() => setMode("month")}>Month</button>
-          <button className={mode === "year" ? "active" : ""} onClick={() => setMode("year")}>Year</button>
-          <button className={mode === "all" ? "active" : ""} onClick={() => setMode("all")}>All time</button>
+          {(["day", "week", "month", "quarter", "half", "year", "all", "custom"] as Mode[]).map((m) => (
+            <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>{MODE_LABEL[m]}</button>
+          ))}
           {lots.length > 0 && (
             <button className={mode === "lot" ? "active" : ""} onClick={() => setMode("lot")} title="One NDE lot — the B31.3 population, with progressive sampling">Lot</button>
           )}
         </div>
+        {steppable && <button className="btn btn-sm" onClick={() => step(-1)} title="Previous">‹</button>}
+        {(mode === "day" || mode === "week") && (
+          <div className="field" style={{ margin: 0 }}>
+            <input type="date" value={period.anchor} onChange={(e) => e.target.value && patch({ anchor: e.target.value })} />
+          </div>
+        )}
+        {mode === "week" && <strong style={{ fontSize: 13 }}>{title.replace("Week of ", "")}</strong>}
+        {mode === "month" && (
+          <div className="field" style={{ margin: 0 }}>
+            <select value={period.month} onChange={(e) => patch({ month: Number(e.target.value) })}>
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+        )}
+        {mode === "quarter" && (
+          <div className="field" style={{ margin: 0 }}>
+            <select value={period.quarter} onChange={(e) => patch({ quarter: Number(e.target.value) })}>
+              {[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q} · {MONTHS3[(q - 1) * 3]}–{MONTHS3[(q - 1) * 3 + 2]}</option>)}
+            </select>
+          </div>
+        )}
+        {mode === "half" && (
+          <div className="field" style={{ margin: 0 }}>
+            <select value={period.half} onChange={(e) => patch({ half: Number(e.target.value) })}>
+              <option value={1}>Jan – Jun</option>
+              <option value={2}>Jul – Dec</option>
+            </select>
+          </div>
+        )}
+        {(mode === "month" || mode === "quarter" || mode === "half" || mode === "year") && (
+          <strong>{period.year}</strong>
+        )}
+        {steppable && <button className="btn btn-sm" onClick={() => step(1)} title="Next">›</button>}
+        {mode === "custom" && (
+          <>
+            <div className="field" style={{ margin: 0 }}>
+              <input type="date" value={period.from} onChange={(e) => patch({ from: e.target.value })} />
+            </div>
+            <span className="muted">to</span>
+            <div className="field" style={{ margin: 0 }}>
+              <input type="date" value={period.to} onChange={(e) => patch({ to: e.target.value })} />
+            </div>
+            {from && to && <span className="muted" style={{ fontSize: 12 }}>{spanDays(from, to)} days</span>}
+          </>
+        )}
         {mode === "lot" && (
           <>
             <div className="field" style={{ margin: 0 }}>
@@ -225,24 +406,11 @@ export function Performance() {
             {lot && <LotStatusChip lot={lot} />}
           </>
         )}
-        {mode === "month" && (
-          <div className="field" style={{ margin: 0 }}>
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-            </select>
-          </div>
-        )}
-        {mode !== "all" && (
-          <>
-            <button className="btn btn-sm" onClick={() => setYear((y) => y - 1)}>‹</button>
-            <strong>{year}</strong>
-            <button className="btn btn-sm" onClick={() => setYear((y) => y + 1)}>›</button>
-          </>
-        )}
-        <div className="spacer" />
-        <button className="btn" onClick={exportCsv} disabled={!rep}>⭳ CSV</button>
-        <button className="btn" onClick={() => genPdf(true)} disabled={!rep}>🖨 Open / Print</button>
-        <button className="btn btn-accent" onClick={() => genPdf(false)} disabled={!rep}>⭳ Generate PDF</button>
+        <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+          <button className="btn" onClick={exportCsv} disabled={!rep}>⭳ CSV</button>
+          <button className="btn" onClick={() => genPdf(true)} disabled={!rep}>🖨 Open / Print</button>
+          <button className="btn btn-accent" onClick={() => genPdf(false)} disabled={!rep}>⭳ Generate PDF</button>
+        </div>
       </div>
 
       <ErrorBox message={error} />
@@ -268,7 +436,7 @@ export function Performance() {
                     : `${rep.welders_in_spec} of ${rep.rows.length} welders at or above spec — ${rep.welders_below_spec} need attention.`}
               </strong>
               <div className="muted" style={{ fontSize: 12 }}>
-                Period: {rep.period_label} · generated {rep.generated_on}
+                {title}{from && to && mode !== "day" && mode !== "custom" ? ` · ${from} to ${to}` : ""} · generated {rep.generated_on}
                 {rep.progressive_sampling && <> · <span className="warn">requirements include B31.3 progressive sampling</span></>}
               </div>
             </div>
