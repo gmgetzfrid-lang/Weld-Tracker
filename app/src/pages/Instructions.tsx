@@ -47,6 +47,24 @@ export function Instructions() {
       </div>
 
       <div className="card card-pad">
+        <h3>Markups &amp; the Tool Chest (weld map)</h3>
+        <p>
+          Redline the isometric right on the weld map: open a drawing, pick <b>✎ Markups</b>, and the Tool Chest docks on
+          the left — like Bluebeam. <b>Redline</b> holds the drawing tools (text, callout, line, arrow, polyline, pen,
+          rectangle, ellipse, revision cloud, highlight, dimension); <b>Piping</b> holds ready-made isometric symbols
+          (flanges, valves, elbows, tees, reducers, olets, supports, field weld, tie-in, flow arrow…). Click a symbol,
+          click the drawing, use <kbd>[</kbd> <kbd>]</kbd> to rotate it onto the run.
+        </p>
+        <ul>
+          <li><b>Add to Tool Chest.</b> Draw something once (a flange sketched from lines, a standard note), right-click it → <i>Add to Tool Chest</i> → pick a set or make a new one. It reuses with one click, and sets are shared with the team.</li>
+          <li><b>Drawing vs Properties mode.</b> Drawing mode places an exact copy (shape, size, text). Properties mode keeps only the look — color, width, dash — and you draw the shape each time. Symbols and groups are always Drawing mode.</li>
+          <li><b>Select</b> (V) to move, resize, rotate; shift-click for several; <kbd>Ctrl+G</kbd> groups them into one symbol. Right-click for duplicate, lock, front/back, resolve, delete. <kbd>Ctrl+Z</kbd> undoes.</li>
+          <li><b>Markups list</b> (☰) shows every redline on the sheet with who, when, subject and comment; mark them resolved as the work is done.</li>
+          <li><b>⭳ Weld map</b> exports the flattened sheet — drawing, weld bubbles, legend and markups — as a PDF, or files it straight into the work order's quality package.</li>
+        </ul>
+      </div>
+
+      <div className="card card-pad">
         <h3>NDE Lots (ASME B31.3)</h3>
         <p>
           A <b>lot</b> is the population a welder's random-examination percentage is measured against. Without lots the

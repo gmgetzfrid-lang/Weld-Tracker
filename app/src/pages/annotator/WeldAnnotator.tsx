@@ -5,9 +5,32 @@ import type { Drawing, Lookups, Weld, Welder } from "../../types";
 import { ConfirmDialog, Spinner, useToast } from "../../components/ui";
 import { Combobox, InlineMulti } from "../../components/inline";
 import { base64ToBytes, loadPdf, type PdfDoc } from "../../pdf";
+import { useMarkupEditor, type Draft } from "../../markups/editor";
+import { MarkupEl, SelectionEl } from "../../markups/render";
+import { AddToChestDialog, ContextMenu, DRAW_TOOLS, MarkupBar, MarkupsList, TextEditOverlay, ToolChest, type MenuItem } from "../../markups/panels";
+import { attachWeldMap, exportWeldMap } from "../../markups/exportMap";
+import { bboxPx, normBox, type PM, type Style } from "../../markups/model";
+import type { MarkupTool } from "../../types";
 
 interface Pt { x: number; y: number }
-type Tool = "bubble" | "select" | "pan" | "legend";
+type Tool = "bubble" | "select" | "pan" | "legend" | "markup";
+
+/** The shape being drawn right now, as a throwaway markup for the renderer. */
+function draftPM(dr: Draft, style: Style, drawingId: number, page: number): PM {
+  const base = {
+    id: -1, drawing_id: drawingId, page, subject: null, comment: null, status: "Open" as const, z: 0, locked: false,
+    created_by: null, created_at: "", updated_by: null, updated_at: "",
+  };
+  const box = normBox({ x: dr.start.x, y: dr.start.y, w: dr.cur.x - dr.start.x, h: dr.cur.y - dr.start.y });
+  switch (dr.kind) {
+    case "line": case "arrow": case "dimension":
+      return { ...base, kind: dr.kind, d: { style: dr.kind === "arrow" ? { ...style, arrowEnd: true } : style, pts: [dr.start, dr.cur] } };
+    case "polyline": return { ...base, kind: "polyline", d: { style, pts: [...dr.pts, dr.cur] } };
+    case "pen": return { ...base, kind: "pen", d: { style, pts: dr.pts, smooth: true } };
+    case "text": case "callout": return { ...base, kind: "rect", d: { style: { ...style, dash: "dash", width: 1 }, box } };
+    default: return { ...base, kind: dr.kind, d: { style, box } };
+  }
+}
 
 // EP 5-5-1 Table 4 driver vocabularies (kept in step with weldcore/src/nde.rs).
 export const MATERIAL_GROUPS = [
@@ -203,6 +226,23 @@ export function WeldAnnotator({
   }, []);
   const dismissCoach = () => { setShowCoach(false); try { localStorage.setItem("wm-coach-seen", "1"); } catch { /* ignore */ } };
 
+  // Markups (redlines) + the Tool Chest. The editor owns drawing/selection
+  // state and persistence; the stage hands it pointer events in markup mode.
+  const editor = useMarkupEditor({
+    drawingId: drawing.id, page: pageNum, W: size.w, H: size.h, editable,
+    toast: (k, m) => toast.push(k, m),
+  });
+  const [chestOpen, setChestOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const [mtools, setMtools] = useState<MarkupTool[]>([]);
+  const reloadTools = useCallback(() => { api.listMarkupTools().then(setMtools).catch(logErr("loading tool chest")); }, []);
+  useEffect(() => { reloadTools(); }, [reloadTools]);
+  const [ctx, setCtx] = useState<{ x: number; y: number; pm: PM } | null>(null);
+  const [addChest, setAddChest] = useState<{ pms: PM[]; cat?: string } | null>(null);
+  const [exportMenu, setExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const chestCats = useMemo(() => Array.from(new Set(mtools.map((t) => t.category))).sort(), [mtools]);
+
   const refreshWelds = useCallback(async () => {
     const rows = await api.listDrawingWelds(drawing.id);
     setWelds(rows);
@@ -327,6 +367,15 @@ export function WeldAnnotator({
     const onKey = (e: KeyboardEvent) => {
       if (guided !== null) return;
       const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName ?? "");
+      if (tool === "markup" || editor.selection.length) {
+        if (editor.onKey(e)) { e.preventDefault(); return; }
+        if (tool === "markup" && !typing && editable && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const k = e.key.toUpperCase();
+          if (k === "V") { editor.setTool({ type: "select" }); return; }
+          const dt = DRAW_TOOLS.find((d) => d.key === k);
+          if (dt) { editor.setTool({ type: "draw", kind: dt.kind, name: dt.label }); return; }
+        }
+      }
       if (e.key === "Escape") { setPending(null); setCursor(null); setSelId(null); setLegendSel(false); }
       if ((e.key === "Delete" || e.key === "Backspace") && !typing && editable) {
         if (selId != null) { e.preventDefault(); askDelete(selId); }
@@ -340,12 +389,23 @@ export function WeldAnnotator({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [welders, guided, selId, legendSel, editable, legendPos]);
+  }, [welders, guided, selId, legendSel, editable, legendPos, tool, editor.onKey, editor.setTool, editor.selection.length]);
 
   const norm = (e: { clientX: number; clientY: number }): Pt => {
     const r = svgRef.current!.getBoundingClientRect();
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
+  /** Pointer position in page pixels (the markup editor's frame). */
+  const pxOf = (e: { clientX: number; clientY: number }): Pt => {
+    const n = norm(e);
+    return { x: n.x * size.w, y: n.y * size.h };
+  };
+
+  // Leaving markup mode closes the chest and drops the markup tool.
+  useEffect(() => {
+    if (tool !== "markup") { setChestOpen(false); editor.setTool({ type: "select" }); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
 
   // Fit the page width to the stage.
   const fitToWidth = useCallback(() => {
@@ -390,6 +450,8 @@ export function WeldAnnotator({
     if (dragRef.current) return; // a bubble drag owns the gesture
     // A press on a bubble is handled by the bubble's own click/drag handlers.
     if ((e.target as Element).closest?.(".wm-g")) return;
+    if ((e.target as Element).closest?.(".mk-sel")) return; // a markup grip owns the gesture
+    if (tool === "markup" && svgRef.current && editor.onDown(e, pxOf(e))) { downRef.current = null; panRef.current = null; return; }
     downRef.current = { x: e.clientX, y: e.clientY, moved: false };
     panRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
   };
@@ -404,6 +466,9 @@ export function WeldAnnotator({
   };
 
   const onStageClick = async (e: React.MouseEvent) => {
+    // Markup mode: an empty click clears the markup selection (viewers too).
+    if (tool === "markup") { editor.setSelection([]); setSelId(null); setLegendSel(false); return; }
+    if (editor.selection.length) editor.setSelection([]);
     if (!editable || guided !== null) return;
     // Bubble tool: an empty click places a joint, then the bubble.
     if (tool === "bubble") {
@@ -431,6 +496,7 @@ export function WeldAnnotator({
   };
 
   const onMove = (e: React.MouseEvent) => {
+    if (svgRef.current && editor.onMove(e, pxOf(e))) return; // a markup draft or drag owns the pointer
     if (pending) setCursor(norm(e));
     // Background pan: once the pointer has moved past the click threshold.
     const dn = downRef.current;
@@ -476,6 +542,7 @@ export function WeldAnnotator({
   // Release on the stage: finish a bubble drag, finish a pan, or — if the
   // pointer never moved — perform the tool's click action at that point.
   const onStageUp = async (e: React.MouseEvent) => {
+    if (svgRef.current && (await editor.onUp(e, pxOf(e)))) { downRef.current = null; panRef.current = null; return; }
     if (dragRef.current) { await endDrag(); downRef.current = null; panRef.current = null; return; }
     const dn = downRef.current;
     downRef.current = null; panRef.current = null;
@@ -525,6 +592,65 @@ export function WeldAnnotator({
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [welds]);
 
+  // Flatten the sheet (drawing + bubbles + legend + markups) to a PDF.
+  const doExport = async (mode: "reveal" | "open" | "attach") => {
+    setExportMenu(false);
+    setExporting(true);
+    try {
+      const pages: number[] = [];
+      for (let p = pageFrom; p <= pageTo; p++) pages.push(p);
+      const tag = [drawing.drawing_no, drawing.sheet_no ? `sh${drawing.sheet_no}` : "", drawing.revision ? `rev${drawing.revision}` : ""]
+        .filter(Boolean).join("-").replace(/[^0-9A-Za-z._-]+/g, "-") || `drawing-${drawing.id}`;
+      const opts = {
+        doc: hasPdf ? docRef.current : null,
+        pages: hasPdf ? pages : [1],
+        blank: { w: size.w || 800, h: size.h || 600 },
+        welds, markups: editor.all,
+        legend: { pos: legendPos, totals, on: legendOn },
+        fileName: `weld-map-${tag}.pdf`,
+        mode: (mode === "attach" ? "reveal" : mode) as "reveal" | "open",
+      };
+      if (mode === "attach") {
+        await attachWeldMap(opts, drawing.work_order!, `Flattened weld map · ${welds.length} welds · ${editor.all.length} markups`);
+        toast.push("ok", "Weld map filed in the quality package");
+      } else {
+        const path = await exportWeldMap(opts);
+        toast.push("ok", `${mode === "open" ? "Opened" : "Saved"} ${path}`);
+      }
+    } catch (e) { toast.push("err", errMsg(e)); }
+    finally { setExporting(false); }
+  };
+
+  // Right-click menu for a markup.
+  const ctxItems = (pm: PM): MenuItem[] => {
+    const sel = editor.selected.length ? editor.selected : [pm];
+    const textual = ["text", "callout", "dimension"].includes(pm.kind);
+    const canUngroup = sel.length === 1 && pm.kind === "group" && (pm.d.items?.length ?? 0) > 1;
+    return [
+      {
+        label: "Add to Tool Chest", disabled: !editable,
+        sub: [
+          ...chestCats.map((c) => ({ label: c, onClick: () => setAddChest({ pms: sel, cat: c }) })),
+          ...(chestCats.length ? [{ label: "", sep: true }] : []),
+          { label: "New tool set…", onClick: () => setAddChest({ pms: sel }) },
+        ],
+      },
+      { label: "", sep: true },
+      ...(textual ? [{ label: "Edit text", onClick: () => editor.setEditingText(pm.id), disabled: !editable || pm.locked }] : []),
+      { label: "Duplicate", onClick: () => editor.duplicate(), disabled: !editable },
+      { label: sel.length > 1 ? "Group" : "Ungroup", onClick: () => (sel.length > 1 ? editor.group() : editor.ungroup()), disabled: !editable || (sel.length === 1 && !canUngroup) },
+      { label: "Rotate 90°", onClick: () => editor.rotate(90), disabled: !editable || pm.locked },
+      { label: "Flip", onClick: () => editor.flip(), disabled: !editable || pm.locked },
+      { label: "Bring to front", onClick: () => editor.reorder(true), disabled: !editable },
+      { label: "Send to back", onClick: () => editor.reorder(false), disabled: !editable },
+      { label: "", sep: true },
+      { label: pm.locked ? "Unlock" : "Lock", onClick: () => editor.toggleLock(), disabled: !editable },
+      { label: pm.status === "Resolved" ? "Reopen" : "Mark resolved", onClick: () => editor.setStatus(pm.status === "Resolved" ? "Open" : "Resolved"), disabled: !editable },
+      { label: "", sep: true },
+      { label: "Delete", onClick: () => editor.remove(), danger: true, disabled: !editable || pm.locked },
+    ];
+  };
+
   // If the walk's list shrinks under us (a weld voided or deleted from
   // another view), clamp the index so the drawer never silently vanishes
   // while guided mode stays on with no way out.
@@ -561,7 +687,7 @@ export function WeldAnnotator({
       // Let overlays (the fill drawer, HUD panels, dropdown menus) scroll
       // themselves — the wheel only pans/zooms the PDF over the bare canvas.
       const t = e.target as Element;
-      if (t.closest?.(".anno-drawer, .anno-hud, .anno-selbar, .combo-menu")) return;
+      if (t.closest?.(".anno-drawer, .anno-hud, .anno-selbar, .combo-menu, .anno-dock, .mk-list, .mk-bar, .ctx-menu")) return;
       e.preventDefault();
       const p = panStateRef.current;
       if (e.ctrlKey || e.metaKey) {
@@ -638,6 +764,12 @@ export function WeldAnnotator({
 
   const hint = !editable ? "Read-only — drag to pan, Ctrl+scroll to zoom." :
     guided !== null ? `Guided fill — weld ${guided + 1} of ${fillable.length}. Enter for the next field, Save & next on the last.` :
+    tool === "markup" ? (
+      editor.tool.type === "select" ? "Markups: click to select · drag to move · right-click for options · pick a tool in the chest (T text · A arrow · C cloud …)."
+      : editor.tool.type === "place" ? `Click to place ${editor.tool.name} · [ ] rotates · Esc to stop`
+      : editor.tool.kind === "polyline" ? "Click each point · double-click or Enter to finish · Esc cancels"
+      : editor.tool.kind === "callout" ? "Drag from the item you're pointing at to where the note goes"
+      : `Drag to draw ${(editor.tool.name ?? editor.tool.kind).toLowerCase()} · Esc to stop`) :
     tool === "bubble" ? (!stamp ? "Pick a welder, then click a joint to start a leader." : pending ? "Click where the bubble goes." : "Click a joint to place a weld · drag empty space to pan · Ctrl+scroll to zoom.") :
     "Click a bubble or the legend to select · drag it to move · Delete removes it · drag empty space to pan.";
 
@@ -648,11 +780,12 @@ export function WeldAnnotator({
       {editable && showCoach && <CoachMarks onDone={dismissCoach} />}
 
       <div
-        className="anno-stage"
+        className={`anno-stage ${tool === "markup" && editor.tool.type !== "select" ? "drawing" : ""}`}
         ref={stageRef}
         onMouseDown={onStageDown}
         onMouseMove={onMove}
         onMouseUp={onStageUp}
+        onDoubleClick={(e) => { if (svgRef.current) editor.onDouble(e, pxOf(e)); }}
         onMouseLeave={() => { setCursor(null); if (dragRef.current) endDrag(); downRef.current = null; panRef.current = null; }}
         style={{ cursor: panning ? "grabbing" : placing ? "crosshair" : "grab" }}
       >
@@ -663,6 +796,17 @@ export function WeldAnnotator({
           <div className="anno-page" style={{ width: size.w || 800, height: size.h || 600 }}>
             <canvas ref={canvasRef} />
             <svg ref={svgRef} className="anno-svg" width={size.w || 800} height={size.h || 600}>
+              {/* redlines sit under the weld bubbles — the record stays on top */}
+              {editor.pageMarkups.map((pm) => (
+                <MarkupEl key={pm.id} pm={pm} W={size.w} H={size.h} z={z} interactive={!pending}
+                  editingText={editor.editingText === pm.id}
+                  h={{
+                    onGrab: (m, e) => editor.grab(m, e, pxOf(e)),
+                    onContext: (m, e) => { if (!editor.selection.includes(m.id)) editor.setSelection([m.id]); setCtx({ x: e.clientX, y: e.clientY, pm: m }); },
+                    onDouble: (m, e) => { e.stopPropagation(); if (["text", "callout", "dimension"].includes(m.kind) && editable && !m.locked) editor.setEditingText(m.id); },
+                  }} />
+              ))}
+              {editor.draft && <MarkupEl pm={draftPM(editor.draft, editor.effStyle, drawing.id, pageNum)} W={size.w} H={size.h} z={z} interactive={false} />}
               <WeldLayer
                 welds={pageWelds}
                 width={size.w}
@@ -681,7 +825,24 @@ export function WeldAnnotator({
                   <circle cx={cursor.x * size.w} cy={cursor.y * size.h} r={R} className="anno-bubble ghost" style={{ strokeWidth: 1.9 * z }} />
                 </>
               )}
+              {editor.selected.map((pm) => (
+                <SelectionEl key={`sel-${pm.id}`} pm={pm} W={size.w} H={size.h} z={z} editable={editable} multi={editor.selected.length > 1}
+                  g={{
+                    onHandle: (m, h, e) => editor.grabHandle(m, h, e, pxOf(e)),
+                    onVertex: (m, i) => editor.grabVertex(m, i),
+                    onAnchor: (m) => editor.grabAnchor(m),
+                    onRotate: (m, e) => editor.grabRotate(m, e, pxOf(e)),
+                  }} />
+              ))}
             </svg>
+            {editor.editingText != null && (() => {
+              const pm = editor.pageMarkups.find((m) => m.id === editor.editingText);
+              return pm ? (
+                <TextEditOverlay pm={pm} W={size.w} H={size.h} z={z}
+                  onCommit={(t) => { editor.setText(pm.id, t); editor.setEditingText(null); }}
+                  onCancel={() => editor.setEditingText(null)} />
+              ) : null;
+            })()}
 
             {legendOn && (
               <Legend
@@ -706,8 +867,10 @@ export function WeldAnnotator({
               {([
                 ["bubble", "◎", "Place weld bubbles (click a joint, then the bubble)"],
                 ["select", "🖑", "Select / pan (bubbles & legend are always drag-to-move)"],
+                ["markup", "✎", "Markups & Tool Chest — redline the iso: flanges, valves, clouds, notes"],
               ] as [Tool, string, string][]).map(([t, ico, label]) => (
-                <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label} onClick={() => setTool(t)} disabled={!editable}>{ico}</button>
+                <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label}
+                  onClick={() => { setTool(t); if (t === "markup") setChestOpen(true); }} disabled={!editable && t !== "markup"}>{ico}</button>
               ))}
             </div>
             <div className="welder-switch">
@@ -726,6 +889,17 @@ export function WeldAnnotator({
           {editable && guided === null && fillable.length > 0 && (
             <button className="btn btn-accent btn-sm" title="Walk each weld in order and fill its data" onClick={() => setGuided(0)}>▶ Fill attributes ({fillable.length})</button>
           )}
+          <button className="btn btn-sm" title="Markups list — every redline on this sheet" onClick={() => setListOpen((v) => !v)}>☰{editor.pageMarkups.length ? ` ${editor.pageMarkups.length}` : ""}</button>
+          <div className="wo-more">
+            <button className="btn btn-sm" title="Export the flattened weld map (drawing + bubbles + legend + markups) as a PDF" onClick={() => setExportMenu((v) => !v)} disabled={exporting}>{exporting ? "Exporting…" : "⭳ Weld map"}</button>
+            {exportMenu && (
+              <div className="wo-more-menu" onMouseLeave={() => setExportMenu(false)}>
+                <button onClick={() => doExport("reveal")}>Save PDF…</button>
+                <button onClick={() => doExport("open")}>Open / Print</button>
+                {drawing.work_order && editable && <button onClick={() => doExport("attach")}>Attach to quality package</button>}
+              </div>
+            )}
+          </div>
           {!legendOn && <button className="btn btn-sm" onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}>🏷</button>}
           <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
           <button className="btn btn-sm" title={fullscreen ? "Exit full screen (Esc)" : "Full screen"} onClick={() => setFullscreen((v) => !v)}>{fullscreen ? "⤢" : "⛶"}</button>
@@ -749,6 +923,33 @@ export function WeldAnnotator({
 
         {/* hint (bottom-left) */}
         <div className={`anno-hud bl anno-hintchip ${pending || guided !== null ? "active" : ""}`}>{hint}</div>
+
+        {/* markup tool chest (left dock) + markups list (right) */}
+        {tool === "markup" && chestOpen && guided === null && (
+          <ToolChest editor={editor} tools={mtools} onReloadTools={reloadTools} editable={editable}
+            onClose={() => { setChestOpen(false); setTool(editable ? "bubble" : "select"); }} />
+        )}
+        {listOpen && guided === null && (
+          <MarkupsList editor={editor} page={pageNum} onClose={() => setListOpen(false)}
+            onJump={(pm) => {
+              if (pm.page !== pageNum) setPageNum(pm.page);
+              editor.setSelection([pm.id]);
+              const b = bboxPx(pm, size.w, size.h);
+              if (size.w && size.h) centerOn((b.x + b.w / 2) / size.w, (b.y + b.h / 2) / size.h, 330);
+            }} />
+        )}
+        {!selWeld && editor.selected.length > 0 && guided === null && (
+          <div className="anno-hud sel" onMouseDown={(e) => e.stopPropagation()}>
+            <MarkupBar editor={editor} onAddToChest={() => setAddChest({ pms: editor.selected })}
+              onEditText={(id) => editor.setEditingText(id)} onClose={() => editor.setSelection([])} />
+          </div>
+        )}
+        {ctx && <ContextMenu x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} items={ctxItems(ctx.pm)} />}
+        {addChest && (
+          <AddToChestDialog pms={addChest.pms} W={size.w} H={size.h} categories={chestCats} initialCategory={addChest.cat}
+            onClose={() => setAddChest(null)}
+            onSaved={() => { setAddChest(null); reloadTools(); if (tool !== "markup") setTool("markup"); setChestOpen(true); }} />
+        )}
 
         {/* selection bar (bottom-center) */}
         {selWeld && (

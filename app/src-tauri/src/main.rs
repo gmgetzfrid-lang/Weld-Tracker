@@ -260,7 +260,17 @@ fn main() {
             suggest_examinations,
             snooze_turnover,
             wo_lot_summary,
-            lot_work_order_choices
+            lot_work_order_choices,
+            list_markups,
+            create_markup,
+            update_markup,
+            delete_markup,
+            reorder_markups,
+            list_markup_tools,
+            create_markup_tool,
+            update_markup_tool,
+            delete_markup_tool,
+            rename_markup_category
         ])
         .run(tauri::generate_context!())
         .expect("error while running Weld Tracker");

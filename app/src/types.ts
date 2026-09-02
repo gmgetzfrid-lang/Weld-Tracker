@@ -705,3 +705,42 @@ export interface LotWoChoice {
   pinned_lot_id?: number | null;
   last_activity?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Drawing markups (redlines) + Tool Chest
+// ---------------------------------------------------------------------------
+
+export type MarkupKind =
+  | "line" | "arrow" | "polyline" | "pen" | "rect" | "ellipse" | "cloud"
+  | "text" | "callout" | "dimension" | "highlight" | "group";
+
+export interface Markup {
+  id: number;
+  drawing_id: number;
+  page: number;
+  kind: MarkupKind;
+  /** JSON geometry + style in page-normalized coordinates. */
+  data: string;
+  subject?: string | null;
+  comment?: string | null;
+  status: "Open" | "Resolved";
+  z: number;
+  locked: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_by?: string | null;
+  updated_at: string;
+}
+
+export interface MarkupTool {
+  id: number;
+  category: string;
+  name: string;
+  kind: MarkupKind;
+  /** JSON template: unit-box geometry + style + saved pixel size. */
+  data: string;
+  mode: "drawing" | "properties";
+  sort: number;
+  created_by?: string | null;
+  created_at: string;
+}

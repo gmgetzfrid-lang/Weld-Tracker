@@ -6,6 +6,8 @@ import type {
   LotConfig,
   LotWoChoice,
   MaintainOutcome,
+  Markup,
+  MarkupTool,
   NdeLot,
   SuggestedExam,
   WoLotSummary,
@@ -336,6 +338,19 @@ export const api = {
   snoozeTurnover: (days: number) => invoke<LotConfig>("snooze_turnover", { days }),
   woLotSummary: (workOrder: string) => invoke<WoLotSummary>("wo_lot_summary", { workOrder }),
   lotWorkOrderChoices: () => invoke<LotWoChoice[]>("lot_work_order_choices"),
+
+  // drawing markups (redlines) + tool chest
+  listMarkups: (drawingId: number) => invoke<Markup[]>("list_markups", { drawingId }),
+  createMarkup: (markup: Partial<Markup>) => invoke<Markup>("create_markup", { markup }),
+  updateMarkup: (markup: Markup) => invoke<Markup>("update_markup", { markup }),
+  deleteMarkup: (id: number) => invoke<void>("delete_markup", { id }),
+  reorderMarkups: (order: [number, number][]) => invoke<void>("reorder_markups", { order }),
+  listMarkupTools: () => invoke<MarkupTool[]>("list_markup_tools"),
+  createMarkupTool: (tool: Partial<MarkupTool>) => invoke<MarkupTool>("create_markup_tool", { tool }),
+  updateMarkupTool: (tool: MarkupTool) => invoke<MarkupTool>("update_markup_tool", { tool }),
+  deleteMarkupTool: (id: number) => invoke<void>("delete_markup_tool", { id }),
+  renameMarkupCategory: (from: string, to: string) =>
+    invoke<number>("rename_markup_category", { from, to }),
 };
 
 /** Reject-rate warning threshold (as a 0..1 fraction) from settings. */

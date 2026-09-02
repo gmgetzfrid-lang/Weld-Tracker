@@ -1181,3 +1181,69 @@ pub fn lot_work_order_choices(state: State<AppState>) -> R<Vec<LotWoChoice>> {
     state.require_login()?;
     e(state.store()?.lot_work_order_choices())
 }
+
+
+// --------------------------- Markups & Tool Chest ---------------------------
+// Redlines on a controlled sheet, and the reusable tools they are saved as.
+
+use weldcore::markups::{Markup, MarkupTool};
+
+#[tauri::command]
+pub fn list_markups(state: State<AppState>, drawing_id: i64) -> R<Vec<Markup>> {
+    state.require_login()?;
+    e(state.store()?.list_markups(drawing_id))
+}
+
+#[tauri::command]
+pub fn create_markup(state: State<AppState>, markup: Markup) -> R<Markup> {
+    let actor = state.require_editor()?;
+    e(state.store()?.create_markup(&markup, &actor.username))
+}
+
+#[tauri::command]
+pub fn update_markup(state: State<AppState>, markup: Markup) -> R<Markup> {
+    let actor = state.require_editor()?;
+    e(state.store()?.update_markup(&markup, &actor.username))
+}
+
+#[tauri::command]
+pub fn delete_markup(state: State<AppState>, id: i64) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state.store()?.delete_markup(id, &actor.username))
+}
+
+#[tauri::command]
+pub fn reorder_markups(state: State<AppState>, order: Vec<(i64, i64)>) -> R<()> {
+    state.require_editor()?;
+    e(state.store()?.reorder_markups(&order))
+}
+
+#[tauri::command]
+pub fn list_markup_tools(state: State<AppState>) -> R<Vec<MarkupTool>> {
+    state.require_login()?;
+    e(state.store()?.list_markup_tools())
+}
+
+#[tauri::command]
+pub fn create_markup_tool(state: State<AppState>, tool: MarkupTool) -> R<MarkupTool> {
+    let actor = state.require_editor()?;
+    e(state.store()?.create_markup_tool(&tool, &actor.username))
+}
+
+#[tauri::command]
+pub fn update_markup_tool(state: State<AppState>, tool: MarkupTool) -> R<MarkupTool> {
+    let actor = state.require_editor()?;
+    e(state.store()?.update_markup_tool(&tool, &actor.username))
+}
+
+#[tauri::command]
+pub fn delete_markup_tool(state: State<AppState>, id: i64) -> R<()> {
+    let actor = state.require_editor()?;
+    e(state.store()?.delete_markup_tool(id, &actor.username))
+}
+
+#[tauri::command]
+pub fn rename_markup_category(state: State<AppState>, from: String, to: String) -> R<i64> {
+    let actor = state.require_editor()?;
+    e(state.store()?.rename_markup_category(&from, &to, &actor.username))
+}
