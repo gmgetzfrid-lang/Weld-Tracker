@@ -537,3 +537,25 @@ fn repairs_inherit_the_parent_lot() {
     let made = s.create_repair(id, false, "admin").unwrap();
     assert_eq!(s.get_weld(made[0]).unwrap().nde_lot_id, Some(lot.id));
 }
+
+#[test]
+fn legacy_rt_reject_flag_also_escalates_progressive_sampling() {
+    let s = store();
+    s.create_welder(&welder("K1", "Alex")).unwrap();
+    let (lot, _) = s.setup_lots(&cfg(false), "none", "admin").unwrap();
+    for i in 0..20 {
+        let mut w = weld("WO1", "K1", &format!("W{i}"), "2026-05-01");
+        if i == 0 {
+            // Workbook-era row: RT flags only, no consolidated result.
+            w.rt_date = Some("2026-05-03".into());
+            w.rt_rejected = Some("Y".into());
+        }
+        s.create_weld(&w, "admin").unwrap();
+    }
+    let card = s.lot_card(lot.id).unwrap();
+    let k1 = &card.report.rows.iter().find(|r| r.stamp == "K1").unwrap().specs[0];
+    assert_eq!(k1.rejected, 1);
+    assert_eq!(k1.required, 3, "legacy reject flag still adds the two progressive examinations");
+    assert_eq!(k1.sampling_level, "+2 after 1 reject");
+    assert_eq!(card.lot.rejects, 1, "lot totals agree with the coverage engine");
+}

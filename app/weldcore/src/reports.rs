@@ -1097,12 +1097,13 @@ impl Store {
             nde_date: Option<String>,
             weld_inches: f64,
             work_order: Option<String>,
+            rt_rejected: Option<String>,
         }
         let raw: Vec<Raw> = {
             let conn = self.conn.lock().unwrap();
             let sql = format!(
                 "SELECT stamp_number, nde_percent, nde_types, nde_result, joint_type,
-                        rt_date, nde_date, COALESCE(weld_inches, 0), work_order
+                        rt_date, nde_date, COALESCE(weld_inches, 0), work_order, rt_rejected
                  FROM welds
                  WHERE count_omission = 0 AND stamp_number IS NOT NULL AND stamp_number <> ''{where_extra}"
             );
@@ -1118,6 +1119,7 @@ impl Store {
                     nde_date: r.get(6)?,
                     weld_inches: r.get(7)?,
                     work_order: r.get(8)?,
+                    rt_rejected: r.get(9)?,
                 })
             })?;
             rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -1155,10 +1157,13 @@ impl Store {
             if inspected {
                 a.inspected += 1;
             }
+            // A reject is the consolidated result, or the legacy RT flag on rows
+            // that predate it — either one drives progressive sampling.
             let rejected = w
                 .nde_result
                 .as_deref()
-                .is_some_and(|r| r.eq_ignore_ascii_case("Rejected"));
+                .is_some_and(|r| r.eq_ignore_ascii_case("Rejected"))
+                || w.rt_rejected.as_deref().is_some_and(|r| r.eq_ignore_ascii_case("Y"));
             if rejected {
                 a.rejects += 1;
             }
