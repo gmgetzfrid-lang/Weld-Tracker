@@ -765,7 +765,8 @@ export function WeldAnnotator({
   const hint = !editable ? "Read-only — drag to pan, Ctrl+scroll to zoom." :
     guided !== null ? `Guided fill — weld ${guided + 1} of ${fillable.length}. Enter for the next field, Save & next on the last.` :
     tool === "markup" ? (
-      editor.tool.type === "select" ? "Markups: click to select · drag to move · right-click for options · pick a tool in the chest (T text · A arrow · C cloud …)."
+      editor.suspendedTool ? `Editing — drag to move, grips resize, the top handle rotates · click empty space or Esc to resume ${editor.suspendedTool.type === "place" ? editor.suspendedTool.name : (editor.suspendedTool.type === "draw" ? editor.suspendedTool.name ?? editor.suspendedTool.kind : "")}`
+      : editor.tool.type === "select" ? "Markups: click to select · drag to move · right-click for options · pick a tool in the chest (T text · A arrow · C cloud …)."
       : editor.tool.type === "place" ? `Click to place ${editor.tool.name} · [ ] rotates · Esc to stop`
       : editor.tool.kind === "polyline" ? "Click each point · double-click or Enter to finish · Esc cancels"
       : editor.tool.kind === "callout" ? "Drag from the item you're pointing at to where the note goes"

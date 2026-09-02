@@ -175,7 +175,6 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem("wm-chest-open") || "{}"); } catch { return {}; }
   });
-  const [pinned, setPinned] = useState(false);
   const [pick, setPick] = useState<IsoPick>(() => {
     try { return { ...DEFAULT_PICK, ...JSON.parse(localStorage.getItem("wm-iso-pick") || "{}") }; } catch { return DEFAULT_PICK; }
   });
@@ -200,24 +199,24 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   const [need, setNeed] = useState<"run" | "elbow" | "tee" | "none">("run");
   const [needJoint, setNeedJoint] = useState(false);
 
-  const pickDraw = (kind: DrawKind, label: string, sticky = pinned) => {
-    const t: MTool = { type: "draw", kind, name: label, sticky };
+  const pickDraw = (kind: DrawKind, label: string) => {
+    const t: MTool = { type: "draw", kind, name: label };
     editor.setTool(t); noteRecent(label, t, kind);
   };
-  const pickFitting = (fitting: string, catJoint: Joint | null, label?: string, sticky = pinned) => {
+  const pickFitting = (fitting: string, catJoint: Joint | null, label?: string) => {
     const f = FITTING_BY_KEY[fitting];
     setNeed(f.kind === "elbow" ? "elbow" : f.kind === "tee" ? "tee" : f.kind === "free" ? "none" : "run");
     setNeedJoint(catJoint === null && f.joints.length > 1);
     const spec = specFor(fitting, catJoint, pick);
     const tpl = isoTemplate(spec, editor.style.stroke, label);
     const name = specName(spec, label);
-    const t: MTool = { type: "place", template: tpl, name, sticky };
+    const t: MTool = { type: "place", template: tpl, name };
     editor.setTool(t); noteRecent(name, t, tpl);
   };
-  const pickTool = (tool: MarkupTool, sticky = pinned) => {
+  const pickTool = (tool: MarkupTool) => {
     const tpl = parseTemplate(tool);
     if (!tpl) { toast.push("err", "This tool's data is unreadable"); return; }
-    const t: MTool = { type: "place", template: tpl, name: tool.name, sticky };
+    const t: MTool = { type: "place", template: tpl, name: tool.name };
     editor.setTool(t); noteRecent(tool.name, t, tpl);
   };
   // Re-aim the active fitting when the picker changes.
@@ -230,7 +229,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
     const spec = specFor(iso.fitting, catJoint, pick);
     if (JSON.stringify(spec) === JSON.stringify(iso)) return;
     const label = editor.tool.name;
-    editor.setTool({ ...editor.tool, template: isoTemplate(spec, editor.style.stroke, label), sticky: editor.tool.sticky });
+    editor.setTool({ ...editor.tool, template: isoTemplate(spec, editor.style.stroke, label) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick]);
 
@@ -286,7 +285,6 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
         <span className="muted" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {editor.tool.type === "select" ? "Select" : editor.tool.type === "draw" ? editor.tool.name ?? editor.tool.kind : editor.tool.name}
         </span>
-        <button className={`pin ${pinned ? "on" : ""}`} title={pinned ? "Tools stay active after each use (click to turn off)" : "Keep a tool active after each use (or double-click a tool)"} onClick={() => setPinned((v) => !v)}>📌</button>
         <button className="wm-x" title="Close (Esc)" onClick={onClose}>×</button>
       </div>
 
@@ -312,7 +310,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
             <div className="chest-grid">
               {RECENT.map((r) => (
                 <button key={r.name} className={`chest-tool ${active(r.tool) ? "on" : ""}`} title={r.name}
-                  onClick={() => editor.setTool({ ...r.tool, sticky: pinned } as MTool)} onDoubleClick={() => { setPinned(true); editor.setTool({ ...r.tool, sticky: true } as MTool); }} disabled={!editable}>
+                  onClick={() => editor.setTool(r.tool)} disabled={!editable}>
                   {typeof r.preview === "string" ? <ToolIcon d={DRAW_TOOLS.find((d) => d.kind === r.preview)?.icon ?? ""} /> : <TemplatePreview t={r.preview} />}
                   <span>{r.name}</span>
                 </button>
@@ -325,7 +323,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
           <div className="chest-grid">
             {DRAW_TOOLS.map((t) => (
               <button key={t.kind} className={`chest-tool ${editor.tool.type === "draw" && editor.tool.kind === t.kind && !editor.tool.styleOverride ? "on" : ""}`}
-                title={`${t.label} (${t.key}) · double-click to keep active`} onClick={() => pickDraw(t.kind, t.label)} onDoubleClick={() => { setPinned(true); pickDraw(t.kind, t.label, true); }} disabled={!editable}>
+                title={`${t.label} (${t.key})`} onClick={() => pickDraw(t.kind, t.label)} disabled={!editable}>
                 <ToolIcon d={t.icon} /><span>{t.label}</span>
               </button>
             ))}
@@ -333,7 +331,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
         </Sec>
 
         <div className="chest-iso-head">Iso fittings</div>
-        <div className="muted" style={{ fontSize: 11, padding: "0 4px 4px" }}>Set the run axis (and arms or branch), then click a fitting. One click places one.</div>
+        <div className="muted" style={{ fontSize: 11, padding: "0 4px 4px" }}>Set the run axis (and arms or branch), then click a fitting. The tool stays armed for the next one.</div>
         <IsoPicker pick={pick} setPick={updatePick} need={need} showJoint={needJoint} />
 
         {CATEGORIES.map((cat) => (
@@ -345,8 +343,8 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
                 const on = activeFitting === it.fitting && (cat.joint === null ? true : activeJoint === spec.joint);
                 const name = specName(spec, it.label);
                 return (
-                  <button key={`${cat.key}-${it.fitting}`} className={`chest-tool ${on ? "on" : ""}`} title={`${name} · double-click to keep active`}
-                    onClick={() => pickFitting(it.fitting, cat.joint, it.label)} onDoubleClick={() => { setPinned(true); pickFitting(it.fitting, cat.joint, it.label, true); }} disabled={!editable}>
+                  <button key={`${cat.key}-${it.fitting}`} className={`chest-tool ${on ? "on" : ""}`} title={name}
+                    onClick={() => pickFitting(it.fitting, cat.joint, it.label)} disabled={!editable}>
                     <TemplatePreview t={tpl} size={34} /><span>{it.label ?? FITTING_BY_KEY[it.fitting].name}</span>
                   </button>
                 );
@@ -366,8 +364,8 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
                   const on = editor.tool.type === "place" && editor.tool.name === t.name && JSON.stringify(editor.tool.template) === JSON.stringify(tpl);
                   return (
                     <button key={t.id} className={`chest-tool ${on ? "on" : ""} ${t.mode === "properties" ? "props" : ""}`}
-                      title={`${t.name} · ${t.mode === "properties" ? "Properties mode: you draw, it styles" : "Drawing mode: places an exact copy"}\nRight-click for options · double-click to keep active`}
-                      onClick={() => pickTool(t)} onDoubleClick={() => { setPinned(true); pickTool(t, true); }}
+                      title={`${t.name} · ${t.mode === "properties" ? "Properties mode: you draw, it styles" : "Drawing mode: places an exact copy"}\nRight-click for options`}
+                      onClick={() => pickTool(t)}
                       onContextMenu={(e) => { e.preventDefault(); setToolMenu({ x: e.clientX, y: e.clientY, tool: t }); }} disabled={!editable}>
                       {tpl ? <TemplatePreview t={tpl} /> : <ToolIcon d="M2 8h12" />}
                       <span>{t.name}</span>
@@ -387,7 +385,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
           </div>
         )}
         <div className="muted" style={{ fontSize: 11, padding: "8px 4px 2px", lineHeight: 1.5 }}>
-          One click places one fitting and returns to Select. Double-click a tool (or 📌) to keep it active. Right-click a markup → <b>Add to Tool Chest</b> to reuse it; sets are shared with the team.
+          Tools stay armed: keep clicking to place more. Click an existing markup to edit it (move, resize, rotate) — click empty space or Esc and the tool re-arms; Esc again returns to Select. Right-click a markup → <b>Add to Tool Chest</b> to reuse it; sets are shared with the team.
         </div>
       </div>
 

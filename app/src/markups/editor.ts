@@ -45,6 +45,10 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
   const [editingText, setEditingText] = useState<number | null>(null);
   const [histVersion, setHistVersion] = useState(0);
   const dragRef = useRef<Drag | null>(null);
+  // An armed draw/place tool that was set aside to edit an existing markup;
+  // it comes back when the selection clears.
+  const suspendedRef = useRef<MTool | null>(null);
+  const [suspendedTool, setSuspendedTool] = useState<MTool | null>(null);
   const allRef = useRef<PM[]>([]);
   allRef.current = all;
   const hist = useRef<{ stack: PM[][]; idx: number }>({ stack: [], idx: -1 });
@@ -150,8 +154,19 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
   const setTool = useCallback((t: MTool) => {
     setDraft(null);
     setToolState(t);
+    suspendedRef.current = null;
+    setSuspendedTool(null);
     if (t.type !== "select") setSelection([]);
     if (t.type === "place") recentRef.current = [t.name, ...recentRef.current.filter((n) => n !== t.name)].slice(0, 8);
+  }, []);
+  /** Public selection setter: clearing the selection re-arms a suspended tool. */
+  const selectIds = useCallback((ids: number[]) => {
+    setSelection(ids);
+    if (ids.length === 0 && suspendedRef.current) {
+      setToolState(suspendedRef.current);
+      suspendedRef.current = null;
+      setSuspendedTool(null);
+    }
   }, []);
   const effStyle = useMemo<Style>(() => {
     if (tool.type === "draw") {
@@ -164,15 +179,13 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
 
   // ---- create helpers --------------------------------------------------------
   const norm = (p: Pt): Pt => ({ x: p.x / W, y: p.y / H });
-  /** After a markup is made: keep the tool only if it is pinned, else go back
-   *  to Select with the new markup selected so its grips are live at once. */
+  /** After a markup is made the tool stays armed for the next one; the new
+   *  markup is selected so its grips are live if you want to adjust it. */
   const afterCreate = useCallback((created: PM | null) => {
     if (!created) return;
-    const sticky = tool.type !== "select" && !!tool.sticky;
-    if (!sticky) setToolState({ type: "select" });
     setSelection([created.id]);
     pushHistory();
-  }, [tool, pushHistory]);
+  }, [pushHistory]);
   const finishDraft = useCallback(async (dr: Draft) => {
     const s = { ...effStyle };
     const box: Box = normBox({ x: dr.start.x, y: dr.start.y, w: dr.cur.x - dr.start.x, h: dr.cur.y - dr.start.y });
@@ -226,13 +239,13 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
   }, [effStyle, W, H, persistCreate, afterCreate]);
 
   const placeTemplate = useCallback(async (t: ToolTemplate, atPx: Pt, name: string) => {
-    if (t.mode === "properties") { setTool({ type: "draw", kind: t.kind as DrawKind, styleOverride: t.d.style, name, sticky: tool.type !== "select" && !!tool.sticky }); return; }
+    if (t.mode === "properties") { setTool({ type: "draw", kind: t.kind as DrawKind, styleOverride: t.d.style, name }); return; }
     const inst = instantiate(t, atPx, W, H);
     // Library fittings carry their own colour from the chest's swatch.
     const d = t.d.iso ? { ...inst.d, style: { ...inst.d.style, stroke: style.stroke } } : inst.d;
     const created = await persistCreate(inst.kind, d, t.d.symbol ? undefined : name);
     afterCreate(created);
-  }, [W, H, persistCreate, afterCreate, setTool, tool, style.stroke]);
+  }, [W, H, persistCreate, afterCreate, setTool, style.stroke]);
 
   // ---- stage pointer events (pt = px on the page) ----------------------------
   const onDown = useCallback((e: React.MouseEvent, px: Pt): boolean => {
@@ -320,10 +333,15 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
   // ---- grabs from the layer ---------------------------------------------------
   const grab = useCallback((pm: PM, e: React.MouseEvent, px: Pt) => {
     if (e.button !== 0) return;
-    // With a draw / place tool active the press starts a new markup even over
-    // an existing one — let it reach the stage.
-    if (tool.type !== "select") return;
     e.stopPropagation();
+    if (tool.type !== "select") {
+      // An armed tool steps aside: clicking an existing markup edits it (move,
+      // grips, rotate) until the selection clears, then the tool re-arms.
+      suspendedRef.current = tool;
+      setSuspendedTool(tool);
+      setToolState({ type: "select" });
+      setDraft(null);
+    }
     const additive = e.shiftKey || e.ctrlKey;
     let ids: number[];
     if (additive) ids = selection.includes(pm.id) ? selection.filter((i) => i !== pm.id) : [...selection, pm.id];
@@ -500,11 +518,12 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
 
   const cancel = useCallback(() => {
     if (draft?.kind === "polyline" && draft.pts.length >= 2) { finishPolyline(draft.pts); return; }
-    setDraft(null);
+    if (draft) { setDraft(null); return; }
     dragRef.current = null;
+    // Esc: first drop the selection (re-arming a suspended tool), then disarm.
+    if (selection.length) { selectIds([]); return; }
     if (tool.type !== "select") setToolState({ type: "select" });
-    else setSelection([]);
-  }, [draft, tool.type, finishPolyline]);
+  }, [draft, selection.length, selectIds, tool.type, finishPolyline]);
 
   /** Keyboard: returns true when handled. */
   const onKey = useCallback((e: KeyboardEvent): boolean => {
@@ -533,7 +552,7 @@ export function useMarkupEditor({ drawingId, page, W, H, editable, toast }: Opts
   }, [editingText, editable, cancel, draft, finishPolyline, undo, redo, selected.length, remove, duplicate, copy, paste, group, ungroup, rotate, nudge]);
 
   return {
-    all, pageMarkups, selected, selection, setSelection,
+    all, pageMarkups, selected, selection, setSelection: selectIds, suspendedTool,
     tool, setTool, style, setStyle, effStyle, draft, editingText, setEditingText,
     load, onDown, onMove, onUp, onDouble, onKey, cancel,
     grab, grabHandle, grabVertex, grabAnchor, grabRotate,
