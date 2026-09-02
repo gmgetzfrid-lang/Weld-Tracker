@@ -154,7 +154,7 @@ export function WorkOrders({
                   {can("editor") && (
                     <td onClick={(e) => e.stopPropagation()}>
                       {canDeleteWo(r) && (
-                        <button className="btn btn-sm btn-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }}>🗑</button>
+                        <button className="btn btn-sm btn-ghost-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }}>🗑</button>
                       )}
                     </td>
                   )}

@@ -29,7 +29,10 @@ export function PipeTable() {
       schedSet.add(r.schedule);
     }
     sizes.sort((a, b) => a - b);
-    const scheds = SCHED_ORDER.filter((s) => schedSet.has(s));
+    // Known schedules in wall-thickness order, then anything else the table
+    // carries (a renamed or imported schedule must never silently vanish).
+    const extra = [...schedSet].filter((s) => !SCHED_ORDER.includes(s)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const scheds = [...SCHED_ORDER.filter((s) => schedSet.has(s)), ...extra];
     return { sizes, od, matrix, scheds };
   }, [rows]);
 
@@ -63,10 +66,10 @@ export function PipeTable() {
               {shown.map((sz) => (
                 <tr key={sz}>
                   <td style={{ fontWeight: 600 }}>{sz}</td>
-                  <td className="num">{od[sz] ?? "—"}</td>
+                  <td className="num">{od[sz] != null ? od[sz]!.toFixed(3) : "—"}</td>
                   {scheds.map((s) => (
                     <td key={s} className="num">
-                      {matrix[sz][s] != null ? matrix[sz][s] : ""}
+                      {matrix[sz][s] != null ? matrix[sz][s].toFixed(3) : ""}
                     </td>
                   ))}
                 </tr>

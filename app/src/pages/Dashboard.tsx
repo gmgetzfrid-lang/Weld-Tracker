@@ -13,7 +13,7 @@ export function Dashboard({
   onOpenWorkOrder: (wo: string) => void;
   onOpenLot: (id: number | null) => void;
 }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [lots, setLots] = useState<NdeLot[] | null>(null);
   const [rep, setRep] = useState<SummaryReport | null>(null);
@@ -103,7 +103,7 @@ export function Dashboard({
       {!fresh && (
         <div className="quick-row">
           <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Quick actions:</span>
-          <button className="btn btn-accent btn-sm" onClick={onNewEntry}>+ Add Welds</button>
+          {can("editor") && <button className="btn btn-accent btn-sm" onClick={onNewEntry}>+ Add Welds</button>}
           <button className="btn btn-sm" onClick={() => onNavigate("workorders")}>🗂️ Work Orders</button>
           <button className="btn btn-sm" onClick={() => onNavigate("roster")}>☺ Welder Roster</button>
         </div>

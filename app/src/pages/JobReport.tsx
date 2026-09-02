@@ -44,6 +44,11 @@ export function JobReport() {
         </div>
       </div>
       <ErrorBox message={error} />
+      {!rep && !error && (
+        <div className="empty-hint">
+          {workOrders.length ? "Pick a work order to see its totals and examination completion." : "No welds logged yet — the job report fills in as work orders get welds."}
+        </div>
+      )}
       {rep && (
         <>
           <div className="grid cols-4" style={{ marginBottom: 18 }}>

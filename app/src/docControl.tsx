@@ -282,7 +282,7 @@ export function PackageIngest({
                   <td><input value={r.revision} onChange={(e) => setRow(i, { revision: e.target.value })} style={{ width: 50 }} /></td>
                   <td><input type="number" min={1} max={pages} value={r.page_from} onChange={(e) => setRow(i, { page_from: Number(e.target.value) })} style={{ width: 70 }} /></td>
                   <td><input type="number" min={1} max={pages} value={r.page_to} onChange={(e) => setRow(i, { page_to: Number(e.target.value) })} style={{ width: 70 }} /></td>
-                  <td><button className="btn btn-sm btn-danger" onClick={() => delRow(i)}>✕</button></td>
+                  <td><button className="btn btn-sm btn-ghost-danger" title="Remove row" onClick={() => delRow(i)}>✕</button></td>
                 </tr>
               ))}
             </tbody>

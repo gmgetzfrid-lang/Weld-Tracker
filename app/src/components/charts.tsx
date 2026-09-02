@@ -200,10 +200,11 @@ export function Columns({ points }: { points: ColumnPoint[] }) {
                 });
               }}
             >
-              {(i === peakIdx || i === lastIdx) && p.value > 0 && (
-                <span className="col-cap">{fmt(p.value)}</span>
-              )}
-              <div className="col-bar" style={{ height: `${(p.value / max) * 100}%` }} />
+              <div className="col-bar" style={{ height: `${(p.value / max) * 100}%` }}>
+                {(i === peakIdx || i === lastIdx) && p.value > 0 && (
+                  <span className="col-cap">{fmt(p.value)}</span>
+                )}
+              </div>
             </div>
           ))}
         </div>

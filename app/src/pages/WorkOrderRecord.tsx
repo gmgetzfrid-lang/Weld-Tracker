@@ -159,7 +159,7 @@ export function WorkOrderRecord({
                   {editable && <button className="btn btn-sm" title="Issue a new revision (supersede current)" onClick={() => setRevise(d)}>Revise</button>}
                   {(d.rev_count ?? 0) > 1 && <button className="btn btn-sm btn-ghost" title="Revision history" onClick={() => setHistory(d)}>History</button>}
                   {editable && canDeleteDrawing(d) && (
-                    <button className="btn btn-sm btn-danger" title="Delete drawing" onClick={() => setConfirmDel({ kind: "drawing", d })}>✕</button>
+                    <button className="btn btn-sm btn-ghost-danger" title="Delete drawing" onClick={() => setConfirmDel({ kind: "drawing", d })}>✕</button>
                   )}
                 </div>
               </div>

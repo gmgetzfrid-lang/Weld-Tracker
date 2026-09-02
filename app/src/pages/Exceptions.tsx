@@ -46,11 +46,8 @@ export function Exceptions({ onOpenWorkOrder }: { onOpenWorkOrder: (wo: string) 
   return (
     <div>
       <div className="page-head">
-        <div>
-          <h2 style={{ margin: 0 }}>Exceptions</h2>
-          <div className="muted" style={{ fontSize: 13 }}>
-            Every weld the validation engine flags — worst first. Fix the errors before closeout.
-          </div>
+        <div className="muted" style={{ fontSize: 13 }}>
+          Every weld the validation engine flags — worst first. Fix the errors before closeout.
         </div>
         <div className="spacer" />
         <button className="btn" onClick={load}>↻ Refresh</button>

@@ -52,6 +52,9 @@ export function StatusBadge({ status }: { status?: string | null }) {
   return <span className={`badge ${cls}`}>{status}</span>;
 }
 
+/** Open modals, bottom to top — Esc goes to the last one. */
+const modalStack: object[] = [];
+
 export function Modal({
   title,
   onClose,
@@ -65,6 +68,24 @@ export function Modal({
   footer?: React.ReactNode;
   wide?: boolean;
 }) {
+  // Esc closes, like every other dialog people use all day — but only the
+  // topmost one, so a confirm sitting on top of an editor doesn't take the
+  // editor down with it.
+  useEffect(() => {
+    const token = {};
+    modalStack.push(token);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || modalStack[modalStack.length - 1] !== token) return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      const i = modalStack.indexOf(token);
+      if (i >= 0) modalStack.splice(i, 1);
+    };
+  }, [onClose]);
   return (
     <div className="modal-overlay" onMouseDown={onClose}>
       <div

@@ -128,7 +128,7 @@ button { font-family: inherit; }
 .rail-nav::-webkit-scrollbar { display: none; }
 .rail-group + .rail-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.07); }
 .rail-group-label { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: #8ea1cf; padding: 6px 12px 3px; white-space: nowrap; opacity: 0; transition: opacity .14s; }
-.rail:hover .rail-group-label { opacity: 1; }
+.rail:hover .rail-group-label, .rail.pinned .rail-group-label { opacity: 1; }
 .rail-item {
   display: flex; align-items: center; gap: 13px; width: 100%; height: 36px; padding: 0 17px;
   border: 0; background: transparent; color: #cdd7ee; cursor: pointer; border-radius: 8px;
@@ -314,7 +314,7 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
 .bar-row .bar-label { width: 70px; color: var(--text-muted); }
 .bar-track { flex: 1; height: 20px; background: var(--surface-2); border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
-.bar-fill { height: 100%; background: var(--brand-gradient); border-radius: 6px 0 0 6px; }
+.bar-fill { height: 100%; background: var(--blue); border-radius: 6px 0 0 6px; }
 .bar-row .bar-val { width: 46px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; font-size: 13px; }
 .kv dt { color: var(--text-muted); }
@@ -756,8 +756,9 @@ tr.wt-voided > td { opacity: .55; }
 .cmdk-sub { color: var(--text-muted); font-size: 12px; margin-left: auto; }
 
 /* Work order record header */
-.wo-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-.wo-header-title h2 { margin: 0; font-size: 22px; color: var(--navy); }
+.wo-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; row-gap: 8px; }
+.wo-header .btn { white-space: nowrap; }
+.wo-header-title h2 { margin: 0; font-size: 22px; color: var(--navy); white-space: nowrap; }
 .wo-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--teal); font-weight: 700; }
 .wo-header .spacer { flex: 1; }
 .section-head { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 12px; }
@@ -1048,13 +1049,13 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, label.btn:focus
 .rb-threshold-lab { position: absolute; top: 0; font-size: 10px; color: #b45309; font-weight: 600; white-space: nowrap; }
 
 /* Monthly columns */
-.col-plot { position: relative; height: 170px; margin: 8px 0 0 38px; border-bottom: 1px solid var(--border-strong); }
+.col-plot { position: relative; height: 170px; margin: 22px 0 0 38px; border-bottom: 1px solid var(--border-strong); }
 .col-grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
 .col-tick { position: absolute; right: 100%; top: -6px; margin-right: 6px; font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .col-cols { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 6px; padding: 0 2px; }
 .col-slot { position: relative; flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
 .col-slot:hover .col-bar { filter: brightness(1.12); }
-.col-bar { width: 70%; max-width: 24px; background: var(--blue); border-radius: 4px 4px 0 0; transition: height .25s ease; }
+.col-bar { position: relative; width: 70%; max-width: 24px; background: var(--blue); border-radius: 4px 4px 0 0; transition: height .25s ease; }
 .col-cap { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 2px; font-size: 10.5px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .col-labels { display: flex; gap: 6px; padding: 4px 2px 0; margin-left: 38px; }
 .col-labels span { flex: 1 1 0; text-align: center; font-size: 10.5px; color: var(--text-faint); }
@@ -1239,3 +1240,14 @@ button.link:hover { color: var(--navy); }
 .iso-compass.disabled .iso-dot { cursor: default; }
 .mk-iso-dirs { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
 .mk-iso-dirs .iso-row { gap: 6px; }
+
+/* Quiet destructive row actions: muted until hovered, so a table of records
+   isn't a wall of red buttons. The confirm dialog still guards the action. */
+.btn-ghost-danger { background: transparent; border-color: transparent; color: var(--text-faint); box-shadow: none; }
+.btn-ghost-danger:hover, .btn-ghost-danger:focus-visible { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+
+/* The no-PDF notice sits below the HUD strip so the toolbar and the fill
+   controls never cover it, and stays clear of the guided-fill drawer. */
+.anno-empty { top: 60px; left: 50%; right: auto; transform: translateX(-50%); max-width: min(58%, 620px); }
+/* While the guided-fill drawer is open the form is the focus — drop the notice. */
+.anno-stage:has(.anno-drawer) .anno-empty { display: none; }

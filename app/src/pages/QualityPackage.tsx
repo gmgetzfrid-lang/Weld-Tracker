@@ -88,9 +88,13 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
     }
   };
 
-  const byCat = CATEGORIES.map((c) => ({
+  // Files whose category isn't in the current list (renamed, imported, legacy)
+  // still have to show up somewhere — they land in "Other".
+  const known = new Set<string>(CATEGORIES);
+  const catOf = (f: QualityFile) => (f.category && known.has(f.category) ? f.category : "Other");
+  const byCat = [...CATEGORIES.filter((c) => c !== "Other"), "Other"].map((c) => ({
     cat: c,
-    items: files.filter((f) => (f.category ?? "Other") === c),
+    items: files.filter((f) => catOf(f) === c),
   })).filter((g) => g.items.length > 0);
 
   return (
@@ -143,7 +147,7 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
                   <div className="spacer" />
                   {f.has_file && <button className="btn btn-sm" onClick={() => view(f)}>View</button>}
                   {editable && canDelete(f) && (
-                    <button className="btn btn-sm btn-danger" title="Remove (uploader or admin)" onClick={() => setConfirmDel(f)}>✕</button>
+                    <button className="btn btn-sm btn-ghost-danger" title="Remove (uploader or admin)" onClick={() => setConfirmDel(f)}>✕</button>
                   )}
                 </div>
               ))}

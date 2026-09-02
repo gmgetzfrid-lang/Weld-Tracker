@@ -389,7 +389,7 @@ function CertManager({
                       </label>
                     )}
                   </td>
-                  <td>{editable && <button className="btn btn-sm btn-danger" onClick={() => setConfirmDel(c)}>✕</button>}</td>
+                  <td>{editable && <button className="btn btn-sm btn-ghost-danger" title="Remove this cert" onClick={() => setConfirmDel(c)}>✕</button>}</td>
                 </tr>
               ))}
             </tbody>
