@@ -7,7 +7,8 @@ import { Modal, localTime, useToast } from "../components/ui";
 import type { DrawKind, MTool, MarkupEditor } from "./editor";
 import { GroupEl } from "./render";
 import {
-  CATEGORIES, DIRECTIONS, FITTING_BY_KEY, JOINT_LABEL, RUN_AXES, defaultJoint, isoTemplate, specName,
+  type FitKind,
+  CATEGORIES, DIRECTIONS, FITTING_BY_KEY, JOINT_LABEL, RUN_AXES, axisOf, defaultJoint, isoTemplate, normDeg, specName,
   type IsoSpec, type Joint,
 } from "./symbols";
 import {
@@ -70,31 +71,40 @@ function noteRecent(name: string, tool: MTool, preview: ToolTemplate | DrawKind)
 }
 
 // ---------------------------------------------------------------------------
-// Iso direction picker — run axis, elbow arms / branch, flip, end type
+// Iso direction picker — every fitting can face any of the twelve iso
+// directions. The compass sets the exact direction; the axis pills are a
+// quick pick for the four common axes (click one again to reverse the run).
 // ---------------------------------------------------------------------------
 
 export interface IsoPick { run: number; arms: [number, number]; branch: number; flip: boolean; joint: Joint }
 const DEFAULT_PICK: IsoPick = { run: 30, arms: [30, 90], branch: 90, flip: false, joint: "bw" };
+/** Which direction rows a fitting needs. */
+export type IsoNeed = "run" | "end" | "elbow" | "tee" | "none";
+export function needFor(kind: FitKind): IsoNeed {
+  return kind === "elbow" ? "elbow" : kind === "tee" ? "tee" : kind === "free" ? "none" : kind === "end" ? "end" : "run";
+}
 
-function Compass({ value, onPick, size = 92 }: { value: number[]; onPick: (deg: number) => void; size?: number }) {
+/** Twelve clickable dots; `value` are the lit directions, `primary` is the one the next click will not change (drawn solid). */
+export function Compass({ value, primary, onPick, size = 92, disabled }: { value: number[]; primary?: number; onPick: (deg: number) => void; size?: number; disabled?: boolean }) {
   const c = size / 2, r = size / 2 - 9;
   const rad = (d: number) => (d * Math.PI) / 180;
+  const lit = value.map(normDeg);
   return (
-    <svg width={size} height={size} className="iso-compass">
+    <svg width={size} height={size} className={`iso-compass ${disabled ? "disabled" : ""}`}>
       <circle cx={c} cy={c} r={r} fill="none" stroke="var(--border-strong)" />
       {/* the three iso axes as faint guides */}
       {[30, 90, 150].map((d) => (
         <line key={d} x1={c - r * Math.cos(rad(d))} y1={c + r * Math.sin(rad(d))} x2={c + r * Math.cos(rad(d))} y2={c - r * Math.sin(rad(d))} stroke="var(--border)" strokeDasharray="2 3" />
       ))}
-      {value.map((d, i) => (
-        <line key={`v${i}`} x1={c} y1={c} x2={c + r * Math.cos(rad(d))} y2={c - r * Math.sin(rad(d))} stroke="var(--navy)" strokeWidth={2.2} />
+      {lit.map((d, i) => (
+        <line key={`v${i}`} x1={c} y1={c} x2={c + r * Math.cos(rad(d))} y2={c - r * Math.sin(rad(d))} stroke="var(--navy)" strokeWidth={primary != null && normDeg(primary) === d ? 2.6 : 1.6} strokeDasharray={primary != null && normDeg(primary) !== d ? "3 2" : undefined} />
       ))}
       {DIRECTIONS.map((d) => {
-        const on = value.includes(d);
+        const on = lit.includes(d), prim = primary != null && normDeg(primary) === d;
         return (
-          <circle key={d} cx={c + r * Math.cos(rad(d))} cy={c - r * Math.sin(rad(d))} r={on ? 5.5 : 4}
-            className={`iso-dot ${on ? "on" : ""} ${[30, 90, 150, 210, 270, 330].includes(d) ? "axis" : ""}`}
-            onClick={() => onPick(d)}>
+          <circle key={d} cx={c + r * Math.cos(rad(d))} cy={c - r * Math.sin(rad(d))} r={prim ? 6.5 : on ? 5.5 : 4}
+            className={`iso-dot ${on ? "on" : ""} ${prim ? "primary" : ""} ${[30, 90, 150, 210, 270, 330].includes(d) ? "axis" : ""}`}
+            onClick={disabled ? undefined : () => onPick(d)}>
             <title>{d}°</title>
           </circle>
         );
@@ -103,32 +113,74 @@ function Compass({ value, onPick, size = 92 }: { value: number[]; onPick: (deg: 
   );
 }
 
-function IsoPicker({ pick, setPick, need, showJoint }: {
-  pick: IsoPick; setPick: (p: IsoPick) => void; need: "run" | "elbow" | "tee" | "none"; showJoint: boolean;
+type DirTarget = "run" | "branch" | 0 | 1;
+
+/** Shared direction controls for the picker and the properties bar. */
+function IsoDirections({ iso, need, onChange, size = 92, disabled, hint = true }: {
+  iso: { run: number; arms?: [number, number]; branch?: number; flip?: boolean };
+  need: IsoNeed; onChange: (patch: Partial<IsoSpec>) => void; size?: number; disabled?: boolean; hint?: boolean;
 }) {
-  const [armSlot, setArmSlot] = useState<0 | 1>(0);
+  const [target, setTarget] = useState<DirTarget>(need === "elbow" ? 0 : "run");
+  useEffect(() => { setTarget(need === "elbow" ? 0 : "run"); }, [need]);
+  const arms: [number, number] = iso.arms ?? [iso.run, normDeg(iso.run + 60)];
+  const branch = iso.branch ?? normDeg(iso.run + 60);
   const onDir = (d: number) => {
     if (need === "elbow") {
-      const arms: [number, number] = [...pick.arms] as [number, number];
-      arms[armSlot] = d;
-      setPick({ ...pick, arms });
-      setArmSlot(armSlot === 0 ? 1 : 0);
-    } else if (need === "tee") {
-      setPick({ ...pick, branch: d });
-    }
+      const slot = target === 1 ? 1 : 0;
+      const next: [number, number] = [...arms] as [number, number];
+      next[slot] = d;
+      onChange({ arms: next });
+      setTarget(slot === 0 ? 1 : 0);
+    } else if (need === "tee" && target === "branch") onChange({ branch: d });
+    else onChange({ run: d });
   };
-  const compassValue = need === "elbow" ? pick.arms : need === "tee" ? [pick.run, pick.run + 180, pick.branch] : need === "run" ? [pick.run, pick.run + 180] : [];
+  const onAxis = (deg: number) => onChange({ run: axisOf(iso.run) === deg ? normDeg(iso.run + 180) : deg });
+  const value = need === "elbow" ? arms : need === "tee" ? [iso.run, iso.run + 180, branch] : need === "end" ? [iso.run] : [iso.run, iso.run + 180];
+  const primary = need === "elbow" ? arms[target === 1 ? 1 : 0] : need === "tee" && target === "branch" ? branch : iso.run;
+  const text = need === "elbow" ? <>Click a direction for each arm.</>
+    : need === "tee" ? <>Set the run, then where the branch goes.</>
+    : need === "end" ? <>Click the direction the closed end points.</>
+    : <>Any of the 12 directions. The solid dot is the lead end — a reducer's small end, a check valve's flow side.</>;
+  return (
+    <>
+      {need !== "elbow" && (
+        <div className="iso-row">
+          <span className="iso-lab">Axis</span>
+          <div className="pill-tabs mini">
+            {RUN_AXES.map((a) => (
+              <button key={a.deg} className={axisOf(iso.run) === a.deg ? "active" : ""} title={`${a.label} — click again to reverse`} disabled={disabled} onClick={() => onAxis(a.deg)}>{a.glyph}</button>
+            ))}
+          </div>
+          <button className={`btn btn-sm ${iso.flip ? "btn-primary" : ""}`} title="Flip: stem / branch / flat side to the other side of the run" disabled={disabled} onClick={() => onChange({ flip: !iso.flip })}>⇋ Flip</button>
+        </div>
+      )}
+      <div className="iso-row" style={{ alignItems: "flex-start" }}>
+        <Compass value={value} primary={primary} onPick={onDir} size={size} disabled={disabled} />
+        <div className="iso-side">
+          {need === "elbow" && (
+            <div className="pill-tabs mini">
+              <button className={target === 0 ? "active" : ""} disabled={disabled} onClick={() => setTarget(0)}>Arm 1</button>
+              <button className={target === 1 ? "active" : ""} disabled={disabled} onClick={() => setTarget(1)}>Arm 2</button>
+            </div>
+          )}
+          {need === "tee" && (
+            <div className="pill-tabs mini">
+              <button className={target === "run" ? "active" : ""} disabled={disabled} onClick={() => setTarget("run")}>Run</button>
+              <button className={target === "branch" ? "active" : ""} disabled={disabled} onClick={() => setTarget("branch")}>Branch</button>
+            </div>
+          )}
+          {hint && <span className="muted" style={{ fontSize: 11, lineHeight: 1.4 }}>{text}</span>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function IsoPicker({ pick, setPick, need, showJoint }: {
+  pick: IsoPick; setPick: (p: IsoPick) => void; need: IsoNeed; showJoint: boolean;
+}) {
   return (
     <div className="iso-picker">
-      <div className="iso-row">
-        <span className="iso-lab">Run</span>
-        <div className="pill-tabs mini">
-          {RUN_AXES.map((a) => (
-            <button key={a.deg} className={pick.run === a.deg ? "active" : ""} title={a.label} onClick={() => setPick({ ...pick, run: a.deg })}>{a.glyph}</button>
-          ))}
-        </div>
-        <button className={`btn btn-sm ${pick.flip ? "btn-primary" : ""}`} title="Flip: stem / branch / large end to the other side" onClick={() => setPick({ ...pick, flip: !pick.flip })}>⇋ Flip</button>
-      </div>
       {showJoint && (
         <div className="iso-row">
           <span className="iso-lab">Ends</span>
@@ -139,17 +191,10 @@ function IsoPicker({ pick, setPick, need, showJoint }: {
           </div>
         </div>
       )}
-      {need !== "none" && need !== "run" && (
-        <div className="iso-row" style={{ alignItems: "flex-start" }}>
-          <span className="iso-lab">{need === "elbow" ? "Arms" : "Branch"}</span>
-          <Compass value={compassValue} onPick={onDir} />
-          <span className="muted" style={{ fontSize: 11, lineHeight: 1.4 }}>
-            {need === "elbow"
-              ? <>Click two directions for the elbow arms.<br />Next click sets arm {armSlot + 1}.</>
-              : <>Run follows the axis above; click where the branch goes.</>}
-          </span>
-        </div>
+      {need !== "none" && (
+        <IsoDirections iso={pick} need={need} onChange={(patch) => setPick({ ...pick, ...patch } as IsoPick)} />
       )}
+      {need === "none" && <div className="muted" style={{ fontSize: 11, padding: "2px 4px" }}>This mark has no direction — click to place it.</div>}
     </div>
   );
 }
@@ -196,7 +241,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   const allCats = useMemo(() => [...new Set([...cats.map(([c]) => c), ...pendingSets])].sort(), [cats, pendingSets]);
 
   // Which picker rows matter depends on the last fitting picked.
-  const [need, setNeed] = useState<"run" | "elbow" | "tee" | "none">("run");
+  const [need, setNeed] = useState<IsoNeed>("run");
   const [needJoint, setNeedJoint] = useState(false);
 
   const pickDraw = (kind: DrawKind, label: string) => {
@@ -205,7 +250,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   };
   const pickFitting = (fitting: string, catJoint: Joint | null, label?: string) => {
     const f = FITTING_BY_KEY[fitting];
-    setNeed(f.kind === "elbow" ? "elbow" : f.kind === "tee" ? "tee" : f.kind === "free" ? "none" : "run");
+    setNeed(needFor(f.kind));
     setNeedJoint(catJoint === null && f.joints.length > 1);
     const spec = specFor(fitting, catJoint, pick);
     const tpl = isoTemplate(spec, editor.style.stroke, label);
@@ -331,7 +376,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
         </Sec>
 
         <div className="chest-iso-head">Iso fittings</div>
-        <div className="muted" style={{ fontSize: 11, padding: "0 4px 4px" }}>Set the run axis (and arms or branch), then click a fitting. The tool stays armed for the next one.</div>
+        <div className="muted" style={{ fontSize: 11, padding: "0 4px 4px" }}>Aim it on the compass — any of the 12 iso directions — then click a fitting. The tool stays armed for the next one; you can re-aim a placed fitting from its properties bar.</div>
         <IsoPicker pick={pick} setPick={updatePick} need={need} showJoint={needJoint} />
 
         {CATEGORIES.map((cat) => (
@@ -588,27 +633,12 @@ export function MarkupBar({ editor, onAddToChest, onEditText, onClose }: {
               ))}
             </div>
           )}
-          {FITTING_BY_KEY[one.d.iso.fitting]?.kind !== "free" && FITTING_BY_KEY[one.d.iso.fitting]?.kind !== "elbow" && (
-            <div className="pill-tabs mini" title="Run axis">
-              {RUN_AXES.map((a) => <button key={a.deg} className={one.d.iso!.run === a.deg ? "active" : ""} title={a.label} disabled={locked} onClick={() => editor.setIso(one.id, { run: a.deg })}>{a.glyph}</button>)}
+          {FITTING_BY_KEY[one.d.iso.fitting] && needFor(FITTING_BY_KEY[one.d.iso.fitting].kind) !== "none" && (
+            <div className="mk-iso-dirs">
+              <IsoDirections iso={one.d.iso} need={needFor(FITTING_BY_KEY[one.d.iso.fitting].kind)} size={76} disabled={locked} hint={false}
+                onChange={(patch) => editor.setIso(one.id, patch)} />
             </div>
           )}
-          {FITTING_BY_KEY[one.d.iso.fitting]?.kind === "tee" && (
-            <select value={one.d.iso.branch ?? 90} disabled={locked} onChange={(e) => editor.setIso(one.id, { branch: Number(e.target.value) })} title="Branch direction">
-              {DIRECTIONS.map((d) => <option key={d} value={d}>branch {d}°</option>)}
-            </select>
-          )}
-          {FITTING_BY_KEY[one.d.iso.fitting]?.kind === "elbow" && (
-            <>
-              <select value={one.d.iso.arms?.[0] ?? 30} disabled={locked} onChange={(e) => editor.setIso(one.id, { arms: [Number(e.target.value), one.d.iso!.arms?.[1] ?? 90] })} title="Arm 1">
-                {DIRECTIONS.map((d) => <option key={d} value={d}>arm 1: {d}°</option>)}
-              </select>
-              <select value={one.d.iso.arms?.[1] ?? 90} disabled={locked} onChange={(e) => editor.setIso(one.id, { arms: [one.d.iso!.arms?.[0] ?? 30, Number(e.target.value)] })} title="Arm 2">
-                {DIRECTIONS.map((d) => <option key={d} value={d}>arm 2: {d}°</option>)}
-              </select>
-            </>
-          )}
-          <button className={`btn btn-sm ${one.d.iso.flip ? "btn-primary" : ""}`} disabled={locked} title="Flip stem / branch / large end" onClick={() => editor.setIso(one.id, { flip: !one.d.iso!.flip })}>⇋ Flip</button>
         </div>
       )}
       <div className="mk-bar-row">

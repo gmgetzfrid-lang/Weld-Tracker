@@ -897,9 +897,10 @@ tr.wt-voided > td { opacity: .55; }
 .anno-drawer {
   position: absolute; top: 0; right: 0; bottom: 0; z-index: 9;
   background: var(--surface); border-left: 1px solid var(--border);
-  box-shadow: -12px 0 32px rgba(15,23,42,.16); display: flex;
+  box-shadow: -12px 0 32px rgba(15,23,42,.16); display: flex; flex-direction: column;
   animation: drawerIn .16s ease-out;
 }
+.anno-drawer .guided-inner { flex: 1 1 auto; min-height: 0; height: auto; }
 @keyframes drawerIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 .guided-inner { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 12px 14px; }
 /* compact so the whole card fits the drawer height without scrolling */
@@ -1230,4 +1231,11 @@ button.link:hover { color: var(--navy); }
 .wm-glyph.todo circle { stroke: var(--warn); }
 .wm-glyph.todo text { fill: var(--warn); }
 .wm-legend-status .todo { color: var(--warn); }
-.walk-scope { display: flex; align-items: center; gap: 8px; padding: 8px 10px 0; }
+.walk-scope { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 0; flex: 0 0 auto; }
+
+/* Iso direction picker: compass beside its target pills / hint; solid primary dot */
+.iso-side { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.iso-compass .iso-dot.primary { fill: var(--navy); stroke: #fff; stroke-width: 2; }
+.iso-compass.disabled .iso-dot { cursor: default; }
+.mk-iso-dirs { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.mk-iso-dirs .iso-row { gap: 6px; }

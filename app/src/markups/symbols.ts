@@ -29,13 +29,16 @@ export type FitKind =
 export interface IsoSpec {
   fitting: string;
   joint: Joint;
-  /** run axis angle, 0..179 (30 = E-W, 150 = N-S, 90 = up-down, 0 = flat) */
+  /** run direction — any of the twelve iso directions (0..330). This is the
+   *  lead end `a`: a cap or blind closes toward it, a reducer's small end and
+   *  a check valve's flow side point this way. Symmetric fittings look the
+   *  same for `run` and `run + 180`. */
   run: number;
   /** elbow arms (two directions) */
   arms?: [number, number];
   /** tee / olet branch direction */
   branch?: number;
-  /** mirror stems / branches / large end */
+  /** mirror stems / branches to the other side of the run (eccentric reducer: flat side up) */
   flip?: boolean;
 }
 
@@ -66,9 +69,9 @@ export const FITTINGS: FittingDef[] = [
   { key: "nipple", name: "Nipple", kind: "inline", joints: ["thd"], size: 34 },
   { key: "plug", name: "Plug", kind: "end", joints: ["thd"], size: 30 },
   // flanges
-  { key: "flange_joint", name: "Flanged joint", kind: "inline", joints: ["flg"], size: 34 },
-  { key: "flange", name: "Flange", kind: "inline", joints: ["flg"], size: 30 },
-  { key: "blind", name: "Blind flange", kind: "end", joints: ["flg"], size: 32 },
+  { key: "flange_joint", name: "Flanged joint (pair)", kind: "inline", joints: ["flg"], size: 40 },
+  { key: "flange", name: "Flange (single)", kind: "inline", joints: ["flg"], size: 34 },
+  { key: "blind", name: "Blind flange", kind: "end", joints: ["flg"], size: 38 },
   { key: "spectacle", name: "Spectacle blind", kind: "inline", joints: ["flg"], size: 40 },
   { key: "orifice", name: "Orifice flange", kind: "inline", joints: ["flg"], size: 40 },
   // valves
@@ -128,13 +131,17 @@ export const CATEGORIES: SymbolCategory[] = [
 
 /** The twelve iso directions, every 30°. */
 export const DIRECTIONS = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
-/** Run axes (a direction and its opposite share an axis). */
+/** Quick-pick run axes (the compass gives every direction; these are the four common ones). */
 export const RUN_AXES: { deg: number; label: string; glyph: string }[] = [
-  { deg: 30, label: "East–West (30°)", glyph: "⟋" },
-  { deg: 150, label: "North–South (150°)", glyph: "⟍" },
-  { deg: 90, label: "Up–Down", glyph: "│" },
-  { deg: 0, label: "Flat (0°)", glyph: "—" },
+  { deg: 30, label: "30° iso axis", glyph: "⟋" },
+  { deg: 150, label: "150° iso axis", glyph: "⟍" },
+  { deg: 90, label: "Vertical", glyph: "│" },
+  { deg: 0, label: "Flat", glyph: "—" },
 ];
+/** Normalise any angle to 0..359. */
+export const normDeg = (d: number): number => ((Math.round(d) % 360) + 360) % 360;
+/** The axis (0..179) a direction lies on. */
+export const axisOf = (d: number): number => normDeg(d) % 180;
 
 // ---------------------------------------------------------------------------
 // Generator
@@ -160,7 +167,7 @@ function jointMark(joint: Joint, deg: number, r: number): Prim[] {
     case "bw": return [dot(at(deg, r))];
     case "sw": return [tick(at(deg, r - 0.03), deg, 0.16), dot(at(deg, r + 0.06), 0.042)];
     case "thd": return [tick(at(deg, r), deg, 0.2, 2.6)];
-    case "flg": return [tick(at(deg, r - 0.04), deg, 0.24, 2.4), tick(at(deg, r + 0.04), deg, 0.24, 2.4)];
+    case "flg": return [tick(at(deg, r - 0.065), deg, 0.3, 2.2), tick(at(deg, r + 0.065), deg, 0.3, 2.2)];
     default: return [];
   }
 }
@@ -223,11 +230,13 @@ export function isoPrims(spec: IsoSpec): Prim[] {
       return [arm(a), arm(b), line([at(br, 0.15), at(br, 0.5)]), saddle, ...jointMark(j, br, 0.36)];
     }
     case "reducer": case "reducer_ecc": {
-      const big = spec.flip ? a : b, small = spec.flip ? b : a;
+      // The run direction `a` is the small end; for the eccentric reducer
+      // `flip` moves the flat side from the bottom to the top.
       const ecc = spec.fitting === "reducer_ecc";
+      const big = ecc ? b : (spec.flip ? a : b), small = ecc ? a : (spec.flip ? b : a);
       const bigE = at(big, 0.2), smallE = at(small, 0.2);
       const hb = 0.2, hs = 0.11;
-      const top = up, bottom = up + 180;
+      const top = spec.flip && ecc ? up + 180 : up, bottom = top + 180;
       const body = ecc
         ? line([at(top, hb, bigE), at(bottom, hb, bigE), at(bottom, hb, smallE), at(top, hb - (hb - hs) * 2, smallE)], { closed: true })
         : line([at(top, hb, bigE), at(bottom, hb, bigE), at(bottom, hs, smallE), at(top, hs, smallE)], { closed: true });
@@ -236,11 +245,9 @@ export function isoPrims(spec: IsoSpec): Prim[] {
     case "cap": {
       // pipe comes from `b`; the cap closes toward `a`
       const e = { x: C, y: C };
-      const capPath: Prim = { kind: "path", d: `M ${at(up, 0.18, e).x} ${at(up, 0.18, e).y} A 0.18 0.18 0 0 ${dir(a).y <= dir(up).y ? 1 : 0} ${at(up + 180, 0.18, e).x} ${at(up + 180, 0.18, e).y}` };
-      // ensure the arc bulges toward `a`: compute sweep from geometry
+      // the arc bulges toward `a` (the closed end)
       const mid = at(a, 0.18, e);
       const capArc: Prim = { kind: "path", d: `M ${at(up, 0.18, e).x} ${at(up, 0.18, e).y} Q ${mid.x + (mid.x - e.x) * 0.55} ${mid.y + (mid.y - e.y) * 0.55} ${at(up + 180, 0.18, e).x} ${at(up + 180, 0.18, e).y}` };
-      void capPath;
       return [arm(b), line([at(up, 0.18, e), at(up + 180, 0.18, e)]), capArc, ...jointMark(j, b, 0.3)];
     }
     case "plug": {
@@ -255,19 +262,22 @@ export function isoPrims(spec: IsoSpec): Prim[] {
     case "union": return [arm(a), arm(b), tick(at(a, 0.1), a, 0.3, 2.4), tick(at(b, 0.1), b, 0.3, 2.4), tick({ x: C, y: C }, a, 0.4, 1.6), ...jointMark(j, a, 0.32), ...jointMark(j, b, 0.32)];
     case "nipple": return [line([at(a, 0.3), at(b, 0.3)], { width: 3 }), arm(a, 0.3), arm(b, 0.3), ...jointMark("thd", a, 0.3), ...jointMark("thd", b, 0.3)];
     // ---- flanges ----------------------------------------------------------
-    case "flange_joint": return [arm(a), arm(b), tick(at(a, 0.05), a, 0.34, 2.6), tick(at(b, 0.05), b, 0.34, 2.6)];
-    case "flange": return [arm(a), arm(b), tick({ x: C, y: C }, a, 0.36, 3)];
+    // A flanged joint is two parallel faces with a visible gap between them;
+    // keep the gap wide (≈ 0.18 of the box) so it never reads as one thick tee.
+    case "flange_joint": return [arm(a), arm(b), tick(at(a, 0.09), a, 0.44, 2.4), tick(at(b, 0.09), b, 0.44, 2.4)];
+    case "flange": return [arm(a), arm(b), tick({ x: C, y: C }, a, 0.44, 2.6)];
     case "blind": {
+      // pipe flange face on the `b` side, the solid blind on the `a` side, gap between
       const e = { x: C, y: C };
-      const r = line([at(up, 0.17, at(a, 0.04, e)), at(up, 0.17, at(a, 0.14, e)), at(up + 180, 0.17, at(a, 0.14, e)), at(up + 180, 0.17, at(a, 0.04, e))], { closed: true, fill: true });
-      return [arm(b), tick(at(b, 0.02), a, 0.36, 2.6), r];
+      const r = line([at(up, 0.2, at(a, 0.09, e)), at(up, 0.2, at(a, 0.18, e)), at(up + 180, 0.2, at(a, 0.18, e)), at(up + 180, 0.2, at(a, 0.09, e))], { closed: true, fill: true });
+      return [arm(b), tick(at(b, 0.04), a, 0.44, 2.4), r];
     }
     case "spectacle": {
-      const s = at(side, 0.3);
-      return [arm(a), arm(b), tick(at(a, 0.05), a, 0.34, 2.6), tick(at(b, 0.05), b, 0.34, 2.6),
-        { kind: "circle", cx: at(a, 0.09, s).x, cy: at(a, 0.09, s).y, r: 0.08 }, { kind: "circle", cx: at(b, 0.09, s).x, cy: at(b, 0.09, s).y, r: 0.08, fill: true }];
+      const s = at(side, 0.32);
+      return [arm(a), arm(b), tick(at(a, 0.09), a, 0.44, 2.4), tick(at(b, 0.09), b, 0.44, 2.4),
+        { kind: "circle", cx: at(a, 0.09, s).x, cy: at(a, 0.09, s).y, r: 0.075 }, { kind: "circle", cx: at(b, 0.09, s).x, cy: at(b, 0.09, s).y, r: 0.075, fill: true }];
     }
-    case "orifice": return [arm(a), arm(b), tick(at(a, 0.07), a, 0.36, 2.6), tick(at(b, 0.07), b, 0.36, 2.6), { kind: "circle", cx: C, cy: C, r: 0.06 }, line([at(side, 0.18), at(side, 0.34)]), dot(at(side, 0.34), 0.035)];
+    case "orifice": return [arm(a), arm(b), tick(at(a, 0.09), a, 0.44, 2.4), tick(at(b, 0.09), b, 0.44, 2.4), { kind: "circle", cx: C, cy: C, r: 0.06 }, line([at(side, 0.18), at(side, 0.34)]), dot(at(side, 0.34), 0.035)];
     // ---- valves -----------------------------------------------------------
     case "gate": return valveBody(spec);
     case "globe": return valveBody(spec, { center: [dot({ x: C, y: C }, 0.075)] });
