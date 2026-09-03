@@ -53,7 +53,7 @@ export function ClientReport() {
         <strong>{year}</strong>
         <button className="btn btn-sm" onClick={() => setYear((y) => y + 1)}>›</button>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>TSA Welder Summary Report</span>
+        <span className="muted" style={{ fontSize: 13 }}>TSA Welder Summary Report</span>
         <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
       <ErrorBox message={error} />

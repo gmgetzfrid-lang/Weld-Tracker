@@ -166,7 +166,7 @@ export function SettingsPage() {
               : <span className="badge badge-gray">This PC only (local)</span>}
           </dd>
           <dt>Database file</dt>
-          <dd style={{ fontWeight: 400, wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+          <dd style={{ fontWeight: 400, wordBreak: "break-all", fontFamily: "monospace", fontSize: 13 }}>
             {db?.path ?? "…"}
           </dd>
           <dt>Converted from</dt><dd style={{ fontWeight: 400 }}>Weld_Log_Statistics workbook</dd>
@@ -207,7 +207,7 @@ export function SettingsPage() {
             {backingUp ? "Backing up…" : "Back up database now"}
           </button>
           {lastBackup && (
-            <p className="hint" style={{ marginTop: 10, wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+            <p className="hint" style={{ marginTop: 10, wordBreak: "break-all", fontFamily: "monospace", fontSize: 13 }}>
               <Icon name="check" size={13} /> {lastBackup}
             </p>
           )}

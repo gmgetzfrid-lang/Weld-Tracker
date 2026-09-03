@@ -64,7 +64,7 @@ export function NewEntryChooser({
           </button>
         )}
         {!query && wos.length > 0 && (
-          <div className="muted" style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", padding: "2px 2px 0" }}>
+          <div className="muted" style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", padding: "2px 2px 0" }}>
             Recent work orders
           </div>
         )}
@@ -86,7 +86,7 @@ export function NewEntryChooser({
           </button>
         )}
         {query && shown.length === 0 && exact === false && wos.length > 0 && (
-          <div className="muted" style={{ padding: "6px 2px", fontSize: 12 }}>
+          <div className="muted" style={{ padding: "6px 2px", fontSize: 13 }}>
             No existing work order matches “{query}”.
           </div>
         )}

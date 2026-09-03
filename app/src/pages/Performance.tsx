@@ -156,6 +156,7 @@ export function Performance() {
   // sampling included.
   const [lots, setLots] = useState<NdeLot[]>([]);
   const [lotId, setLotId] = useState<number | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const lot = lots.find((l) => l.id === lotId) ?? null;
 
   useEffect(() => {
@@ -341,12 +342,21 @@ export function Performance() {
     <div>
       <div className="toolbar" style={{ flexWrap: "wrap", rowGap: 8 }}>
         <div className="pill-tabs">
-          {(["day", "week", "month", "quarter", "half", "year", "all", "custom"] as Mode[]).map((m) => (
+          {(["day", "week", "month", "quarter", "year"] as Mode[]).map((m) => (
             <button key={m} className={mode === m ? "active" : ""} onClick={() => setMode(m)}>{MODE_LABEL[m]}</button>
           ))}
-          {lots.length > 0 && (
-            <button className={mode === "lot" ? "active" : ""} onClick={() => setMode("lot")} title="One NDE lot — the B31.3 population, with progressive sampling">Lot</button>
-          )}
+          <select
+            className={`pill-select ${["half", "all", "custom", "lot"].includes(mode) ? "active" : ""}`}
+            value={["half", "all", "custom", "lot"].includes(mode) ? mode : ""}
+            onChange={(e) => e.target.value && setMode(e.target.value as Mode)}
+            title="More ranges"
+          >
+            <option value="" disabled>More…</option>
+            <option value="half">6 months</option>
+            <option value="all">All time</option>
+            <option value="custom">Custom dates</option>
+            {lots.length > 0 && <option value="lot">One NDE lot</option>}
+          </select>
         </div>
         {steppable && <button className="btn btn-sm" onClick={() => step(-1)} title="Previous">‹</button>}
         {(mode === "day" || mode === "week") && (
@@ -390,7 +400,7 @@ export function Performance() {
             <div className="field" style={{ margin: 0 }}>
               <input type="date" value={period.to} onChange={(e) => patch({ to: e.target.value })} />
             </div>
-            {from && to && <span className="muted" style={{ fontSize: 12 }}>{spanDays(from, to)} days</span>}
+            {from && to && <span className="muted" style={{ fontSize: 13 }}>{spanDays(from, to)} days</span>}
           </>
         )}
         {mode === "lot" && (
@@ -408,9 +418,16 @@ export function Performance() {
           </>
         )}
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-          <button className="btn" onClick={exportCsv} disabled={!rep}><Icon name="download" size={14} /> CSV</button>
-          <button className="btn" onClick={() => genPdf(true)} disabled={!rep}><Icon name="printer" size={14} /> Open / Print</button>
           <button className="btn btn-accent" onClick={() => genPdf(false)} disabled={!rep}><Icon name="download" size={14} /> Generate PDF</button>
+          <div className="wo-more">
+            <button className="btn btn-icon" title="More" aria-label="More export options" onClick={() => setExportOpen((v) => !v)} disabled={!rep}><Icon name="more" size={16} stroke={2.6} /></button>
+            {exportOpen && (
+              <div className="wo-more-menu" onMouseLeave={() => setExportOpen(false)}>
+                <button onClick={() => { setExportOpen(false); genPdf(true); }}><Icon name="printer" size={14} /> Open / Print</button>
+                <button onClick={() => { setExportOpen(false); exportCsv(); }}><Icon name="download" size={14} /> Export CSV</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -436,7 +453,7 @@ export function Performance() {
                     ? `All ${rep.welders_in_spec} welders held at or above their assigned NDE spec.`
                     : `${rep.welders_in_spec} of ${rep.rows.length} welders at or above spec — ${rep.welders_below_spec} need attention.`}
               </strong>
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div className="muted" style={{ fontSize: 13 }}>
                 {title}{from && to && mode !== "day" && mode !== "custom" ? ` · ${from} to ${to}` : ""} · generated {rep.generated_on}
                 {rep.progressive_sampling && <> · <span className="warn">requirements include B31.3 progressive sampling</span></>}
               </div>
@@ -538,7 +555,7 @@ export function Performance() {
                       {r.specs.length ? num(r.specs.reduce((a, s) => a + s.shortfall, 0)) : "—"}
                     </td>
                     {rep.progressive_sampling && (
-                      <td className="faint" style={{ fontSize: 12 }}>
+                      <td className="faint" style={{ fontSize: 13 }}>
                         {r.specs.filter((s) => (s.progressive_extra ?? 0) > 0).map((s) => <span key={s.spec} className="warn">{s.spec}: {s.sampling_level}</span>)}
                         {r.specs.every((s) => !(s.progressive_extra ?? 0)) && "Random"}
                       </td>

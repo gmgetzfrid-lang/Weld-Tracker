@@ -79,21 +79,6 @@ export function WeldLog({
 
   return (
     <div>
-      {can("editor") && (
-        <div className="hub-actions">
-          <div>
-            <div className="hub-actions-title">Log welds from an isometric</div>
-            <div className="hub-actions-sub">
-              A weld entry is a work order: pick or create the work order, attach the drawing,
-              drop weld bubbles and the rows fill themselves. This log is every weld you've entered —
-              click a work order to open its records.
-            </div>
-          </div>
-          <button className="btn btn-accent" onClick={onNewEntry}><Icon name="plus" size={14} stroke={2.25} /> Add Welds</button>
-          <button className="btn" onClick={() => setSingleOpen(true)}>Single weld</button>
-        </div>
-      )}
-
       <div className="toolbar">
         <div className="search">
           <input placeholder="Search a work order, weld #, drawing or welder…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -111,8 +96,10 @@ export function WeldLog({
           <input type="checkbox" checked={showVoided} onChange={(e) => setShowVoided(e.target.checked)} /> Show voided
         </label>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>{num(total)} welds</span>
+        <span className="muted" style={{ fontSize: 13 }}>{num(total)} welds</span>
         <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
+        {can("editor") && <button className="btn" onClick={() => setSingleOpen(true)}>Single weld</button>}
+        {can("editor") && <button className="btn btn-accent" onClick={onNewEntry}><Icon name="plus" size={14} stroke={2.25} /> Add Welds</button>}
       </div>
 
       <ErrorBox message={error} />

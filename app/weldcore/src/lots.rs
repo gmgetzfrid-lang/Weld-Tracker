@@ -1503,16 +1503,18 @@ impl Store {
                 .join(" · ");
             items.push(AttentionItem {
                 kind: "wo_incomplete".into(),
-                severity: if wo.count >= 10 { "error".into() } else { "warning".into() },
+                severity: if wo.count >= 10 {
+                    "error".into()
+                } else {
+                    "warning".into()
+                },
                 title: format!(
                     "WO {}: {} weld{} missing attributes",
                     wo.work_order,
                     wo.count,
                     if wo.count == 1 { "" } else { "s" }
                 ),
-                detail: format!(
-                    "Missing — {fields}. Open the work order and use Fill attributes; it starts at the first weld that needs data."
-                ),
+                detail: format!("Missing {fields} · Fill attributes starts at the first one"),
                 lot_id: None,
                 lot_no: None,
                 work_order: Some(wo.work_order.clone()),
@@ -1524,7 +1526,11 @@ impl Store {
             "warning" => 1,
             _ => 2,
         };
-        items.sort_by(|a, b| rank(&a.severity).cmp(&rank(&b.severity)).then(b.count.cmp(&a.count)));
+        items.sort_by(|a, b| {
+            rank(&a.severity)
+                .cmp(&rank(&b.severity))
+                .then(b.count.cmp(&a.count))
+        });
         Ok(items)
     }
 
@@ -1577,8 +1583,13 @@ impl Store {
                         items.push(lref(
                             "current_owed",
                             "info",
-                            format!("{} examination{} owed so far in {}", lot.owed, if lot.owed == 1 { "" } else { "s" }, lot.lot_no),
-                            "Running tally for the current lot. Keep the film moving so closeout is clean.".into(),
+                            format!(
+                                "{} examination{} owed so far in {}",
+                                lot.owed,
+                                if lot.owed == 1 { "" } else { "s" },
+                                lot.lot_no
+                            ),
+                            "Running tally for the receiving lot".into(),
                             lot.owed,
                         ));
                     }
@@ -1587,15 +1598,23 @@ impl Store {
                     if lot.owed > 0 || lot.unresolved > 0 {
                         items.push(lref(
                             "closeout",
-                            if lot.unresolved > 0 { "error" } else { "warning" },
+                            if lot.unresolved > 0 {
+                                "error"
+                            } else {
+                                "warning"
+                            },
                             format!(
                                 "{} is awaiting closeout — {} owed{}",
                                 lot.lot_no,
                                 lot.owed,
-                                if lot.unresolved > 0 { format!(", {} unresolved", lot.unresolved) } else { String::new() }
+                                if lot.unresolved > 0 {
+                                    format!(", {} unresolved", lot.unresolved)
+                                } else {
+                                    String::new()
+                                }
                             ),
                             format!(
-                                "Stopped taking welds {}. Record the outstanding NDE and it closes itself; closing short needs a reason and stays on the record.",
+                                "Stopped taking welds {} · record the NDE and it closes itself",
                                 lot.closing_on.as_deref().unwrap_or("")
                             ),
                             lot.owed + lot.unresolved,

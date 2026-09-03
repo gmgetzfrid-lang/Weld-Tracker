@@ -93,15 +93,9 @@ export function Lots({
   return (
     <div>
       <div className="toolbar" style={{ alignItems: "flex-start" }}>
-        <div>
-          <div className="muted" style={{ fontSize: 12.5 }}>
-            {cfg.target_months}-month lots · {cfg.auto_rollover ? "roll over automatically" : "you're asked at turnover"} · numbered {cfg.prefix}-YYYY-NN
-            {receiving && <> · <b>{receiving.lot_no}</b> is receiving welds</>}
-          </div>
-        </div>
         <div className="spacer" />
         {can("editor") && receiving && (
-          <button className="btn" onClick={() => setConfirmTurn(true)} title="Stop this lot taking welds and open the next one">⟳ Turn over now</button>
+          <button className="btn" onClick={() => setConfirmTurn(true)} title="Stop this lot taking welds and open the next one"><Icon name="refresh" size={14} /> Turn over now</button>
         )}
         {can("editor") && <button className="btn" onClick={() => setNewLotOpen(true)}><Icon name="plus" size={14} stroke={2.25} /> New lot</button>}
         {can("admin") && <button className="btn" onClick={() => setSettingsOpen(true)}><Icon name="sliders" size={14} /> Lot settings</button>}
@@ -196,6 +190,7 @@ function LotDetail({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [suggest, setSuggest] = useState<SuggestedExam[] | null>(null);
   const [suggestStamp, setSuggestStamp] = useState("");
   const [company, setCompany] = useState("SENTRIX");
@@ -292,13 +287,20 @@ function LotDetail({
         {can("admin") && lot.status === "Closed" && (
           <button className="btn" onClick={() => setDialog("reopen")}><Icon name="rotateCcw" size={14} /> Reopen</button>
         )}
-        {editor && lot.status !== "Closed" && (
-          <button className="btn" onClick={() => setDialog("pin")}>{lot.status === "Open" ? <><Icon name="pin" size={14} /> Pin work orders…</> : <><Icon name="arrowRight" size={14} /> Move work orders in…</>}</button>
-        )}
-        {editor && <button className="btn btn-icon" title="Label and notes" aria-label="Label and notes" onClick={() => setDialog("notes")}><Icon name="pencil" size={14} /></button>}
-        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> CSV</button>
-        <button className="btn" onClick={() => pdf(true)} disabled={busy === "pdf"}><Icon name="printer" size={14} /> Open / Print</button>
         <button className="btn btn-accent" onClick={() => pdf(false)} disabled={busy === "pdf"}><Icon name="download" size={14} /> Closeout PDF</button>
+        <div className="wo-more">
+          <button className="btn btn-icon" title="More actions" aria-label="More actions" onClick={() => setMoreOpen((v) => !v)}><Icon name="more" size={16} stroke={2.6} /></button>
+          {moreOpen && (
+            <div className="wo-more-menu" onMouseLeave={() => setMoreOpen(false)}>
+              {editor && lot.status !== "Closed" && (
+                <button onClick={() => { setMoreOpen(false); setDialog("pin"); }}>{lot.status === "Open" ? <><Icon name="pin" size={14} /> Pin work orders…</> : <><Icon name="arrowRight" size={14} /> Move work orders in…</>}</button>
+              )}
+              {editor && <button onClick={() => { setMoreOpen(false); setDialog("notes"); }}><Icon name="pencil" size={14} /> Label &amp; notes…</button>}
+              <button onClick={() => { setMoreOpen(false); pdf(true); }} disabled={busy === "pdf"}><Icon name="printer" size={14} /> Open / Print</button>
+              <button onClick={() => { setMoreOpen(false); exportCsv(); }}><Icon name="download" size={14} /> Export CSV</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Status banner */}
@@ -307,7 +309,7 @@ function LotDetail({
           <div className="lot-banner danger">
             <div><b>Closed short</b> on {fmtD(lot.closed_on)} by {lot.closed_by ?? "?"} — {lot.close_reason}</div>
             {snapshot && (
-              <div className="muted" style={{ fontSize: 12.5 }}>
+              <div className="muted" style={{ fontSize: 13 }}>
                 At close: {num(snapshot.owed)} examination{snapshot.owed === 1 ? "" : "s"} owed
                 {snapshot.unresolved ? `, ${num(snapshot.unresolved)} unresolved` : ""} —{" "}
                 {snapshot.welders.map((w) => `${w.name || w.stamp} ${w.spec}: ${w.owed}`).join(" · ")}
@@ -343,24 +345,16 @@ function LotDetail({
       {lot.notes && <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>{lot.notes}</p>}
 
       <div className="grid cols-4" style={{ marginBottom: 18 }}>
-        <StatCard label="Welds" value={num(lot.weld_count)} sub={`${num(lot.weld_inches, 1)} weld inches`} />
+        <StatCard label="Welds" value={num(lot.weld_count)} sub={`${num(lot.weld_inches, 1)} in · ${num(lot.welder_count)} welder${lot.welder_count === 1 ? "" : "s"} · ${num(lot.work_order_count)} WO${lot.work_order_count === 1 ? "" : "s"}${spanNote ? ` · ${spanNote}` : ""}`} />
         <StatCard
           label="Examined"
           value={num(lot.examined)}
-          sub={card.nde_by_type.length ? card.nde_by_type.map((t) => `${t.method} ${num(t.count)}`).join(" · ") : "no NDE recorded yet"}
+          sub={`${card.nde_by_type.length ? card.nde_by_type.map((t) => `${t.method} ${num(t.count)}`).join(" · ") : "no NDE recorded yet"}${lot.rejects ? ` · ${num(lot.rejects)} rejected` : ""}`}
         />
-        <StatCard label="Rejects" value={num(lot.rejects)} sub={`${pct(lot.examined ? lot.rejects / lot.examined : 0)} of examined`} />
         <StatCard
           label="NDE owed"
-          value={<span style={{ color: card.owed ? "var(--warn)" : "var(--ok)" }}>{num(card.owed)}</span>}
-          sub={card.owed ? `${owedRows.length} welder/spec line${owedRows.length === 1 ? "" : "s"} short` : lot.weld_count ? "every welder at or above spec" : "—"}
-        />
-        <StatCard label="Welders" value={num(lot.welder_count)} />
-        <StatCard label="Work orders" value={num(lot.work_order_count)} sub={spanNote} />
-        <StatCard
-          label="Unresolved"
-          value={<span style={{ color: card.unresolved ? "var(--danger)" : undefined }}>{num(card.unresolved)}</span>}
-          sub={card.unresolved ? "required % unknown — blocks a clean close" : "all requirements resolved"}
+          value={<span style={{ color: card.owed || card.unresolved ? (card.unresolved ? "var(--danger)" : "var(--warn-text)") : "var(--ok)" }}>{num(card.owed)}</span>}
+          sub={card.unresolved ? `${num(card.unresolved)} weld${card.unresolved === 1 ? "" : "s"} can't be scored yet` : card.owed ? `${owedRows.length} welder/spec line${owedRows.length === 1 ? "" : "s"} short` : lot.weld_count ? "every welder at or above spec" : "—"}
         />
         <StatCard
           label="Weld dates"
@@ -372,7 +366,7 @@ function LotDetail({
       {/* Welders */}
       <div className="section-head">
         <h3>Welders in this lot</h3>
-        <span className="muted">Required includes B31.3 progressive sampling: a reject adds two more of that welder's welds here, a second adds two more, a third means all of them.</span>
+        <span className="muted" title="A reject adds two more of that welder's welds to the requirement; a second reject adds two more; a third means every weld of theirs in the lot.">Required includes B31.3 progressive sampling.</span>
       </div>
       <div className="table-wrap" style={{ marginBottom: 22 }}>
         <table className="data">
@@ -396,7 +390,7 @@ function LotDetail({
           <div className="toolbar" style={{ marginBottom: 8 }}>
             <div>
               <h3 style={{ margin: 0 }}>Welds to shoot</h3>
-              <div className="muted" style={{ fontSize: 12 }}>Random picks from each welder's un-examined welds to cover what's owed. A helper, not a cage — re-roll anytime.</div>
+              <div className="muted">Random picks to cover what's owed — a helper, not a cage.</div>
             </div>
             <div className="spacer" />
             <div className="field" style={{ margin: 0 }}>
@@ -430,7 +424,7 @@ function LotDetail({
                       <td className="num">{x.size ?? "—"}</td>
                       <td className="faint">{fmtD(x.date_welded)}</td>
                       <td className="faint">{x.required_nde_method ?? "—"}</td>
-                      <td className="muted" style={{ fontSize: 12 }}>{x.reason}</td>
+                      <td className="muted" style={{ fontSize: 13 }}>{x.reason}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -573,7 +567,7 @@ function WelderRows({ r }: { r: PerformanceRow }) {
               <td className="num">{num(s.examined)}{s.rejected ? <span className="faint"> · {num(s.rejected)} rej</span> : null}</td>
               <td className="num">{s.actual_pct.toFixed(0)}%</td>
               <td className="num" style={{ color: s.shortfall ? "var(--warn)" : undefined, fontWeight: s.shortfall ? 700 : undefined }}>{num(s.shortfall)}</td>
-              <td className={s.progressive_extra ? "warn" : "faint"} style={{ fontSize: 12 }}>{s.sampling_level ?? "Random"}</td>
+              <td className={s.progressive_extra ? "warn" : "faint"} style={{ fontSize: 13 }}>{s.sampling_level ?? "Random"}</td>
               <td>{s.compliant ? <span className="badge badge-green">MET</span> : <span className="badge badge-amber">OWED</span>}</td>
             </>
           ) : (

@@ -377,7 +377,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
         </Sec>
 
         <div className="chest-iso-head">Iso fittings</div>
-        <div className="muted" style={{ fontSize: 11, padding: "0 4px 4px" }}>Aim it on the compass — any of the 12 iso directions — then click a fitting. The tool stays armed for the next one; you can re-aim a placed fitting from its properties bar.</div>
+        <div className="muted" style={{ padding: "0 4px 4px" }}>Aim on the compass, then click a fitting.</div>
         <IsoPicker pick={pick} setPick={updatePick} need={need} showJoint={needJoint} />
 
         {CATEGORIES.map((cat) => (
@@ -431,7 +431,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
           </div>
         )}
         <div className="muted" style={{ fontSize: 11, padding: "8px 4px 2px", lineHeight: 1.5 }}>
-          Tools stay armed: keep clicking to place more. Click an existing markup to edit it (move, resize, rotate) — click empty space or Esc and the tool re-arms; Esc again returns to Select. Right-click a markup → <b>Add to Tool Chest</b> to reuse it; sets are shared with the team.
+          Click a markup to edit it. Esc re-arms the tool; Esc again returns to Select. Right-click a markup to save it to the chest.
         </div>
       </div>
 

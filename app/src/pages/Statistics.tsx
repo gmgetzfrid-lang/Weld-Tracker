@@ -96,7 +96,7 @@ export function Statistics() {
   return (
     <div className="grid" style={{ gap: 20 }}>
       <div className="quick-row">
-        <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
+        <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
           Per-welder NDE compliance & performance
         </span>
         <div className="spacer" style={{ flex: 1 }} />
@@ -220,7 +220,7 @@ export function Statistics() {
         </div>
         <div className="card card-pad">
           <h3>Reject-Rate Analysis</h3>
-          <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
             Rejected ÷ inspected. Bars over the {pct(threshold)} threshold are flagged.
           </p>
           {byReject.length === 0 ? (

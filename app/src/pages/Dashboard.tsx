@@ -102,95 +102,49 @@ export function Dashboard({
       )}
 
       {!fresh && (
-        <div className="quick-row">
-          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Quick actions:</span>
-          {can("editor") && <button className="btn btn-accent btn-sm" onClick={onNewEntry}><Icon name="plus" size={13} stroke={2.25} /> Add Welds</button>}
-          <button className="btn btn-sm" onClick={() => onNavigate("workorders")}><Icon name="folder" size={14} /> Work Orders</button>
-          <button className="btn btn-sm" onClick={() => onNavigate("roster")}><Icon name="users" size={14} /> Welder Roster</button>
-        </div>
-      )}
-
-      {attention.length > 0 && (
         <div className="card card-pad">
-          <div className="toolbar" style={{ marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Needs attention</h3>
+          <div className="toolbar" style={{ marginBottom: attention.length ? 10 : 0 }}>
+            <h3 style={{ margin: 0 }}>{attention.length ? "Needs attention" : "Nothing needs attention"}</h3>
             <div className="spacer" />
-            <button className="btn btn-sm" onClick={() => onOpenLot(null)}>NDE Lots <Icon name="arrowRight" size={13} /></button>
+            {can("editor") && <button className="btn btn-accent" onClick={onNewEntry}><Icon name="plus" size={14} stroke={2.25} /> Add Welds</button>}
           </div>
-          <AttentionList items={attention} max={6} onOpenLot={onOpenLot} onOpenWorkOrder={onOpenWorkOrder} />
+          {attention.length > 0
+            ? <AttentionList items={attention} max={6} onOpenLot={onOpenLot} onOpenWorkOrder={onOpenWorkOrder} />
+            : <p className="muted" style={{ margin: 0 }}>Every lot is on track and every weld has its data.</p>}
         </div>
       )}
 
-      {!fresh && exc && nde && (
-        <div className="exc-tiles" style={{ marginBottom: 0 }}>
-          <button className={`exc-tile sev-error ${exc.errors ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
-            title="Validation errors — unresolved NDE requirements, unrepaired rejects, contradictions. Click to work the list.">
-            <span className="exc-num">{num(exc.errors)}</span>
-            <span className="exc-cap">Errors to clear</span>
-          </button>
-          <button className={`exc-tile sev-error ${(exc.by_code["result.rejected_unrepaired"] ?? 0) ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
-            title="Rejected welds with no repair logged yet.">
-            <span className="exc-num">{num(exc.by_code["result.rejected_unrepaired"] ?? 0)}</span>
-            <span className="exc-cap">Rejects awaiting repair</span>
-          </button>
-          {lotsOn ? (
-            <button className={`exc-tile sev-warning ${lotOwed ? "" : "quiet"}`} onClick={() => onOpenLot(receiving?.id ?? null)}
-              title="Examinations owed across the lots still taking results — includes B31.3 progressive sampling.">
-              <span className="exc-num">{num(lotOwed)}</span>
-              <span className="exc-cap">NDE exams owed</span>
-              <span className="exc-sub">{receiving ? `${receiving.lot_no} receiving · day ${num(receiving.age_days)} of ${num(receiving.target_days)}` : "no receiving lot"}</span>
-            </button>
-          ) : (
-            <button className={`exc-tile sev-warning ${ndeOwed ? "" : "quiet"}`} onClick={() => onNavigate("statistics")}
-              title="Examinations still owed to keep every welder at or above their NDE spec.">
-              <span className="exc-num">{num(ndeOwed)}</span>
-              <span className="exc-cap">NDE exams owed</span>
-            </button>
-          )}
-          <button className={`exc-tile sev-warning ${exc.warnings ? "" : "quiet"}`} onClick={() => onNavigate("exceptions")}
-            title="Warnings — below-spec coverage, missing fields, PWHT/PMI owed.">
-            <span className="exc-num">{num(exc.warnings)}</span>
-            <span className="exc-cap">Warnings</span>
-          </button>
+      {!fresh && (
+        <div className="grid cols-4">
+          <StatCard
+            label="Errors to clear"
+            value={<span style={{ color: exc?.errors ? "var(--danger)" : "var(--ok)" }}>{num(exc?.errors ?? 0)}</span>}
+            sub={exc?.warnings ? `${num(exc.warnings)} warning${exc.warnings === 1 ? "" : "s"} too` : "nothing blocking"}
+            onClick={() => onNavigate("exceptions")}
+          />
+          <StatCard
+            label="NDE exams owed"
+            value={<span style={{ color: (lotsOn ? lotOwed : ndeOwed) ? "var(--warn-text)" : "var(--ok)" }}>{num(lotsOn ? lotOwed : ndeOwed)}</span>}
+            sub={lotsOn ? (receiving ? `${receiving.lot_no} · day ${num(receiving.age_days)} of ${num(receiving.target_days)}` : "no receiving lot") : "to keep every welder at spec"}
+            onClick={() => (lotsOn ? onOpenLot(receiving?.id ?? null) : onNavigate("statistics"))}
+          />
+          <StatCard label="RT coverage" value={pct(t.rt_pct)} sub={`${num(t.rt)} of ${num(t.welds)} welds`} onClick={() => onNavigate("statistics")} />
+          <StatCard label="Reject rate" value={pct(t.reject_rate)} sub={`${num(t.rejected)} rejected of ${num(t.rt)}`} onClick={() => onNavigate("statistics")} />
         </div>
       )}
 
-      <div className="grid cols-4">
-        <StatCard label="Total Welds" value={num(t.welds)} onClick={() => onNavigate("weldlog")}
-          sub={`${num(t.inches, 1)} weld inches · excludes count-omitted`} />
-        <StatCard
-          label="RT Coverage"
-          value={pct(t.rt_pct)}
-          sub={`${num(t.rt)} of ${num(t.welds)} RT'd`}
-          onClick={() => onNavigate("statistics")}
-        />
-        <StatCard
-          label="Reject Rate"
-          value={pct(t.reject_rate)}
-          sub={`${num(t.rejected)} rejected of ${num(t.rt)} RT'd`}
-          onClick={() => onNavigate("statistics")}
-        />
-        <StatCard
-          label="Welders — current certs"
-          value={
-            <span style={{ color: rep.current_cert_welder_count < rep.active_welder_count ? "var(--danger)" : "var(--ok)" }}>
-              {num(rep.current_cert_welder_count)}
-            </span>
-          }
-          sub={`of ${num(rep.active_welder_count)} on the active roster${
-            rep.active_welder_count > rep.current_cert_welder_count
-              ? ` · ${num(rep.active_welder_count - rep.current_cert_welder_count)} lapsed`
-              : ""
-          }`}
-          onClick={() => onNavigate("roster")}
-        />
-      </div>
-
-      {nde && nde.welder_count > 0 && (
+      {!fresh && nde && nde.welder_count > 0 && (
         <NdeQuickRef nde={nde} onNavigate={onNavigate} />
       )}
 
-      <div className="grid cols-2">
+      <details className="card dash-details">
+        <summary className="card-pad" style={{ paddingBottom: 12, cursor: "pointer" }}>
+          <h3 style={{ display: "inline" }}>More</h3>
+          <span className="muted" style={{ marginLeft: 10 }}>
+            {num(t.welds)} welds · {num(t.inches, 1)} in · {num(rep.current_cert_welder_count)} of {num(rep.active_welder_count)} welders with current certs · activity and joint-type breakdown
+          </span>
+        </summary>
+      <div className="grid cols-2" style={{ padding: "0 20px 20px" }}>
         <div className="card card-pad">
           <h3>Welds by Joint Type</h3>
           <BarChart
@@ -222,12 +176,7 @@ export function Dashboard({
         </div>
       </div>
 
-      <details className="card dash-details">
-        <summary className="card-pad" style={{ paddingBottom: 12, cursor: "pointer" }}>
-          <h3 style={{ display: "inline" }}>Breakdown by Joint Type</h3>
-          <span className="muted" style={{ marginLeft: 10, fontSize: 12 }}>expand</span>
-        </summary>
-        <div className="table-wrap" style={{ border: 0 }}>
+        <div className="table-wrap" style={{ margin: "0 20px 20px" }}>
           <table className="data">
             <thead>
               <tr>
@@ -288,53 +237,22 @@ function NdeQuickRef({
   const below = nde.noncompliant_count;
   const worst = nde.welders.filter((w) => !w.compliant).slice(0, 4);
   return (
-    <div className="card card-pad" style={below ? { borderColor: "#fca5a5" } : undefined}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <h3 style={{ margin: 0, color: below ? "var(--danger)" : "var(--navy)" }}>
-          NDE Compliance {below ? <Icon name="alert" size={16} /> : <Icon name="checkCircle" size={16} />}
-        </h3>
-        <div className="spacer" style={{ flex: 1 }} />
-        <button className="btn btn-sm" onClick={() => onNavigate("statistics")}>
-          Open NDE Statistics <Icon name="arrowRight" size={13} />
-        </button>
-      </div>
-      <div className="nde-quick" style={{ marginTop: 12 }}>
-        <div>
-          <div className="nq-fig" style={{ color: below ? "var(--danger)" : "var(--ok)" }}>
-            {num(below)}
-          </div>
-          <div className="muted" style={{ fontSize: 12 }}>welders below spec</div>
-        </div>
-        <div>
-          <div className="nq-fig">{num(owed)}</div>
-          <div className="muted" style={{ fontSize: 12 }}>examinations owed</div>
-        </div>
-        <div>
-          <div className="nq-fig" style={{ color: nde.spec_mismatch_count ? "var(--warn)" : "var(--ok)" }}>
-            {num(nde.spec_mismatch_count)}
-          </div>
-          <div className="muted" style={{ fontSize: 12 }}>off the shop/field rule</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {nde.by_spec.map((s) => (
-            <span key={s.spec} className={`badge ${s.compliant ? "badge-green" : "badge-red"}`} title={`${num(s.examined)} of ${num(s.population)} examined`}>
-              {s.spec} · {num(s.actual_pct, 0)}%
-            </span>
-          ))}
-        </div>
-      </div>
-      {worst.length > 0 && (
-        <p className="muted" style={{ marginBottom: 0, marginTop: 12, fontSize: 12.5 }}>
-          Needs attention:{" "}
-          {worst.map((w, i) => (
-            <span key={w.stamp}>
-              {i > 0 && ", "}
-              <strong>{w.name || w.stamp}</strong> (owe {num(w.worst_gap)})
-            </span>
-          ))}
-          {nde.noncompliant_count > worst.length && ` +${nde.noncompliant_count - worst.length} more`}
-        </p>
-      )}
+    <div className={`lot-banner ${below ? "danger" : "ok"}`} style={{ marginBottom: 0, flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <span style={{ display: "inline-flex", color: below ? "var(--danger)" : "var(--ok)" }}>{below ? <Icon name="alert" size={18} /> : <Icon name="checkCircle" size={18} />}</span>
+      <span style={{ flex: 1, minWidth: 240 }}>
+        <b>{below ? `${num(below)} welder${below === 1 ? "" : "s"} below NDE spec` : "Every welder at or above NDE spec"}</b>
+        {below > 0 && worst.length > 0 && (
+          <span className="muted">
+            {" — "}
+            {worst.map((w, i) => (
+              <span key={w.stamp}>{i > 0 && ", "}<strong>{w.name || w.stamp}</strong> (owe {num(w.worst_gap)})</span>
+            ))}
+            {nde.noncompliant_count > worst.length && ` +${nde.noncompliant_count - worst.length} more`}
+          </span>
+        )}
+        {below === 0 && owed > 0 && <span className="muted"> — {num(owed)} examination{owed === 1 ? "" : "s"} still owed</span>}
+      </span>
+      <button className="btn btn-sm" onClick={() => onNavigate("statistics")}>NDE Statistics <Icon name="arrowRight" size={13} /></button>
     </div>
   );
 }

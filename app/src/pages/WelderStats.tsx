@@ -58,7 +58,7 @@ export function WelderStats() {
           ))}
         </div>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>
+        <span className="muted" style={{ fontSize: 13 }}>
           NDE examination level {level === "all" ? "— all welds" : `${level}%`}
         </span>
         <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>

@@ -477,7 +477,7 @@ export function WeldAnnotator({
     const availW = stage.clientWidth - rightInset;
     setPan({ x: availW / 2 - nx * bw * zoom, y: stage.clientHeight / 2.15 - ny * bh * zoom });
   };
-  const DRAWER_W = 384;
+  const DRAWER_W = 420;
 
   // Press on the background: begin either a pan (if the pointer moves) or a
   // click action (place / select / legend, on release without moving).

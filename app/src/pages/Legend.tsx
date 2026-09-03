@@ -15,7 +15,7 @@ export function Legend() {
     <div>
       <div className="section-title">
         <h3>Criteria Category Legend</h3>
-        <span className="muted" style={{ fontSize: 12 }}>per REP 5-5-1</span>
+        <span className="muted" style={{ fontSize: 13 }}>per REP 5-5-1</span>
       </div>
       <ErrorBox message={error} />
       {!rows ? (

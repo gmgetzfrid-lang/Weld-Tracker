@@ -26,7 +26,9 @@ const COLS_DEF: { key: string; label: string }[] = [
   { key: "status", label: "Status" },
 ];
 /** Hidden out of the box: derived / secondary columns (still one click away). */
-const DEFAULT_HIDDEN = ["schedule", "thk", "weld_inches", "brinell"];
+// A calm default: the columns that answer "what was welded, by whom, and was
+// it examined". Everything else is one click away under Columns.
+const DEFAULT_HIDDEN = ["schedule", "thk", "weld_inches", "brinell", "material", "pwht", "pressure"];
 
 /**
  * The one weld grid used everywhere. An "Edit" toggle puts the whole table into
@@ -203,7 +205,7 @@ export function WeldTable({
   return (
     <div className="weldtable">
       <div className="wt-bar">
-        <span className="muted" style={{ fontSize: 12 }}>{rows.length} welds</span>
+        <span className="muted" style={{ fontSize: 13 }}>{rows.length} welds</span>
         {editable && (pendingSaves > 0 || savedOnce) && (
           <span className={`wt-savestate ${pendingSaves > 0 ? "busy" : saveFailed ? "failed" : ""}`}>
             {pendingSaves > 0

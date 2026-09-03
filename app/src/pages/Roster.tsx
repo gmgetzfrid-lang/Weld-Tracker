@@ -76,7 +76,7 @@ export function Roster() {
           Show off-roster
         </label>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>{rows.length} welders</span>
+        <span className="muted" style={{ fontSize: 13 }}>{rows.length} welders</span>
         <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
         {can("editor") && (
           <button className="btn btn-primary" onClick={() => setEditing(null)}><Icon name="plus" size={14} stroke={2.25} /> New Welder</button>

@@ -260,7 +260,7 @@ export function PackageIngest({
         {file ? (
           <div className="dz-file">
             <span className="dz-ico"><Icon name="bookStack" size={22} /></span>
-            <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 12 }}>{pages} page(s)</div></div>
+            <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 13 }}>{pages} page(s)</div></div>
             <button className="btn btn-sm btn-danger" onClick={() => onFile(null)}>Remove</button>
           </div>
         ) : (

@@ -125,7 +125,7 @@ export function DrawingWizard({
       <div className="toolbar" style={{ marginBottom: 8 }}>
         <button className="btn btn-ghost btn-sm" onClick={guardedClose}><Icon name="arrowLeft" size={14} /> Back</button>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12 }}>
+        <span className="muted" style={{ fontSize: 13 }}>
           {drawing.work_order ? `WO ${drawing.work_order}` : "New entry"}
           {drawing.drawing_no ? ` · Iso ${drawing.drawing_no}` : ""}
           {drawing.weld_count ? ` · ${drawing.weld_count} welds` : ""}
@@ -272,7 +272,7 @@ function HeaderStep({
             {idNeeded.length > 0 && (
               <span className="id-need"> — enter the {idNeeded.join(" and ")} from the title block</span>
             )}
-            {" "}· more sheets or drawings? Save this one, then <b>＋ Add another</b> at the end — or use <b>Ingest work package</b> on the work order for a compiled book.
+
           </div>
         </div>
 
@@ -343,7 +343,7 @@ function DropZone({ file, onFile, hasExisting }: { file: File | null; onFile: (f
       {file ? (
         <div className="dz-file">
           <span className="dz-ico"><Icon name="file" size={22} /></span>
-          <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 12 }}>ready to attach</div></div>
+          <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 13 }}>ready to attach</div></div>
           <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); onFile(null); }}>Remove</button>
         </div>
       ) : (

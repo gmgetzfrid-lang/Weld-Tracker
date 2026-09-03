@@ -147,7 +147,7 @@ export function WorkOrderRecord({
                 <strong>{d.doc_name || docName(d.drawing_no, d.sheet_no, d.revision)}</strong>
                 {d.has_pdf ? <span className="badge badge-green">PDF</span> : <span className="badge badge-gray">no PDF</span>}
               </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="muted" style={{ fontSize: 13, marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 {d.revision
                   ? <span className="badge badge-blue" title="effective revision">Rev {d.revision}</span>
                   : <span className="badge badge-gray" title="No revision recorded — open the drawing and enter it from the title block">rev not set</span>}
@@ -254,8 +254,8 @@ export function WorkOrderRecord({
           {lotSum.total_owed_here > 0 ? (
             <>
               <span>
-                <b>{num(lotSum.total_owed_here)} NDE examination{lotSum.total_owed_here === 1 ? "" : "s"} can be shot on this work order</b>
-                <span className="muted"> — {lotSum.owed.map((o) => `${o.name || o.stamp} ${o.spec}: ${num(o.owed)} owed, ${num(o.candidates_here)} candidate${o.candidates_here === 1 ? "" : "s"} here (${o.lot_no})`).join(" · ")}</span>
+                <b>{num(lotSum.total_owed_here)} NDE exam{lotSum.total_owed_here === 1 ? "" : "s"} can be shot here</b>
+                <span className="muted" title={lotSum.owed.map((o) => `${o.name || o.stamp} ${o.spec}: ${num(o.owed)} owed, ${num(o.candidates_here)} candidate${o.candidates_here === 1 ? "" : "s"} here (${o.lot_no})`).join(" · ")}> — {lotSum.owed.map((o) => `${o.name || o.stamp} ${num(o.owed)}`).join(", ")}</span>
               </span>
               <div className="spacer" />
               {editable && <button className="btn btn-sm btn-accent" onClick={() => setNdeDialog(true)}><Icon name="clipboard" size={14} /> Record NDE results</button>}
@@ -282,42 +282,33 @@ export function WorkOrderRecord({
         <Spinner />
       ) : tab === "overview" ? (
         <>
-          <div className="exc-tiles">
-            <button className={`exc-tile sev-error ${errorsN ? "" : "quiet"}`} onClick={() => setTab("welds")}
-              title="Validation errors on this work order's welds">
-              <span className="exc-num">{num(errorsN)}</span>
-              <span className="exc-cap">Errors</span>
-            </button>
-            <button className={`exc-tile sev-warning ${warningsN ? "" : "quiet"}`} onClick={() => setTab("welds")}
-              title="Warnings — below-spec NDE, missing fields, PWHT/PMI owed">
-              <span className="exc-num">{num(warningsN)}</span>
-              <span className="exc-cap">Warnings</span>
-            </button>
-            <button className="exc-tile" onClick={() => setTab("welds")}>
-              <span className="exc-num">{num(exc?.flagged ?? 0)}</span>
-              <span className="exc-cap">Flagged welds</span>
-              <span className="exc-sub">of {num(exc?.population ?? welds.length)}</span>
-            </button>
-            <button className="exc-tile" onClick={() => setTab("drawings")}>
-              <span className="exc-num">{num(drawings.length)}</span>
-              <span className="exc-cap">Drawings</span>
-            </button>
-          </div>
-
-          {incompleteWelds.length > 0 && (
-            <div className="lot-banner warn" style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <span>
-                  <b>{num(incompleteWelds.length)} weld{incompleteWelds.length === 1 ? "" : "s"} still missing attributes</b>
-                  <span className="muted"> — welder, date, size, joint or NDE not filled in. They stay flagged here and on the dashboard until they are.</span>
-                </span>
-                <div className="spacer" />
-                {editable && incompleteDrawing != null && (
-                  <button className="btn btn-sm btn-accent" onClick={() => onOpenDrawing(incompleteDrawing)}><Icon name="play" size={12} /> Fill attributes</button>
-                )}
+          <div className="card card-pad next-steps">
+            <h3>Next steps</h3>
+            {incompleteWelds.length === 0 && errorsN === 0 && warningsN === 0 && (lotSum?.total_owed_here ?? 0) === 0 && (
+              <p className="muted" style={{ margin: 0 }}>Nothing outstanding — every weld has its data and passes validation.</p>
+            )}
+            {incompleteWelds.length > 0 && (
+              <div className="next-step">
+                <span className="next-num warn">{num(incompleteWelds.length)}</span>
+                <span className="next-text"><b>weld{incompleteWelds.length === 1 ? "" : "s"} missing attributes</b><span className="muted"> — welder, date, size, joint or NDE</span></span>
+                {editable && incompleteDrawing != null && <button className="btn btn-sm btn-accent" onClick={() => onOpenDrawing(incompleteDrawing)}><Icon name="play" size={12} /> Fill attributes</button>}
               </div>
-            </div>
-          )}
+            )}
+            {(lotSum?.total_owed_here ?? 0) > 0 && (
+              <div className="next-step">
+                <span className="next-num warn">{num(lotSum!.total_owed_here)}</span>
+                <span className="next-text"><b>NDE exam{lotSum!.total_owed_here === 1 ? "" : "s"} to shoot here</b><span className="muted"> — {lotSum!.owed.map((o) => `${o.name || o.stamp} ${num(o.owed)}`).join(", ")}</span></span>
+                {editable && <button className="btn btn-sm" onClick={() => setNdeDialog(true)}><Icon name="clipboard" size={14} /> Record NDE results</button>}
+              </div>
+            )}
+            {(errorsN > 0 || warningsN > 0) && (
+              <div className="next-step">
+                <span className={`next-num ${errorsN ? "error" : "warn"}`}>{num(errorsN || warningsN)}</span>
+                <span className="next-text"><b>{errorsN ? `error${errorsN === 1 ? "" : "s"} to clear` : `warning${warningsN === 1 ? "" : "s"} to review`}</b>{errorsN > 0 && warningsN > 0 && <span className="muted"> — plus {num(warningsN)} warning{warningsN === 1 ? "" : "s"}</span>}</span>
+                <button className="btn btn-sm" onClick={() => setTab("welds")}>Open welds <Icon name="arrowRight" size={13} /></button>
+              </div>
+            )}
+          </div>
           {openItems.length > 0 ? (
             <div className="card card-pad" style={{ marginTop: 14 }}>
               <h3>Open items</h3>
@@ -336,7 +327,7 @@ export function WorkOrderRecord({
                   </div>
                 ))}
                 {(exc?.flagged ?? 0) > openItems.length && (
-                  <div className="muted" style={{ padding: "4px 2px", fontSize: 12 }}>
+                  <div className="muted" style={{ padding: "4px 2px", fontSize: 13 }}>
                     +{(exc?.flagged ?? 0) - openItems.length} more — see the Welds tab
                   </div>
                 )}

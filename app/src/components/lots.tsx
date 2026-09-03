@@ -90,7 +90,7 @@ export function AttentionList({
         </button>
       ))}
       {items.length > shown.length && (
-        <div className="muted" style={{ fontSize: 12, padding: "2px 4px" }}>
+        <div className="muted" style={{ fontSize: 13, padding: "2px 4px" }}>
           +{items.length - shown.length} more on the NDE Lots page
         </div>
       )}
@@ -213,7 +213,7 @@ export function LotMaintenance({ onOpenLots, onChanged }: { onOpenLots: () => vo
         <span><b>{num(due.work_order_count)}</b> work orders</span>
         <span className={due.owed ? "warn" : "ok"}><b>{num(due.owed)}</b> NDE owed</span>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+      <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>
         Letting a lot run long is allowed — B31.3 leaves the lot definition to you — but the longer it runs, the
         more welds it takes to trigger the next examination. Turning over on schedule is encouraged.
       </p>
