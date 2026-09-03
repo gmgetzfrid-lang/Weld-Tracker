@@ -282,9 +282,86 @@ export function SelectionEl({ pm, W, H, z, editable, g, multi }: {
 // Export overlay (inline styles only — no stylesheet in the raster)
 // ---------------------------------------------------------------------------
 
+/** Where the legend stamp sits on the sheet: top-left corner and width, all as fractions of the page. */
+export interface LegendPlace { x: number; y: number; w: number }
+/** Design width of the stamp; everything inside scales from it. */
+export const LEGEND_BASE_W = 190;
+/** Stamp height in design units for a given number of welder rows. */
+export function legendHeight(rows: number): number { return 106 + 15 * Math.max(rows, 1); }
+export const LEGEND_MIN_W = 0.1;
+export const LEGEND_MAX_W = 0.6;
+
+/**
+ * The weld-map legend, drawn as a stamp on the sheet — the same SVG on screen
+ * and in the flattened print, so it scales with the page and looks like part
+ * of the drawing rather than a floating window. Selection ring, resize grip
+ * and hide button only exist on screen (when `editable` and `selected`).
+ */
+export function LegendStamp({ W, H, place, totals, title = "WELD MAP LEGEND", selected, editable, onDown, onResizeDown, onClose }: {
+  W: number; H: number; place: LegendPlace; totals: [string, number][]; title?: string;
+  selected?: boolean; editable?: boolean;
+  onDown?: (e: React.MouseEvent) => void; onResizeDown?: (e: React.MouseEvent) => void; onClose?: (e: React.MouseEvent) => void;
+}) {
+  const lw = place.w * W;
+  const k = lw / LEGEND_BASE_W;
+  const x = place.x * W, y = place.y * H;
+  const lh = legendHeight(totals.length) * k;
+  const s = (v: number) => v * k;
+  const tx = (dx: number) => x + s(dx), ty = (dy: number) => y + s(dy);
+  const right = x + lw;
+  const t = (props: Record<string, unknown>) => ({ fontFamily: FONT, ...props });
+  return (
+    <g className={`wm-stamp ${editable ? "editable" : ""}`} onMouseDown={onDown}>
+      <rect x={x} y={y} width={lw} height={lh} fill="#fff" stroke="#0a1f6b" strokeWidth={s(1.4)} rx={s(2)} />
+      <text {...t({ x: tx(8), y: ty(14), fontSize: s(9), fontWeight: 800, fill: "#0a1f6b", letterSpacing: s(1) })}>{title}</text>
+      <line x1={tx(6)} y1={ty(21)} x2={right - s(6)} y2={ty(21)} stroke="#94a3b8" strokeWidth={s(0.8)} strokeDasharray={`${s(2)} ${s(2)}`} />
+      {/* key: what a bubble reads */}
+      <circle cx={tx(24)} cy={ty(44)} r={s(14)} fill="#fff" stroke="#e0322c" strokeWidth={s(1.6)} />
+      <line x1={tx(10)} y1={ty(44)} x2={tx(38)} y2={ty(44)} stroke="#e0322c" strokeWidth={s(1.2)} />
+      <text {...t({ x: tx(24), y: ty(38.5), fontSize: s(8.5), fontWeight: 700, fill: "#16233b", textAnchor: "middle", dominantBaseline: "middle" })}>ID</text>
+      <text {...t({ x: tx(24), y: ty(50), fontSize: s(8.5), fontWeight: 700, fill: "#16233b", textAnchor: "middle", dominantBaseline: "middle" })}>W#</text>
+      <text {...t({ x: tx(46), y: ty(41), fontSize: s(9), fill: "#16233b" })}><tspan fontWeight={700}>top</tspan> = welder ID</text>
+      <text {...t({ x: tx(46), y: ty(53), fontSize: s(9), fill: "#16233b" })}><tspan fontWeight={700}>bottom</tspan> = weld #</text>
+      <line x1={tx(6)} y1={ty(63)} x2={right - s(6)} y2={ty(63)} stroke="#cbd5e1" strokeWidth={s(0.8)} />
+      {/* disposition marks */}
+      <text {...t({ x: tx(8), y: ty(76), fontSize: s(8.2), fontWeight: 700, fill: "#16a34a" })}>✓ accepted</text>
+      <text {...t({ x: tx(62), y: ty(76), fontSize: s(8.2), fontWeight: 700, fill: "#dc2626" })}>! rejected</text>
+      <text {...t({ x: tx(112), y: ty(76), fontSize: s(8.2), fontWeight: 700, fill: "#7456a5" })}>R repair</text>
+      <text {...t({ x: tx(154), y: ty(76), fontSize: s(8.2), fontWeight: 700, fill: "#b45309" })}>? data</text>
+      <line x1={tx(6)} y1={ty(83)} x2={right - s(6)} y2={ty(83)} stroke="#cbd5e1" strokeWidth={s(0.8)} />
+      {/* welder totals */}
+      <text {...t({ x: tx(8), y: ty(97), fontSize: s(8.2), fontWeight: 700, fill: "#6e7482", letterSpacing: s(0.6) })}>WELDERS ON THIS MAP</text>
+      <text {...t({ x: right - s(8), y: ty(97), fontSize: s(8.2), fontWeight: 700, fill: "#6e7482", textAnchor: "end" })}>WELDS</text>
+      {totals.length === 0 && <text {...t({ x: tx(8), y: ty(112), fontSize: s(9.5), fill: "#94a3b8" })}>none yet</text>}
+      {totals.map(([stamp, n], i) => (
+        <g key={stamp}>
+          <text {...t({ x: tx(8), y: ty(97 + 15 * (i + 1)), fontSize: s(10.5), fontWeight: 800, fill: "#0a1f6b" })}>{stamp}</text>
+          <text {...t({ x: right - s(8), y: ty(97 + 15 * (i + 1)), fontSize: s(10.5), fill: "#16233b", textAnchor: "end" })}>{n}</text>
+        </g>
+      ))}
+      {selected && (
+        <rect x={x - s(2)} y={y - s(2)} width={lw + s(4)} height={lh + s(4)} fill="none" stroke="#1E90FF" strokeWidth={s(1.2)} strokeDasharray={`${s(4)} ${s(3)}`} pointerEvents="none" />
+      )}
+      {selected && editable && (
+        <>
+          <rect className="wm-stamp-grip" x={right - s(6)} y={y + lh - s(6)} width={s(12)} height={s(12)} fill="#fff" stroke="#1E90FF" strokeWidth={s(1.4)} rx={s(1.5)} onMouseDown={onResizeDown}>
+            <title>Drag to resize</title>
+          </rect>
+          <g className="wm-stamp-x" onMouseDown={onClose}>
+            <circle cx={right} cy={y} r={s(7.5)} fill="#fff" stroke="#94a3b8" strokeWidth={s(1)} />
+            <line x1={right - s(3)} y1={y - s(3)} x2={right + s(3)} y2={y + s(3)} stroke="#64748b" strokeWidth={s(1.4)} />
+            <line x1={right + s(3)} y1={y - s(3)} x2={right - s(3)} y2={y + s(3)} stroke="#64748b" strokeWidth={s(1.4)} />
+            <title>Hide the legend</title>
+          </g>
+        </>
+      )}
+    </g>
+  );
+}
+
 export function ExportOverlay({ welds, markups, W, H, legend }: {
   welds: Weld[]; markups: PM[]; W: number; H: number;
-  legend: { pos: Pt; totals: [string, number][]; title: string } | null;
+  legend: { place: LegendPlace; totals: [string, number][]; title: string } | null;
 }) {
   const R = 17;
   return (
@@ -311,24 +388,7 @@ export function ExportOverlay({ welds, markups, W, H, legend }: {
           </g>
         );
       })}
-      {legend && legend.totals.length > 0 && (() => {
-        const x = legend.pos.x * W, y = legend.pos.y * H, lw = 170, rowH = 15, lh = 30 + rowH * (legend.totals.length + 1) + 8;
-        return (
-          <g>
-            <rect x={x} y={y} width={lw} height={lh} fill="#fff" fillOpacity={0.97} stroke="#0a1f6b" strokeWidth={1.5} rx={3} />
-            <text x={x + 8} y={y + 14} fontSize={9} fontWeight={800} fontFamily={FONT} fill="#0a1f6b" letterSpacing={1}>{legend.title}</text>
-            <line x1={x + 6} y1={y + 21} x2={x + lw - 6} y2={y + 21} stroke="#cbd5e1" strokeDasharray="2 2" />
-            <text x={x + 8} y={y + 36} fontSize={8.5} fontWeight={700} fontFamily={FONT} fill="#6e7482">WELDER · STAMP</text>
-            <text x={x + lw - 8} y={y + 36} fontSize={8.5} fontWeight={700} fontFamily={FONT} fill="#6e7482" textAnchor="end">WELDS</text>
-            {legend.totals.map(([stamp, n], i) => (
-              <g key={stamp}>
-                <text x={x + 8} y={y + 36 + rowH * (i + 1)} fontSize={10.5} fontFamily={FONT} fill="#16233b">{stamp}</text>
-                <text x={x + lw - 8} y={y + 36 + rowH * (i + 1)} fontSize={10.5} fontWeight={700} fontFamily={FONT} fill="#16233b" textAnchor="end">{n}</text>
-              </g>
-            ))}
-          </g>
-        );
-      })()}
+      {legend && <LegendStamp W={W} H={H} place={legend.place} totals={legend.totals} title={legend.title} />}
     </svg>
   );
 }

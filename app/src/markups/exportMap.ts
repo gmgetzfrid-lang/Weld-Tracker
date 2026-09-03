@@ -6,8 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { api, bytesToB64 } from "../api";
 import type { Weld } from "../types";
 import type { PdfDoc } from "../pdf";
-import type { PM, Pt } from "./model";
-import { ExportOverlay } from "./render";
+import type { PM } from "./model";
+import { ExportOverlay, type LegendPlace } from "./render";
 
 export interface ExportOpts {
   doc: PdfDoc | null;
@@ -17,7 +17,8 @@ export interface ExportOpts {
   blank: { w: number; h: number };
   welds: Weld[];
   markups: PM[];
-  legend: { pos: Pt; totals: [string, number][]; on: boolean };
+  /** the legend stamp — printed on every page at the same place and size */
+  legend: { place: LegendPlace; totals: [string, number][]; on: boolean };
   fileName: string;
   mode: "reveal" | "open";
   /** raster scale: 2 = crisp on letter-size, 3 for large-format */
@@ -61,7 +62,7 @@ export async function buildWeldMapPdf(o: ExportOpts): Promise<string> {
     const svg = renderToStaticMarkup(
       createElement(ExportOverlay, {
         welds: pageWelds, markups: pageMarkups, W, H,
-        legend: o.legend.on && n === pages[0] ? { pos: o.legend.pos, totals: o.legend.totals, title: "WELD MAP LEGEND" } : null,
+        legend: o.legend.on ? { place: o.legend.place, totals: o.legend.totals, title: "WELD MAP LEGEND" } : null,
       }),
     ).replace("<svg ", `<svg width="${W * scale}" height="${H * scale}" `);
     // The overlay's own width/height are W×H; the injected attributes come

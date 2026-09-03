@@ -538,23 +538,12 @@ table.data tfoot td { font-weight: 700; background: var(--surface-2); border-top
 /* Legend stamp */
 /* An on-drawing stamp (not a floating window): thin navy border, drawn onto the
    sheet like the bubbles, drag it by the title strip. */
-.wm-legend { position: absolute; z-index: 6; min-width: 180px; background: rgba(255,255,255,.97); border: 1.5px solid var(--navy); border-radius: 5px; box-shadow: 0 2px 6px rgba(10,31,107,.22); font-size: 12px; overflow: hidden; }
-.wm-legend.sel { outline: 2.5px solid var(--brand-blue, #1E90FF); outline-offset: 2px; box-shadow: 0 2px 10px rgba(30,144,255,.4); }
-.wm-legend-head { background: transparent; color: var(--navy); font-weight: 800; font-size: 10px; letter-spacing: .09em; padding: 5px 8px; display: flex; align-items: center; gap: 6px; border-bottom: 1px dashed var(--border-strong); }
-.wm-grip { opacity: .55; letter-spacing: -1px; }
-.wm-legend-head .wm-x { margin-left: auto; }
 .wm-x { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; }
-.wm-legend-key { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border); }
-.wm-legend-status { display: flex; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 10px; font-weight: 700; letter-spacing: .01em; }
-.wm-legend-status .ok { color: var(--ok, #16a34a); }
-.wm-legend-status .bad { color: #dc2626; }
-.wm-legend-status .rep { color: #7456a5; }
-.wm-legend-keytext div { line-height: 1.5; }
-.wm-legend-tot { padding: 8px 10px; }
-.wm-legend-toth { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); font-weight: 700; margin-bottom: 5px; }
-.wm-legend-row { display: flex; justify-content: space-between; padding: 2px 0; }
-.wm-legend-stamp { font-weight: 800; color: var(--navy); }
-.wm-legend-count { color: var(--text-muted); }
+/* Legend stamp: drawn inside the page SVG so it scales with the sheet and prints as part of it. */
+.wm-stamp text { user-select: none; }
+.wm-stamp.editable { cursor: move; }
+.wm-stamp .wm-stamp-grip { cursor: nwse-resize; }
+.wm-stamp .wm-stamp-x { cursor: pointer; }
 
 /* Guided fill — a small popup docked right beside the active weld bubble, so
    you enter the specifics while looking at the weld you mapped. */
@@ -1315,7 +1304,6 @@ button.link:hover { color: var(--navy); }
 .wm-g.incomplete .anno-bubble { stroke-dasharray: 4 2.5; }
 .wm-glyph.todo circle { stroke: var(--warn); }
 .wm-glyph.todo text { fill: var(--warn); }
-.wm-legend-status .todo { color: var(--warn); }
 .walk-scope { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 0; flex: 0 0 auto; }
 
 /* Iso direction picker: compass beside its target pills / hint; solid primary dot */

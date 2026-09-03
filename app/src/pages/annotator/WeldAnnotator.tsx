@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import { api, errMsg, logErr } from "../../api";
 import { useAuth } from "../../auth";
 import type { Drawing, Lookups, Weld, Welder } from "../../types";
@@ -6,7 +7,7 @@ import { ConfirmDialog, Spinner, useToast } from "../../components/ui";
 import { Combobox, InlineMulti } from "../../components/inline";
 import { base64ToBytes, loadPdf, type PdfDoc } from "../../pdf";
 import { useMarkupEditor, type Draft } from "../../markups/editor";
-import { MarkupEl, SelectionEl } from "../../markups/render";
+import { LEGEND_MAX_W, LEGEND_MIN_W, LegendStamp, MarkupEl, SelectionEl } from "../../markups/render";
 import { AddToChestDialog, ContextMenu, DRAW_TOOLS, MarkupBar, MarkupsList, TextEditOverlay, ToolChest, type MenuItem } from "../../markups/panels";
 import { attachWeldMap, exportWeldMap } from "../../markups/exportMap";
 import { bboxPx, normBox, type PM, type Style } from "../../markups/model";
@@ -219,6 +220,7 @@ export function WeldAnnotator({
 
   const [legendOn, setLegendOn] = useState(true);
   const [legendPos, setLegendPos] = useState<Pt>({ x: 0.72, y: 0.04 });
+  const [legendW, setLegendW] = useState(0.2); // width as a fraction of the page
   const legendKey = `wm-legend-${drawing.id}`;
 
   // Guided fill: the weld being walked (by id — the list shifts as welds get
@@ -261,12 +263,44 @@ export function WeldAnnotator({
   useEffect(() => {
     try {
       const saved = localStorage.getItem(legendKey);
-      if (saved) { const p = JSON.parse(saved); setLegendPos(p.pos); setLegendOn(p.on); }
+      if (saved) { const p = JSON.parse(saved); setLegendPos(p.pos); setLegendOn(p.on); if (typeof p.w === "number") setLegendW(p.w); }
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const persistLegend = (pos: Pt, on: boolean) => {
-    try { localStorage.setItem(legendKey, JSON.stringify({ pos, on })); } catch { /* ignore */ }
+  const persistLegend = (pos: Pt, w: number, on: boolean) => {
+    try { localStorage.setItem(legendKey, JSON.stringify({ pos, w, on })); } catch { /* ignore */ }
+  };
+
+  // Move / resize the legend stamp. Window listeners keep it glued to the
+  // cursor; deltas are divided by the displayed page size (rendered px × CSS
+  // zoom) so it tracks 1:1 on screen, and stored as page fractions so the
+  // print lands it at exactly the same place and size.
+  const legendDrag = useRef<{ kind: "move" | "resize"; px: number; py: number; x: number; y: number; w: number } | null>(null);
+  const legendLive = useRef({ pos: legendPos, w: legendW });
+  legendLive.current = { pos: legendPos, w: legendW };
+  const startLegendDrag = (e: React.MouseEvent, kind: "move" | "resize") => {
+    e.preventDefault();
+    const cssScale = renderedScale > 0 ? zoom / renderedScale : 1;
+    const dw = (size.w || 1) * cssScale, dh = (size.h || 1) * cssScale;
+    legendDrag.current = { kind, px: e.clientX, py: e.clientY, x: legendPos.x, y: legendPos.y, w: legendW };
+    const move = (ev: MouseEvent) => {
+      const s = legendDrag.current; if (!s) return;
+      if (s.kind === "move") {
+        const nx = s.x + (ev.clientX - s.px) / dw, ny = s.y + (ev.clientY - s.py) / dh;
+        setLegendPos({ x: Math.max(0, Math.min(1 - s.w, nx)), y: Math.max(0, Math.min(0.98, ny)) });
+      } else {
+        const nw = s.w + (ev.clientX - s.px) / dw;
+        setLegendW(Math.max(LEGEND_MIN_W, Math.min(LEGEND_MAX_W, 1 - s.x, nw)));
+      }
+    };
+    const up = () => {
+      legendDrag.current = null;
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      persistLegend(legendLive.current.pos, legendLive.current.w, true);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
   };
 
   // load pdf + welds + next number
@@ -415,7 +449,7 @@ export function WeldAnnotator({
       if (e.key === "Escape") { setPending(null); setCursor(null); setSelId(null); setLegendSel(false); }
       if ((e.key === "Delete" || e.key === "Backspace") && !typing && editable) {
         if (selId != null) { e.preventDefault(); askDelete(selId); }
-        else if (legendSel) { e.preventDefault(); setLegendOn(false); setLegendSel(false); persistLegend(legendPos, false); }
+        else if (legendSel) { e.preventDefault(); setLegendOn(false); setLegendSel(false); persistLegend(legendPos, legendW, false); }
       }
       if (/^[1-9]$/.test(e.key) && !typing) {
         const w = welders[Number(e.key) - 1];
@@ -425,7 +459,7 @@ export function WeldAnnotator({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [welders, guided, selId, legendSel, editable, legendPos, tool, editor.onKey, editor.setTool, editor.selection.length]);
+  }, [welders, guided, selId, legendSel, editable, legendPos, legendW, tool, editor.onKey, editor.setTool, editor.selection.length]);
 
   const norm = (e: { clientX: number; clientY: number }): Pt => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -642,7 +676,7 @@ export function WeldAnnotator({
         pages: hasPdf ? pages : [1],
         blank: { w: size.w || 800, h: size.h || 600 },
         welds, markups: editor.all,
-        legend: { pos: legendPos, totals, on: legendOn },
+        legend: { place: { x: legendPos.x, y: legendPos.y, w: legendW }, totals, on: legendOn },
         fileName: `weld-map-${tag}.pdf`,
         mode: (mode === "attach" ? "reveal" : mode) as "reveal" | "open",
       };
@@ -863,6 +897,13 @@ export function WeldAnnotator({
                   <circle cx={cursor.x * size.w} cy={cursor.y * size.h} r={R} className="anno-bubble ghost" style={{ strokeWidth: 1.9 * z }} />
                 </>
               )}
+              {legendOn && (
+                <LegendStamp W={size.w} H={size.h} place={{ x: legendPos.x, y: legendPos.y, w: legendW }} totals={totals}
+                  selected={legendSel} editable={editable}
+                  onDown={(e) => { e.stopPropagation(); setLegendSel(true); setSelId(null); if (editable && tool !== "markup") startLegendDrag(e, "move"); }}
+                  onResizeDown={(e) => { e.stopPropagation(); if (editable) startLegendDrag(e, "resize"); }}
+                  onClose={(e) => { e.stopPropagation(); setLegendOn(false); setLegendSel(false); persistLegend(legendPos, legendW, false); }} />
+              )}
               {editor.selected.map((pm) => (
                 <SelectionEl key={`sel-${pm.id}`} pm={pm} W={size.w} H={size.h} z={z} editable={editable} multi={editor.selected.length > 1}
                   g={{
@@ -882,19 +923,6 @@ export function WeldAnnotator({
               ) : null;
             })()}
 
-            {legendOn && (
-              <Legend
-                pos={legendPos}
-                size={size}
-                cssScale={renderedScale > 0 ? zoom / renderedScale : 1}
-                selected={legendSel}
-                totals={totals}
-                editable={editable}
-                onSelect={() => { setLegendSel(true); setSelId(null); }}
-                onMove={(p) => { setLegendPos(p); persistLegend(p, true); }}
-                onClose={() => { setLegendOn(false); setLegendSel(false); persistLegend(legendPos, false); }}
-              />
-            )}
           </div>
         </div>
 
@@ -944,7 +972,7 @@ export function WeldAnnotator({
               </div>
             )}
           </div>
-          {!legendOn && <button className="btn btn-sm" title="Show the legend stamp" aria-label="Show legend" onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}><Icon name="tag" size={14} /></button>}
+          {!legendOn && <button className="btn btn-sm" title="Show the legend stamp" aria-label="Show legend" onClick={() => { setLegendOn(true); persistLegend(legendPos, legendW, true); }}><Icon name="tag" size={14} /></button>}
           <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
           <button className="btn btn-sm" title={fullscreen ? "Exit full screen (Esc)" : "Full screen"} onClick={() => setFullscreen((v) => !v)}><Icon name={fullscreen ? "minimize" : "maximize"} size={14} /></button>
         </div>
@@ -1156,78 +1184,6 @@ function CoachMarks({ onDone }: { onDone: () => void }) {
             : <button className="btn btn-sm" onClick={() => setI(i + 1)}>Next ›</button>}
           <button className="btn btn-sm btn-ghost" style={{ color: "#8ea1cf" }} onClick={onDone}>Skip</button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Legend({
-  pos, size, cssScale, selected, totals, editable, onMove, onSelect, onClose,
-}: {
-  pos: Pt; size: { w: number; h: number }; cssScale: number; selected: boolean;
-  totals: [string, number][]; editable: boolean;
-  onMove: (p: Pt) => void; onSelect: () => void; onClose: () => void;
-}) {
-  // Grab anywhere on the legend to move it (like a weld bubble). Window
-  // listeners keep it glued to the cursor; the delta is divided by the
-  // displayed size (rendered px × the CSS zoom) so it tracks 1:1 on screen.
-  const start = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const dispRef = useRef({ w: 1, h: 1 });
-  dispRef.current = { w: (size.w || 1) * cssScale, h: (size.h || 1) * cssScale };
-  const moveRef = useRef(onMove); moveRef.current = onMove;
-  const onDown = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onSelect();
-    if (!editable) return;
-    e.preventDefault();
-    start.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
-    setDragging(true);
-  };
-  useEffect(() => {
-    if (!dragging) return;
-    const move = (e: MouseEvent) => {
-      const s = start.current; if (!s) return;
-      const nx = s.x + (e.clientX - s.px) / dispRef.current.w;
-      const ny = s.y + (e.clientY - s.py) / dispRef.current.h;
-      moveRef.current({ x: Math.max(0, Math.min(0.98, nx)), y: Math.max(0, Math.min(0.98, ny)) });
-    };
-    const up = () => { start.current = null; setDragging(false); };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-  }, [dragging]);
-  return (
-    <div
-      className={`wm-legend ${selected ? "sel" : ""}`}
-      style={{ left: pos.x * size.w, top: pos.y * size.h, cursor: editable ? (dragging ? "grabbing" : "move") : "default", touchAction: "none" }}
-      onMouseDown={onDown}
-    >
-      <div className="wm-legend-head">
-        <span className="wm-grip">⠿</span> WELD MAP LEGEND
-        {editable && <button className="wm-x" title="Hide legend" onClick={onClose} onMouseDown={(e) => e.stopPropagation()} aria-label="Hide legend"><Icon name="x" size={12} /></button>}
-      </div>
-      <div className="wm-legend-key">
-        <svg width="42" height="42" viewBox="0 0 42 42">
-          <circle cx="21" cy="21" r="16" className="anno-bubble" />
-          <line x1="5" y1="21" x2="37" y2="21" className="anno-divider" />
-          <text x="21" y="15" className="anno-txt">ID</text>
-          <text x="21" y="31" className="anno-txt">W#</text>
-        </svg>
-        <div className="wm-legend-keytext"><div><b>top</b> = welder ID</div><div><b>bottom</b> = weld #</div></div>
-      </div>
-      <div className="wm-legend-status" title="Disposition marks on the bubbles">
-        <span className="ok"><Icon name="check" size={10} stroke={3} /> accepted</span>
-        <span className="bad">! rejected</span>
-        <span className="rep">R repair</span>
-        <span className="todo">? needs data</span>
-      </div>
-      <div className="wm-legend-tot">
-        <div className="wm-legend-toth">Welders on this map</div>
-        {totals.length === 0 && <div className="faint" style={{ fontSize: 11 }}>none yet</div>}
-        {totals.map(([s, n]) => (
-          <div key={s} className="wm-legend-row"><span className="wm-legend-stamp">{s}</span><span className="wm-legend-count">{n} weld{n === 1 ? "" : "s"}</span></div>
-        ))}
       </div>
     </div>
   );
