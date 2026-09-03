@@ -37,6 +37,8 @@ export function Lots({
   const [newLotOpen, setNewLotOpen] = useState(false);
   const [confirmTurn, setConfirmTurn] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | LotBucket>("all");
+  const [year, setYear] = useState<string>("all");
 
   const load = useCallback(
     () =>
@@ -79,6 +81,16 @@ export function Lots({
   }
 
   const receiving = lots.find((l) => l.is_default) ?? null;
+  const years = [...new Set(lots.map((l) => l.opened_on.slice(0, 4)))].sort().reverse();
+  const inYear = lots.filter((l) => year === "all" || l.opened_on.startsWith(year));
+  const counts = { receiving: 0, open: 0, closing: 0, closed: 0 } as Record<LotBucket, number>;
+  for (const l of inYear) counts[bucketOf(l)]++;
+  const closedLots = inYear.filter((l) => l.status === "Closed");
+  const closedClean = closedLots.filter((l) => !l.closed_short).length;
+  const closingOwed = inYear.filter((l) => l.status === "Closing").reduce((a, l) => a + l.owed + l.unresolved, 0);
+  const shown = inYear.filter((l) => statusFilter === "all" || bucketOf(l) === statusFilter);
+  const active = shown.filter((l) => l.status !== "Closed");
+  const closedShown = shown.filter((l) => l.status === "Closed");
   const turnOver = async () => {
     setBusy(true);
     try {
@@ -98,7 +110,7 @@ export function Lots({
           <button className="btn" onClick={() => setConfirmTurn(true)} title="Stop this lot taking welds and open the next one"><Icon name="refresh" size={14} /> Turn over now</button>
         )}
         {can("editor") && <button className="btn" onClick={() => setNewLotOpen(true)}><Icon name="plus" size={14} stroke={2.25} /> New lot</button>}
-        {can("admin") && <button className="btn" onClick={() => setSettingsOpen(true)}><Icon name="sliders" size={14} /> Lot settings</button>}
+        {can("admin") && <button className="btn" onClick={() => setSettingsOpen(true)}><Icon name="sliders" size={14} /> Lot defaults</button>}
       </div>
 
       {attention.length > 0 && (
@@ -108,9 +120,51 @@ export function Lots({
         </div>
       )}
 
-      <div className="lot-grid">
-        {lots.map((l) => <LotTile key={l.id} lot={l} onClick={() => setSel(l.id)} />)}
+      <div className="grid cols-4" style={{ marginBottom: 16 }}>
+        <StatCard label="Lots" value={num(inYear.length)} sub={year === "all" ? `${years.length} year${years.length === 1 ? "" : "s"} of records` : `opened in ${year}`} onClick={() => setStatusFilter("all")} />
+        <StatCard label="Open" value={num(counts.receiving + counts.open)} sub={counts.receiving ? `${num(counts.receiving)} receiving welds` : "no receiving lot"} onClick={() => setStatusFilter("open")} />
+        <StatCard
+          label="Awaiting closeout"
+          value={<span style={{ color: counts.closing ? "var(--warn-text)" : undefined }}>{num(counts.closing)}</span>}
+          sub={counts.closing ? `${num(closingOwed)} item${closingOwed === 1 ? "" : "s"} to record` : "nothing waiting"}
+          onClick={() => setStatusFilter("closing")}
+        />
+        <StatCard
+          label="Closed"
+          value={num(counts.closed)}
+          sub={counts.closed ? `${num(closedClean)} met coverage · ${num(counts.closed - closedClean)} closed short` : "none yet"}
+          onClick={() => setStatusFilter("closed")}
+        />
       </div>
+      <div className="toolbar" style={{ marginBottom: 12 }}>
+        <div className="pill-tabs">
+          {([["all", "All", inYear.length], ["receiving", "Receiving", counts.receiving], ["open", "Open", counts.open], ["closing", "Awaiting closeout", counts.closing], ["closed", "Closed", counts.closed]] as [("all" | LotBucket), string, number][]).map(([k, label, n]) => (
+            <button key={k} className={statusFilter === k ? "active" : ""} onClick={() => setStatusFilter(k)}>{label} <span className="faint">{num(n)}</span></button>
+          ))}
+        </div>
+        <div className="spacer" />
+        {years.length > 1 && (
+          <select value={year} onChange={(e) => setYear(e.target.value)} title="Lots opened in" style={{ padding: "6px 10px", border: "1px solid var(--border-strong)", borderRadius: 8, fontSize: 13, fontFamily: "inherit" }}>
+            <option value="all">All years</option>
+            {years.map((y) => <option key={y} value={y}>Opened in {y}</option>)}
+          </select>
+        )}
+      </div>
+      <div className="lot-grid">
+        {(statusFilter === "all" ? active : shown).map((l) => <LotTile key={l.id} lot={l} onClick={() => setSel(l.id)} />)}
+        {shown.length === 0 && <div className="empty-hint" style={{ gridColumn: "1 / -1", marginBottom: 0 }}>No lots match this filter.</div>}
+      </div>
+      {statusFilter === "all" && closedShown.length > 0 && (
+        <>
+          <div className="section-head" style={{ marginTop: 22 }}>
+            <h3>Closed</h3>
+            <span className="muted">{num(closedShown.length)} lot{closedShown.length === 1 ? "" : "s"} · locked records — open one to read its closeout</span>
+          </div>
+          <div className="lot-grid">
+            {closedShown.map((l) => <LotTile key={l.id} lot={l} onClick={() => setSel(l.id)} />)}
+          </div>
+        </>
+      )}
 
       {confirmTurn && receiving && (
         <ConfirmDialog
@@ -129,11 +183,18 @@ export function Lots({
           onClose={() => setConfirmTurn(false)}
         />
       )}
-      {newLotOpen && <NewLotDialog onClose={() => setNewLotOpen(false)} onDone={() => { setNewLotOpen(false); load(); }} />}
+      {newLotOpen && <NewLotDialog defaultMonths={cfg.target_months} onClose={() => setNewLotOpen(false)} onDone={() => { setNewLotOpen(false); load(); }} />}
       {settingsOpen && <LotSettingsModal cfg={cfg} onClose={() => setSettingsOpen(false)} onSaved={() => { setSettingsOpen(false); load(); }} />}
     </div>
   );
 }
+
+type LotBucket = "receiving" | "open" | "closing" | "closed";
+const bucketOf = (l: NdeLot): LotBucket => (l.status === "Open" ? (l.is_default ? "receiving" : "open") : l.status === "Closing" ? "closing" : "closed");
+const monthsOf = (days: number): number => {
+  const m = Math.round(days / 30.44);
+  return MONTH_CHOICES.reduce((best, c) => (Math.abs(c - m) < Math.abs(best - m) ? c : best), MONTH_CHOICES[0]);
+};
 
 function LotTile({ lot: l, onClick }: { lot: NdeLot; onClick: () => void }) {
   return (
@@ -295,7 +356,7 @@ function LotDetail({
               {editor && lot.status !== "Closed" && (
                 <button onClick={() => { setMoreOpen(false); setDialog("pin"); }}>{lot.status === "Open" ? <><Icon name="pin" size={14} /> Pin work orders…</> : <><Icon name="arrowRight" size={14} /> Move work orders in…</>}</button>
               )}
-              {editor && <button onClick={() => { setMoreOpen(false); setDialog("notes"); }}><Icon name="pencil" size={14} /> Label &amp; notes…</button>}
+              {editor && <button onClick={() => { setMoreOpen(false); setDialog("notes"); }}><Icon name="pencil" size={14} /> Lot settings…</button>}
               <button onClick={() => { setMoreOpen(false); pdf(true); }} disabled={busy === "pdf"}><Icon name="printer" size={14} /> Open / Print</button>
               <button onClick={() => { setMoreOpen(false); exportCsv(); }}><Icon name="download" size={14} /> Export CSV</button>
             </div>
@@ -676,33 +737,54 @@ function PinDialog({ lot, mode, onClose, onDone }: { lot: NdeLot; mode: "pin" | 
 
 function NotesDialog({ lot, onClose, onDone }: { lot: NdeLot; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
+  const locked = lot.status === "Closed";
+  const initialMonths = monthsOf(lot.target_days);
   const [label, setLabel] = useState(lot.label ?? "");
   const [notes, setNotes] = useState(lot.notes ?? "");
+  const [months, setMonths] = useState(initialMonths);
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await api.updateLotNotes(lot.id, label || null, notes || null); toast.push("ok", "Saved"); onDone(); }
+    try {
+      await api.updateLotNotes(lot.id, label || null, notes || null, months !== initialMonths ? months : null);
+      toast.push("ok", "Lot settings saved"); onDone();
+    }
     catch (e) { toast.push("err", errMsg(e)); }
     finally { setBusy(false); }
   };
   return (
-    <Modal title={`${lot.lot_no} — label & notes`} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button></>}>
-      <div className="field"><label>Label (optional)</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Q3 shop lot, Unit 12 turnaround" autoFocus /></div>
-      <div className="field" style={{ marginBottom: 0 }}><label>Notes</label><textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+    <Modal title={`${lot.lot_no} — lot settings`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>{locked ? "Close" : "Cancel"}</button>{!locked && <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>}</>}>
+      {locked ? (
+        <div className="lot-banner info" style={{ marginBottom: 14 }}>
+          <b>This lot is closed and locked.</b> Its label, notes and expected length are part of the signed-off record and can't change. An admin can reopen it if something must be corrected.
+        </div>
+      ) : (
+        <p className="muted" style={{ marginTop: 0 }}>These settings belong to <b>{lot.lot_no}</b> only. The defaults for new lots live under <b>Lot defaults</b>.</p>
+      )}
+      <div className="field"><label>Label (optional)</label><input value={label} disabled={locked} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Q3 shop lot, Unit 12 turnaround" autoFocus={!locked} /></div>
+      <div className="field">
+        <label>Expected length</label>
+        <select value={months} disabled={locked} onChange={(e) => setMonths(Number(e.target.value))}>
+          {MONTH_CHOICES.map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"}</option>)}
+        </select>
+        <div className="hint">Counted from {fmtD(lot.opened_on)} — currently due {fmtD(lot.due_on)}. Turnover is only ever a prompt; a lot can run longer.</div>
+      </div>
+      <div className="field" style={{ marginBottom: 0 }}><label>Notes</label><textarea rows={4} value={notes} disabled={locked} onChange={(e) => setNotes(e.target.value)} /></div>
     </Modal>
   );
 }
 
-function NewLotDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function NewLotDialog({ defaultMonths, onClose, onDone }: { defaultMonths: number; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
   const [label, setLabel] = useState("");
+  const [months, setMonths] = useState(defaultMonths);
   const [makeDefault, setMakeDefault] = useState(false);
   const [busy, setBusy] = useState(false);
   const create = async () => {
     setBusy(true);
     try {
-      const l = await api.createLot(label || null, makeDefault);
+      const l = await api.createLot(label || null, makeDefault, months !== defaultMonths ? months : null);
       toast.push("ok", `${l.lot_no} opened${makeDefault ? " and is now receiving welds" : ""}`);
       onDone();
     } catch (e) { toast.push("err", errMsg(e)); }
@@ -715,6 +797,13 @@ function NewLotDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         The lot number is assigned automatically. A side lot only receives welds from work orders you pin to it — use it for a contractor crew or a job you want judged on its own.
       </p>
       <div className="field"><label>Label (optional)</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Contractor crew — Unit 12" autoFocus /></div>
+      <div className="field">
+        <label>Expected length</label>
+        <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>
+          {MONTH_CHOICES.map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"}{m === defaultMonths ? " (default)" : ""}</option>)}
+        </select>
+        <div className="hint">This lot's own length — change it later from the lot's page while it's open.</div>
+      </div>
       <label className="check" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
         <input type="checkbox" checked={makeDefault} onChange={(e) => setMakeDefault(e.target.checked)} />
         Make it the receiving lot (the current receiving lot moves to Awaiting closeout)
@@ -729,12 +818,12 @@ function LotSettingsModal({ cfg, onClose, onSaved }: { cfg: LotConfig; onClose: 
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await api.setLotConfig({ ...c, setup_done: true }); toast.push("ok", "Lot settings saved"); onSaved(); }
+    try { await api.setLotConfig({ ...c, setup_done: true }); toast.push("ok", "Lot defaults saved"); onSaved(); }
     catch (e) { toast.push("err", errMsg(e)); }
     finally { setBusy(false); }
   };
   return (
-    <Modal title="Lot settings" onClose={onClose}
+    <Modal title="Lot defaults" onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button></>}>
       <label className="check" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginBottom: 12 }}>
         <input type="checkbox" checked={c.enabled} onChange={(e) => setC({ ...c, enabled: e.target.checked })} />
@@ -745,7 +834,7 @@ function LotSettingsModal({ cfg, onClose, onSaved }: { cfg: LotConfig; onClose: 
         <select value={c.target_months} onChange={(e) => setC({ ...c, target_months: Number(e.target.value) })}>
           {MONTH_CHOICES.map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"}</option>)}
         </select>
-        <div className="hint">Applies to the lots currently open too.</div>
+        <div className="hint">The default for new lots. Each lot keeps its own length — change one from its page under Lot settings. Closed lots never change.</div>
       </div>
       <label className="check" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, marginBottom: 12 }}>
         <input type="checkbox" checked={c.auto_rollover} onChange={(e) => setC({ ...c, auto_rollover: e.target.checked })} style={{ marginTop: 3 }} />

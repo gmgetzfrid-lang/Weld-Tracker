@@ -8,7 +8,7 @@ import type { DrawKind, MTool, MarkupEditor } from "./editor";
 import { GroupEl } from "./render";
 import {
   type FitKind,
-  CATEGORIES, DIRECTIONS, FITTING_BY_KEY, JOINT_LABEL, RUN_AXES, axisOf, defaultJoint, isoTemplate, normDeg, specName,
+  CATEGORIES, DIRECTIONS, FITTING_BY_KEY, JOINT_LABEL, RUN_AXES, axisOf, canFlange, defaultJoint, isoTemplate, normDeg, specName,
   type IsoSpec, type Joint,
 } from "./symbols";
 import {
@@ -77,8 +77,8 @@ function noteRecent(name: string, tool: MTool, preview: ToolTemplate | DrawKind)
 // quick pick for the four common axes (click one again to reverse the run).
 // ---------------------------------------------------------------------------
 
-export interface IsoPick { run: number; arms: [number, number]; branch: number; flip: boolean; joint: Joint }
-const DEFAULT_PICK: IsoPick = { run: 30, arms: [30, 90], branch: 90, flip: false, joint: "bw" };
+export interface IsoPick { run: number; arms: [number, number]; branch: number; flip: boolean; joint: Joint; flanged: boolean }
+const DEFAULT_PICK: IsoPick = { run: 30, arms: [30, 90], branch: 90, flip: false, joint: "bw", flanged: false };
 /** Which direction rows a fitting needs. */
 export type IsoNeed = "run" | "end" | "elbow" | "tee" | "none";
 export function needFor(kind: FitKind): IsoNeed {
@@ -186,9 +186,8 @@ function IsoPicker({ pick, setPick, need, showJoint }: {
         <div className="iso-row">
           <span className="iso-lab">Ends</span>
           <div className="pill-tabs mini">
-            {(["bw", "sw", "thd", "flg"] as Joint[]).map((j) => (
-              <button key={j} className={pick.joint === j ? "active" : ""} title={JOINT_LABEL[j]} onClick={() => setPick({ ...pick, joint: j })}>{j.toUpperCase()}</button>
-            ))}
+            <button className={!pick.flanged ? "active" : ""} title="Joins the pipe directly (butt weld, socket weld or threaded per the category)" onClick={() => setPick({ ...pick, flanged: false })}>Direct</button>
+            <button className={pick.flanged ? "active" : ""} title="A flange set between the component and the pipe" onClick={() => setPick({ ...pick, flanged: true })}>Flanged</button>
           </div>
         </div>
       )}
@@ -205,6 +204,7 @@ function specFor(fitting: string, catJoint: Joint | null, pick: IsoPick): IsoSpe
   const f = FITTING_BY_KEY[fitting];
   const joint = catJoint === null ? (f.joints.includes(pick.joint) ? pick.joint : f.joints[0]) : defaultJoint(f, catJoint);
   const spec: IsoSpec = { fitting, joint, run: pick.run, flip: pick.flip };
+  if (pick.flanged && canFlange(fitting)) spec.flanged = true;
   if (f.kind === "elbow") spec.arms = pick.arms;
   if (f.kind === "tee") spec.branch = pick.branch;
   return spec;
@@ -252,7 +252,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   const pickFitting = (fitting: string, catJoint: Joint | null, label?: string) => {
     const f = FITTING_BY_KEY[fitting];
     setNeed(needFor(f.kind));
-    setNeedJoint(catJoint === null && f.joints.length > 1);
+    setNeedJoint(canFlange(fitting));
     const spec = specFor(fitting, catJoint, pick);
     const tpl = isoTemplate(spec, editor.style.stroke, label);
     const name = specName(spec, label);
@@ -271,7 +271,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
     const iso = editor.tool.template.d.iso;
     const f = FITTING_BY_KEY[iso.fitting];
     if (!f) return;
-    const catJoint: Joint | null = needJoint ? null : iso.joint;
+    const catJoint: Joint | null = iso.joint === "flg" ? "bw" : iso.joint;
     const spec = specFor(iso.fitting, catJoint, pick);
     if (JSON.stringify(spec) === JSON.stringify(iso)) return;
     const label = editor.tool.name;
@@ -386,7 +386,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
               {cat.items.map((it) => {
                 const spec = specFor(it.fitting, cat.joint, pick);
                 const tpl = isoTemplate(spec, editor.style.stroke, it.label);
-                const on = activeFitting === it.fitting && (cat.joint === null ? true : activeJoint === spec.joint);
+                const on = activeFitting === it.fitting && activeJoint === spec.joint;
                 const name = specName(spec, it.label);
                 return (
                   <button key={`${cat.key}-${it.fitting}`} className={`chest-tool ${on ? "on" : ""}`} title={name}
@@ -628,10 +628,16 @@ export function MarkupBar({ editor, onAddToChest, onEditText, onClose }: {
         <div className="mk-bar-row">
           <span className="muted" style={{ fontSize: 11.5 }}>Fitting</span>
           {FITTING_BY_KEY[one.d.iso.fitting]?.joints.length > 1 && (
-            <div className="pill-tabs mini">
+            <div className="pill-tabs mini" title="How it joins the pipe">
               {FITTING_BY_KEY[one.d.iso.fitting].joints.map((j) => (
-                <button key={j} className={one.d.iso!.joint === j ? "active" : ""} title={JOINT_LABEL[j]} disabled={locked} onClick={() => editor.setIso(one.id, { joint: j })}>{j.toUpperCase()}</button>
+                <button key={j} className={(one.d.iso!.joint === "flg" ? "bw" : one.d.iso!.joint) === j ? "active" : ""} title={JOINT_LABEL[j]} disabled={locked} onClick={() => editor.setIso(one.id, { joint: j, flanged: one.d.iso!.joint === "flg" ? true : one.d.iso!.flanged })}>{j.toUpperCase()}</button>
               ))}
+            </div>
+          )}
+          {canFlange(one.d.iso.fitting) && (
+            <div className="pill-tabs mini" title="Ends">
+              <button className={!(one.d.iso.flanged || one.d.iso.joint === "flg") ? "active" : ""} disabled={locked} onClick={() => editor.setIso(one.id, { flanged: false, joint: one.d.iso!.joint === "flg" ? "bw" : one.d.iso!.joint })}>Direct</button>
+              <button className={(one.d.iso.flanged || one.d.iso.joint === "flg") ? "active" : ""} disabled={locked} onClick={() => editor.setIso(one.id, { flanged: true, joint: one.d.iso!.joint === "flg" ? "bw" : one.d.iso!.joint })}>Flanged</button>
             </div>
           )}
           {FITTING_BY_KEY[one.d.iso.fitting] && needFor(FITTING_BY_KEY[one.d.iso.fitting].kind) !== "none" && (

@@ -1075,9 +1075,14 @@ pub fn get_lot_card(state: State<AppState>, id: i64) -> R<LotCard> {
 }
 
 #[tauri::command]
-pub fn create_lot(state: State<AppState>, label: Option<String>, make_default: bool) -> R<NdeLot> {
+pub fn create_lot(
+    state: State<AppState>,
+    label: Option<String>,
+    make_default: bool,
+    target_months: Option<i64>,
+) -> R<NdeLot> {
     let actor = state.require_editor()?;
-    e(state.store()?.create_lot(&actor.username, label, make_default))
+    e(state.store()?.create_lot(&actor.username, label, make_default, target_months))
 }
 
 /// Turn the receiving lot over. Returns [old lot (now Closing) or null, new lot].
@@ -1111,9 +1116,16 @@ pub fn update_lot_notes(
     id: i64,
     label: Option<String>,
     notes: Option<String>,
+    target_months: Option<i64>,
 ) -> R<NdeLot> {
     let actor = state.require_editor()?;
-    e(state.store()?.update_lot_notes(id, label.as_deref(), notes.as_deref(), &actor.username))
+    e(state.store()?.update_lot_notes(
+        id,
+        label.as_deref(),
+        notes.as_deref(),
+        target_months,
+        &actor.username,
+    ))
 }
 
 #[tauri::command]

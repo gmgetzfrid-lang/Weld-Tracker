@@ -315,16 +315,16 @@ export const api = {
     invoke<[NdeLot, number]>("setup_lots", { config, history }),
   listLots: () => invoke<NdeLot[]>("list_lots"),
   getLotCard: (id: number) => invoke<LotCard>("get_lot_card", { id }),
-  createLot: (label: string | null, makeDefault: boolean) =>
-    invoke<NdeLot>("create_lot", { label, makeDefault }),
+  createLot: (label: string | null, makeDefault: boolean, targetMonths: number | null = null) =>
+    invoke<NdeLot>("create_lot", { label, makeDefault, targetMonths }),
   turnOverLot: (reason: string | null = null) =>
     invoke<[NdeLot | null, NdeLot]>("turn_over_lot", { reason }),
   stopLotIntake: (id: number) => invoke<NdeLot>("stop_lot_intake", { id }),
   closeLot: (id: number, reason: string | null, force: boolean) =>
     invoke<NdeLot>("close_lot", { id, reason, force }),
   reopenLot: (id: number, reason: string) => invoke<NdeLot>("reopen_lot", { id, reason }),
-  updateLotNotes: (id: number, label: string | null, notes: string | null) =>
-    invoke<NdeLot>("update_lot_notes", { id, label, notes }),
+  updateLotNotes: (id: number, label: string | null, notes: string | null, targetMonths: number | null = null) =>
+    invoke<NdeLot>("update_lot_notes", { id, label, notes, targetMonths }),
   pinWorkOrder: (workOrder: string, lotId: number) =>
     invoke<number>("pin_work_order", { workOrder, lotId }),
   unpinWorkOrder: (workOrder: string) => invoke<void>("unpin_work_order", { workOrder }),

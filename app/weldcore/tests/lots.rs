@@ -196,7 +196,7 @@ fn pinned_work_order_routes_to_its_lot_and_moves_existing_welds() {
         .create_weld(&weld("SHUTDOWN-7", "K1", "W1", "2026-05-01"), "admin")
         .unwrap();
     let side = s
-        .create_lot("admin", Some("Contractor crew".into()), false)
+        .create_lot("admin", Some("Contractor crew".into()), false, None)
         .unwrap();
     assert!(!side.is_default);
 
@@ -553,9 +553,72 @@ fn legacy_rt_reject_flag_also_escalates_progressive_sampling() {
         s.create_weld(&w, "admin").unwrap();
     }
     let card = s.lot_card(lot.id).unwrap();
-    let k1 = &card.report.rows.iter().find(|r| r.stamp == "K1").unwrap().specs[0];
+    let k1 = &card
+        .report
+        .rows
+        .iter()
+        .find(|r| r.stamp == "K1")
+        .unwrap()
+        .specs[0];
     assert_eq!(k1.rejected, 1);
-    assert_eq!(k1.required, 3, "legacy reject flag still adds the two progressive examinations");
+    assert_eq!(
+        k1.required, 3,
+        "legacy reject flag still adds the two progressive examinations"
+    );
     assert_eq!(k1.sampling_level, "+2 after 1 reject");
-    assert_eq!(card.lot.rejects, 1, "lot totals agree with the coverage engine");
+    assert_eq!(
+        card.lot.rejects, 1,
+        "lot totals agree with the coverage engine"
+    );
+}
+
+#[test]
+fn each_lot_owns_its_length_and_closed_lots_are_locked() {
+    let s = store();
+    s.create_welder(&welder("K1", "Alex")).unwrap();
+    let (lot, _) = s.setup_lots(&cfg(false), "none", "admin").unwrap();
+
+    // A side lot can carry its own expected length.
+    let side = s
+        .create_lot("admin", Some("Side".into()), false, Some(6))
+        .unwrap();
+    assert!(
+        side.target_days > lot.target_days,
+        "a 6-month lot outlives the default"
+    );
+    assert!(s.create_lot("admin", None, false, Some(0)).is_err());
+
+    // Changing the defaults never rewrites a lot that already exists.
+    let mut c = cfg(false);
+    c.target_months = 12;
+    s.set_lot_config(&c, "admin").unwrap();
+    assert_eq!(s.get_lot(lot.id).unwrap().target_days, lot.target_days);
+    assert_eq!(s.get_lot(side.id).unwrap().target_days, side.target_days);
+
+    // A lot's own settings can change while it is open...
+    let edited = s
+        .update_lot_notes(
+            side.id,
+            Some("Side crew"),
+            Some("Unit 12"),
+            Some(2),
+            "admin",
+        )
+        .unwrap();
+    assert_eq!(edited.label.as_deref(), Some("Side crew"));
+    assert!(edited.target_days < side.target_days);
+
+    // ...and are refused once it is closed — a closed lot is a controlled record.
+    s.stop_intake(side.id, "admin").unwrap();
+    let closed = s.close_lot(side.id, "admin", None, false).unwrap();
+    assert_eq!(closed.status, "Closed");
+    let err = s
+        .update_lot_notes(side.id, Some("renamed"), None, None, "admin")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("locked"), "{err}");
+    assert_eq!(
+        s.get_lot(side.id).unwrap().label.as_deref(),
+        Some("Side crew")
+    );
 }

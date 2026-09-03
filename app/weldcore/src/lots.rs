@@ -395,22 +395,6 @@ impl Store {
         )?;
         self.set_setting("lot_prefix", &prefix)?;
         self.set_setting("lot_setup_done", if cfg.setup_done { "1" } else { "0" })?;
-        {
-            let conn = self.conn.lock().unwrap();
-            let mut stmt =
-                conn.prepare("SELECT id, opened_on FROM nde_lots WHERE status = 'Open'")?;
-            let open: Vec<(i64, String)> = stmt
-                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect::<rusqlite::Result<_>>()?;
-            drop(stmt);
-            for (id, opened_on) in open {
-                let from = parse_date(&opened_on).unwrap_or_else(today);
-                conn.execute(
-                    "UPDATE nde_lots SET target_days = ?1, updated_at = datetime('now') WHERE id = ?2",
-                    params![months_to_days(from, cfg.target_months), id],
-                )?;
-            }
-        }
         self.audit(
             actor,
             "configure",
@@ -466,7 +450,7 @@ impl Store {
                 } else {
                     None
                 };
-                self.create_lot_with(actor, label, true, &opened_on, &cfg)?
+                self.create_lot_with(actor, label, true, &opened_on, &cfg, None)?
             }
         };
         let swept = match history.trim() {
@@ -642,6 +626,7 @@ impl Store {
         make_default: bool,
         opened_on: &str,
         cfg: &LotConfig,
+        target_months: Option<i64>,
     ) -> Result<i64> {
         let opened = parse_date(opened_on).unwrap_or_else(today);
         let year = parse_date(opened_on)
@@ -662,7 +647,7 @@ impl Store {
                 label.as_deref().map(str::trim).filter(|s| !s.is_empty()),
                 make_default as i64,
                 fmt(opened),
-                months_to_days(opened, cfg.target_months),
+                months_to_days(opened, target_months.unwrap_or(cfg.target_months)),
                 actor
             ],
         )?;
@@ -676,10 +661,26 @@ impl Store {
         make_default: bool,
         opened_on: &str,
         cfg: &LotConfig,
+        target_months: Option<i64>,
     ) -> Result<NdeLot> {
+        if let Some(m) = target_months {
+            if !(1..=120).contains(&m) {
+                return Err(Error::Invalid(
+                    "expected lot length must be 1 to 120 months".into(),
+                ));
+            }
+        }
         let id = {
             let conn = self.conn.lock().unwrap();
-            Self::insert_lot(&conn, actor, label, make_default, opened_on, cfg)?
+            Self::insert_lot(
+                &conn,
+                actor,
+                label,
+                make_default,
+                opened_on,
+                cfg,
+                target_months,
+            )?
         };
         let lot = self.get_lot(id)?;
         self.audit(
@@ -696,12 +697,14 @@ impl Store {
         Ok(lot)
     }
 
-    /// Open a new lot. `make_default` makes it the receiving lot.
+    /// Open a new lot. `make_default` makes it the receiving lot. A lot may
+    /// carry its own expected length; `None` takes the default.
     pub fn create_lot(
         &self,
         actor: &str,
         label: Option<String>,
         make_default: bool,
+        target_months: Option<i64>,
     ) -> Result<NdeLot> {
         let cfg = self.lot_config()?;
         if !cfg.enabled {
@@ -709,7 +712,14 @@ impl Store {
                 "NDE lots are turned off — enable them in lot settings first".into(),
             ));
         }
-        self.create_lot_with(actor, label, make_default, &today_str(), &cfg)
+        self.create_lot_with(
+            actor,
+            label,
+            make_default,
+            &today_str(),
+            &cfg,
+            target_months,
+        )
     }
 
     /// The receiving lot, created if lots are on and none exists.
@@ -727,6 +737,7 @@ impl Store {
             true,
             &today_str(),
             &cfg,
+            None,
         )?))
     }
 
@@ -938,7 +949,7 @@ impl Store {
                 )?;
                 tx.execute("DELETE FROM nde_lot_pins WHERE lot_id = ?1", [o.id])?;
             }
-            let id = Self::insert_lot(&tx, actor, None, true, &today_str(), &cfg)?;
+            let id = Self::insert_lot(&tx, actor, None, true, &today_str(), &cfg, None)?;
             tx.commit()?;
             id
         };
@@ -1128,27 +1139,60 @@ impl Store {
         self.get_lot(id)
     }
 
+    /// A lot's own settings: label, notes and expected length. Only lots that
+    /// are still open or awaiting closeout can change — a closed lot is a
+    /// controlled record and stays exactly as it was signed off.
     pub fn update_lot_notes(
         &self,
         id: i64,
         label: Option<&str>,
         notes: Option<&str>,
+        target_months: Option<i64>,
         actor: &str,
     ) -> Result<NdeLot> {
         let lot = self.lot_row(id)?;
+        if lot.status == CLOSED {
+            return Err(Error::Invalid(format!(
+                "{} is closed — a closed lot is locked (document control); an admin can reopen it",
+                lot.lot_no
+            )));
+        }
+        if let Some(m) = target_months {
+            if !(1..=120).contains(&m) {
+                return Err(Error::Invalid(
+                    "expected lot length must be 1 to 120 months".into(),
+                ));
+            }
+        }
         {
             let conn = self.conn.lock().unwrap();
             conn.execute(
                 "UPDATE nde_lots SET label = ?2, notes = ?3, updated_at = datetime('now') WHERE id = ?1",
                 params![id, nonblank(label), nonblank(notes)],
             )?;
+            if let Some(m) = target_months {
+                let from = parse_date(&lot.opened_on).unwrap_or_else(today);
+                conn.execute(
+                    "UPDATE nde_lots SET target_days = ?1, updated_at = datetime('now') WHERE id = ?2",
+                    params![months_to_days(from, m), id],
+                )?;
+            }
         }
         self.audit(
             actor,
             "update",
             "lot",
             &id.to_string(),
-            &format!("{} label/notes edited", lot.lot_no),
+            &format!(
+                "{} settings edited{}",
+                lot.lot_no,
+                target_months
+                    .map(|m| format!(
+                        " · expected length {m} month{}",
+                        if m == 1 { "" } else { "s" }
+                    ))
+                    .unwrap_or_default()
+            ),
         );
         self.get_lot(id)
     }
