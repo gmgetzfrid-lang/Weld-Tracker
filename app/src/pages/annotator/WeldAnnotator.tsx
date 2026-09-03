@@ -9,7 +9,7 @@ import { base64ToBytes, loadPdf, type PdfDoc } from "../../pdf";
 import { useMarkupEditor, type Draft } from "../../markups/editor";
 import { LEGEND_MAX_W, LEGEND_MIN_W, LegendStamp, MarkupEl, SelectionEl } from "../../markups/render";
 import { AddToChestDialog, ContextMenu, DRAW_TOOLS, MarkupBar, MarkupsList, TextEditOverlay, ToolChest, type MenuItem } from "../../markups/panels";
-import { attachWeldMap, exportWeldMap } from "../../markups/exportMap";
+import { attachWeldMap, exportWeldMap, printWeldMap } from "../../markups/exportMap";
 import { bboxPx, normBox, type PM, type Style } from "../../markups/model";
 import type { MarkupTool } from "../../types";
 import { isIncomplete, missingAttributes } from "../../incomplete";
@@ -662,8 +662,9 @@ export function WeldAnnotator({
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [welds]);
 
-  // Flatten the sheet (drawing + bubbles + legend + markups) to a PDF.
-  const doExport = async (mode: "reveal" | "open" | "attach") => {
+  // Flatten the sheet (drawing + bubbles + legend + markups) and print it,
+  // save it as a PDF, open it, or file it in the quality package.
+  const doExport = async (mode: "print" | "reveal" | "open" | "attach") => {
     setExportMenu(false);
     setExporting(true);
     try {
@@ -678,9 +679,11 @@ export function WeldAnnotator({
         welds, markups: editor.all,
         legend: { place: { x: legendPos.x, y: legendPos.y, w: legendW }, totals, on: legendOn },
         fileName: `weld-map-${tag}.pdf`,
-        mode: (mode === "attach" ? "reveal" : mode) as "reveal" | "open",
+        mode: (mode === "open" ? "open" : "reveal") as "reveal" | "open",
       };
-      if (mode === "attach") {
+      if (mode === "print") {
+        await printWeldMap(opts);
+      } else if (mode === "attach") {
         await attachWeldMap(opts, drawing.work_order!, `Flattened weld map · ${welds.length} welds · ${editor.all.length} markups`);
         toast.push("ok", "Weld map filed in the quality package");
       } else {
@@ -962,13 +965,15 @@ export function WeldAnnotator({
             )
           )}
           <button className="btn btn-sm" title="Markups list — every redline on this sheet" onClick={() => setListOpen((v) => !v)}><Icon name="menu" size={14} />{editor.pageMarkups.length ? ` ${editor.pageMarkups.length}` : ""}</button>
-          <div className="wo-more">
-            <button className="btn btn-sm" title="Export the flattened weld map (drawing + bubbles + legend + markups) as a PDF" onClick={() => setExportMenu((v) => !v)} disabled={exporting}>{exporting ? "Exporting…" : <><Icon name="download" size={13} /> Weld map</>}</button>
+          <div className="wo-more btn-split">
+            <button className="btn btn-sm" title="Print the weld map — drawing, bubbles, legend and markups on every sheet — to hand to the NDE tech" onClick={() => doExport("print")} disabled={exporting}><Icon name="printer" size={13} /> {exporting ? "Preparing…" : "Print"}</button>
+            <button className="btn btn-sm btn-caret" title="Other ways to get the weld map out" aria-label="More export options" aria-expanded={exportMenu} onClick={() => setExportMenu((v) => !v)} disabled={exporting}><Icon name="chevronDown" size={12} /></button>
             {exportMenu && (
               <div className="wo-more-menu" onMouseLeave={() => setExportMenu(false)}>
-                <button onClick={() => doExport("reveal")}>Save PDF…</button>
-                <button onClick={() => doExport("open")}>Open / Print</button>
-                {drawing.work_order && editable && <button onClick={() => doExport("attach")}>Attach to quality package</button>}
+                <button onClick={() => doExport("print")}><span className="ico"><Icon name="printer" size={14} /></span> Print…</button>
+                <button onClick={() => doExport("open")}><span className="ico"><Icon name="file" size={14} /></span> Open as PDF</button>
+                <button onClick={() => doExport("reveal")}><span className="ico"><Icon name="download" size={14} /></span> Save as PDF…</button>
+                {drawing.work_order && editable && <button onClick={() => doExport("attach")}><span className="ico"><Icon name="paperclip" size={14} /></span> Attach to quality package</button>}
               </div>
             )}
           </div>
@@ -1165,6 +1170,7 @@ const COACH = [
   { eyebrow: "Step 2", title: "Drop it", body: "Click again where the bubble should sit. The W-number auto-increments and your welder stays selected — keep clicking down the line, no stopping." },
   { eyebrow: "Two welders on one spool?", title: "Swap seamlessly", body: "Switch the active welder anytime — or press number keys 1–9. The weld numbering keeps right on going." },
   { eyebrow: "The efficient way", title: "Place all, then fill", body: "Get every bubble down first, then hit “Fill attributes”. The map jumps to each weld and pulses it while a small card pops up right beside it, so you never lose track of which one is W4." },
+  { eyebrow: "Handing it off", title: "Print it for the NDE tech", body: "Hit “Print”. Every sheet prints with the bubbles — welder ID on top, weld number below — and the legend where you placed it, so the tech knows exactly which weld is which." },
 ];
 
 function CoachMarks({ onDone }: { onDone: () => void }) {

@@ -1066,10 +1066,15 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, label.btn:focus
 .wo-tab.active { color: var(--navy); border-bottom-color: var(--navy); }
 .wo-more { position: relative; }
 .wo-more-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 6px; min-width: 220px; display: flex; flex-direction: column; animation: modalIn var(--dur) var(--ease); }
-.wo-more-menu button { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; text-align: left; padding: 8px 12px; border-radius: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+.wo-more-menu button { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; text-align: left; padding: 8px 12px; border-radius: 7px; font-size: 13px; color: var(--text); cursor: pointer; white-space: nowrap; }
 .wo-more-menu button .ico { color: var(--text-muted); }
 .wo-more-menu button:hover { background: var(--surface-2); }
 .wo-more-menu button.danger { color: var(--danger); }
+/* Split button: a primary action with a caret that opens the other options. */
+.btn-split { display: inline-flex; align-items: stretch; }
+.btn-split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.btn-split > .btn-caret { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding-left: 7px; padding-right: 7px; min-width: 0; }
+.btn-split > .btn-caret[aria-expanded="true"] { background: var(--surface-2); }
 
 /* Batch NDE recorder */
 .nde-batch-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; margin-top: 4px; }
