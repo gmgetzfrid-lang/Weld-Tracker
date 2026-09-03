@@ -1,19 +1,20 @@
 //! Weld-log CRUD, filtering, and the rejected-weld repair workflow.
 
-use crate::{nde, weld_inches, Error, Result, Store, Weld, WeldFilter};
+use crate::nde::{NdeInputs, NdeRequirement, RuleSet};
+use crate::{weld_inches, Error, Result, Store, Weld, WeldFilter};
 use rusqlite::{params, params_from_iter, Row, ToSql};
 
-/// The EP 5-5-1 Table 4 requirement for a (possibly partial) weld — the live
-/// readout the entry form shows as the user fills in the drivers. Single source
-/// of truth: the same engine `apply_derived` uses on save.
-pub fn requirement_for_weld(w: &Weld) -> nde::NdeRequirement {
-    nde::table4(&nde_inputs_for(w))
+/// The required NDE coverage for a (possibly partial) weld under a rule set —
+/// the live readout the entry form shows as the user fills in the drivers.
+/// Single source of truth: the same engine `apply_derived` uses on save.
+pub fn requirement_for_weld(rules: &RuleSet, w: &Weld) -> NdeRequirement {
+    rules.evaluate(&nde_inputs_for(w))
 }
 
-/// Build the Table 4 inputs from a weld. Material group falls back to the
+/// Build the engine inputs from a weld. Material group falls back to the
 /// free-text `material`; the tie-in flag honours both the boolean and the
 /// legacy `old_to_new = 'Y'` text; the governing wall falls back to thickness.
-pub(crate) fn nde_inputs_for(w: &Weld) -> nde::NdeInputs<'_> {
+pub(crate) fn nde_inputs_for(w: &Weld) -> NdeInputs<'_> {
     let mg = w
         .material_group
         .as_deref()
@@ -24,7 +25,7 @@ pub(crate) fn nde_inputs_for(w: &Weld) -> nde::NdeInputs<'_> {
             .as_deref()
             .map(|s| s.eq_ignore_ascii_case("Y"))
             .unwrap_or(false);
-    nde::NdeInputs {
+    NdeInputs {
         b31_code: w.b31_code.as_deref(),
         service_category: w.service_category.as_deref(),
         material_group: mg,
@@ -40,28 +41,20 @@ pub(crate) fn nde_inputs_for(w: &Weld) -> nde::NdeInputs<'_> {
     }
 }
 
-/// The facility's default NDE coverage for a weld, from its shop/field status
-/// and whether it is a new-to-old tie-in. A tie-in is 100% regardless of
-/// shop/field; otherwise shop welds are 5% and field welds 10%. Returns None
-/// when neither rule applies (so the spec is left for the user to set).
-pub(crate) fn default_spec_for(
+/// The facility's default NDE coverage spec for a weld, from its shop/field
+/// status and whether it is a new-to-old tie-in — as configured in the active
+/// rule set's facility defaults. None when the rule is off or neither applies
+/// (so the spec is left for the user to set).
+pub(crate) fn default_spec_for<'a>(
+    rules: &'a RuleSet,
     old_to_new: Option<&str>,
     shop_or_field: Option<&str>,
-) -> Option<&'static str> {
-    if old_to_new.map(|s| s.eq_ignore_ascii_case("Y")).unwrap_or(false) {
-        return Some("100%"); // new-to-old tie-in
-    }
-    let sf = shop_or_field.unwrap_or("").to_uppercase();
-    if sf == "SHOP" {
-        Some("5%")
-    } else if sf == "FW" || sf.contains("FIELD") {
-        Some("10%")
-    } else {
-        None
-    }
+) -> Option<&'a str> {
+    let tie_in = old_to_new.map(|s| s.eq_ignore_ascii_case("Y")).unwrap_or(false);
+    rules.facility_default_spec(tie_in, shop_or_field)
 }
 
-const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
+pub(crate) const COLS: &str = "id, unit, drawing_no, work_order, line_spec,
     spec_5, spec_10, spec_20, spec_25, spec_50, spec_100,
     material, schedule, size, thickness, weld_inches, joint_type, old_to_new,
     weld_number, count_omission, stamp_number, date_welded, shop_or_field,
@@ -145,8 +138,8 @@ fn weld_write_values(w: &Weld) -> Vec<Box<dyn ToSql>> {
     ]
 }
 
-fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
-    let mut w = Weld {
+pub(crate) fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
+    let w = Weld {
         id: r.get("id")?,
         unit: r.get("unit")?,
         drawing_no: r.get("drawing_no")?,
@@ -243,21 +236,16 @@ fn weld_from_row(r: &Row) -> rusqlite::Result<Weld> {
         nde_override_reason: r.get("nde_override_reason")?,
         nde_lot_id: r.get("nde_lot_id")?,
     };
-    // Legacy rows saved before migration 0009 have no snapshot — compute it live
-    // so the readout is never blank. (New writes always persist the snapshot.)
-    if w.expected_nde_percent.is_none() {
-        apply_nde_snapshot(&mut w);
-    }
     Ok(w)
 }
 
-/// Compute the EP 5-5-1 Table 4 requirement for a weld and write the frozen
-/// snapshot fields onto it. Called at write time (so the outcome is persisted
+/// Compute the required NDE coverage for a weld under `rules` and write the
+/// frozen snapshot fields onto it. Called at write time (so the outcome is persisted
 /// against the rule set in force) and as a read-time fallback for pre-snapshot
 /// rows. The actual `nde_percent` is never touched — only the *expected*
 /// requirement is derived here.
-fn apply_nde_snapshot(w: &mut Weld) {
-    let req = nde::table4(&nde_inputs_for(w));
+pub(crate) fn apply_nde_snapshot(rules: &RuleSet, w: &mut Weld) {
+    let req = rules.evaluate(&nde_inputs_for(w));
     w.required_nde_method = Some(req.method.clone());
     w.expected_nde_percent = Some(format!("{}%", req.required_percent));
     w.expected_nde_method = Some(req.method.clone());
@@ -274,6 +262,14 @@ fn apply_nde_snapshot(w: &mut Weld) {
     } else {
         Some(req.blockers.join("; "))
     };
+}
+
+/// Rows saved before migration 0009 carry no snapshot — compute it live under
+/// the active rules so the readout is never blank. New writes always persist it.
+pub(crate) fn hydrate_weld(rules: &RuleSet, w: &mut Weld) {
+    if w.expected_nde_percent.is_none() {
+        apply_nde_snapshot(rules, w);
+    }
 }
 
 /// The QC-meaningful fields of a weld, as (label, value) pairs, for the
@@ -378,6 +374,7 @@ impl Store {
     /// Recompute derived fields (weld inches, wall thickness) the way the
     /// workbook formulas did.
     fn apply_derived(&self, w: &mut Weld) -> Result<()> {
+        let rules = self.rules();
         // Keep the tie-in boolean and the legacy `old_to_new` text in sync so
         // both the new engine and the older reports agree on tie-in status.
         let tie_in = w.new_to_existing
@@ -396,8 +393,8 @@ impl Store {
             .map(|s| s.trim().is_empty())
             .unwrap_or(true)
         {
-            if let Some(g) = nde::classify_material(w.material.as_deref()) {
-                w.material_group = Some(nde::group_label(g).to_string());
+            if let Some(k) = rules.material_group_key(w.material.as_deref()) {
+                w.material_group = Some(k);
             }
         }
 
@@ -424,12 +421,12 @@ impl Store {
             w.governing_wall = w.thickness;
         }
 
-        // EP 5-5-1 Table 4: compute the required NDE coverage and freeze the
+        // Compute the required NDE coverage under the active rules and freeze the
         // snapshot (percent, method, note, rule set, resolved flag, blockers)
         // onto the row so a future rule change never silently re-scores it. The
         // actual `nde_percent` is left exactly as entered — blank until the user
         // records it — so the form never shows a value nobody chose.
-        apply_nde_snapshot(w);
+        apply_nde_snapshot(&rules, w);
         // NDE % drives the coverage-spec flags the level reports group on.
         if let Some(p) = w.nde_percent.as_deref() {
             let d: String = p.chars().filter(|c| c.is_ascii_digit()).collect();
@@ -459,12 +456,15 @@ impl Store {
     }
 
     pub fn get_weld(&self, id: i64) -> Result<Weld> {
+        let rules = self.rules();
         let conn = self.conn.lock().unwrap();
         let sql = format!("SELECT {COLS} FROM welds WHERE id = ?1");
         let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query(params![id])?;
         let row = rows.next()?.ok_or(Error::NotFound)?;
-        weld_from_row(row).map_err(Error::from)
+        let mut w = weld_from_row(row)?;
+        hydrate_weld(&rules, &mut w);
+        Ok(w)
     }
 
     fn build_filter(f: &WeldFilter) -> (String, Vec<Box<dyn ToSql>>) {
@@ -513,10 +513,15 @@ impl Store {
         let sql = format!(
             "SELECT {COLS} FROM welds {where_sql} ORDER BY id DESC LIMIT {limit} OFFSET {offset}"
         );
+        let rules = self.rules();
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(args.iter()), weld_from_row)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut out: Vec<Weld> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        for w in &mut out {
+            hydrate_weld(&rules, w);
+        }
+        Ok(out)
     }
 
     pub fn count_welds(&self, f: &WeldFilter) -> Result<i64> {
@@ -536,6 +541,7 @@ impl Store {
     pub fn weld_exceptions(&self, wo: Option<&str>) -> Result<crate::validate::ExceptionsSummary> {
         use crate::validate::{self, Finding, Severity, WeldException};
 
+        let rules = self.rules();
         let conn = self.conn.lock().unwrap();
         let mut sql = format!(
             "SELECT {COLS} FROM welds
@@ -596,7 +602,7 @@ impl Store {
             ..Default::default()
         };
         for w in &welds {
-            let mut findings = validate::validate_weld(w);
+            let mut findings = validate::validate_weld(&rules, w);
             // Layer the repair-chain rule onto a rejected weld.
             if let Some(pos) = findings.iter().position(|f| f.code == "result.rejected") {
                 if has_repair(w) {
@@ -958,6 +964,7 @@ impl Store {
     /// is the "don't walk away with 200 half-filled welds" signal: it feeds the
     /// attention list, the topbar badge, the work-order directory and record.
     pub fn incomplete_work_orders(&self) -> Result<Vec<IncompleteWo>> {
+        let rules = self.rules();
         let welds: Vec<Weld> = {
             let conn = self.conn.lock().unwrap();
             let mut stmt = conn.prepare(&format!(
@@ -968,7 +975,7 @@ impl Store {
         };
         let mut by_wo: std::collections::BTreeMap<String, IncompleteWo> = std::collections::BTreeMap::new();
         for w in &welds {
-            let missing = crate::validate::missing_attributes(w);
+            let missing = crate::validate::missing_attributes(&rules, w);
             if missing.is_empty() {
                 continue;
             }

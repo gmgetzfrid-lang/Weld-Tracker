@@ -6,6 +6,7 @@ import { ErrorBox, localTime, useToast } from "../components/ui";
 import { APP_NAME, APP_VERSION } from "../version";
 import { ChangePassword } from "./ChangePassword";
 import { Icon } from "../components/Icon";
+import { useNdeRules } from "../ndeRules";
 
 const BRAND_FIELDS: [string, string][] = [
   ["company_name", "Company Name"],
@@ -18,8 +19,9 @@ const LOOKUP_KINDS = [
   "joint_type", "material", "schedule", "status", "process", "shop_field",
 ];
 
-export function SettingsPage() {
+export function SettingsPage({ onOpenRules }: { onOpenRules?: () => void }) {
   const { can } = useAuth();
+  const nde = useNdeRules();
   const toast = useToast();
   const [settings, setSettings] = useState<Settings>({});
   const [lookups, setLookups] = useState<Lookups>({});
@@ -119,6 +121,26 @@ export function SettingsPage() {
           </p>
         </div>
       )}
+
+      <div className="card card-pad">
+        <h3>Examination rules</h3>
+        <p className="muted">
+          The NDE table every weld's required coverage is computed from — service and material rows with shop and field
+          percentages, the vocabularies, the tie-in override, supplemental rules, coverage specs and progressive sampling.
+          Nothing is hard-coded: an administrator can change it and activate a new revision.
+        </p>
+        <dl className="kv">
+          <dt>In force</dt><dd>{nde.rules ? <>{nde.rules.name} <span className="badge badge-green" style={{ marginLeft: 6 }}>{nde.rules.id}</span></> : "…"}</dd>
+          <dt>Revision</dt><dd style={{ fontWeight: 400 }}>{nde.rules?.revision || "—"}</dd>
+          <dt>Source</dt><dd style={{ fontWeight: 400 }}>{nde.rules?.source || "—"}</dd>
+          <dt>Coverage rows</dt><dd style={{ fontWeight: 400 }}>{nde.rules ? `${nde.rules.rows.length} rows · ${nde.rules.specs.length} coverage specs · ${nde.rules.materials.length} material groups` : "—"}</dd>
+        </dl>
+        {onOpenRules && (
+          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={onOpenRules}>
+            <Icon name="sliders" size={14} /> {can("admin") ? "Open the rules editor" : "View the examination rules"}
+          </button>
+        )}
+      </div>
 
       {can("editor") && (
         <div className="card card-pad">

@@ -21,6 +21,7 @@ import { Legend } from "./pages/Legend";
 import { Instructions } from "./pages/Instructions";
 import { Users } from "./pages/Users";
 import { SettingsPage } from "./pages/SettingsPage";
+import { NdeRulesPage } from "./pages/NdeRulesPage";
 
 type PageKey =
   | "dashboard"
@@ -43,7 +44,8 @@ type PageKey =
   | "legend"
   | "instructions"
   | "users"
-  | "settings";
+  | "settings"
+  | "nderules";
 
 interface NavDef {
   key: PageKey;
@@ -52,6 +54,8 @@ interface NavDef {
   group: string;
   desc: string;
   admin?: boolean;
+  /** Reached from another page, not from the rail. */
+  hidden?: boolean;
 }
 
 const NAV: NavDef[] = [
@@ -66,7 +70,8 @@ const NAV: NavDef[] = [
   { key: "legend", label: "Criteria Legend", icon: "book", group: "Reference", desc: "What each line-spec criteria category means." },
   { key: "instructions", label: "Instructions", icon: "info", group: "Reference", desc: "How the app works: repair procedure, statuses and key terms." },
   { key: "users", label: "Users", icon: "key", group: "Administration", admin: true, desc: "Create login profiles and set who can view or edit." },
-  { key: "settings", label: "Settings", icon: "sliders", group: "Administration", admin: true, desc: "Branding, dropdown lists, backups and support." },
+  { key: "settings", label: "Settings", icon: "sliders", group: "Administration", admin: true, desc: "Branding, dropdown lists, examination rules, backups and support." },
+  { key: "nderules", label: "Examination Rules", icon: "sliders", group: "Administration", admin: true, hidden: true, desc: "The NDE coverage table and vocabularies every requirement is computed from." },
 ];
 
 /** Where the Work Orders page should open when navigated to from elsewhere. */
@@ -164,7 +169,7 @@ export function App() {
           </div>
           <nav className="rail-nav">
             {groups.map((g) => {
-              const items = NAV.filter((n) => n.group === g && (!n.admin || can("admin")));
+              const items = NAV.filter((n) => n.group === g && !n.hidden && (!n.admin || can("admin")));
               if (items.length === 0) return null;
               return (
                 <div key={g} className="rail-group">
@@ -316,7 +321,9 @@ function PageView({
     case "users":
       return <Users />;
     case "settings":
-      return <SettingsPage />;
+      return <SettingsPage onOpenRules={() => onNavigate("nderules")} />;
+    case "nderules":
+      return <NdeRulesPage onBack={() => onNavigate("settings")} />;
     default:
       return null;
   }

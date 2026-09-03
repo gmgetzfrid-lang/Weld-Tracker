@@ -186,6 +186,51 @@ export interface NdeRequirement {
   rule_set: string;
 }
 
+// ---------------------------------------------------------------------------
+// NDE examination rule sets (weldcore::nde::RuleSet) — the configurable table
+// the engine runs on. Mirrors the Rust structs field for field.
+// ---------------------------------------------------------------------------
+export type NdeJointKind = "butt" | "fillet" | "socket" | "olet" | "other";
+export type NdeColumn = "rt" | "ptmt";
+export type NdeSupplementalKind = "nps" | "wall";
+export type NdeSpecMode = "percent" | "two_form";
+
+export interface NdeCodeDef { key: string; label: string; aliases: string[]; is_default: boolean; service_required: boolean }
+export interface NdeServiceDef { key: string; label: string; aliases: string[]; ptmt_final_pass_only: boolean; note: string }
+export interface NdeMaterialDef { key: string; label: string; p_numbers: string; aliases: string[] }
+export interface NdeJointDef { kind: NdeJointKind; label: string; aliases: string[]; column: NdeColumn; method: string; root_and_final: boolean; notes: string[] }
+export interface NdeLocationDef { shop: string[]; field: string[] }
+export interface NdeCoverageRow {
+  id: string; label: string;
+  codes: string[]; services: string[]; materials: string[];
+  class_min: number | null; class_max: number | null; aes: boolean | null;
+  temp_above_f: number | null; temp_from_f: number | null; temp_to_f: number | null; pressure_above_psig: number | null;
+  rt_shop: number; rt_field: number; ptmt_shop: number; ptmt_field: number;
+  note: string; cite: string;
+}
+export interface NdeTieInRule { enabled: boolean; rt_percent: number; ptmt_percent: number; note: string }
+export interface NdeSupplementalRule {
+  id: string; label: string; kind: NdeSupplementalKind;
+  nps_min: number | null; nps_below: number | null; wall_over: number | null;
+  materials: string[]; only_below_100_rt: boolean; text: string;
+}
+export interface NdeSpecDef { label: string; percent: number; mode: NdeSpecMode; aliases: string[]; description: string }
+export interface NdeProgressiveRule { enabled: boolean; extra_after_reject: number[]; full_after_rejects: number }
+export interface NdeFacilityDefaults { enabled: boolean; shop_spec: string; field_spec: string; tie_in_spec: string }
+export interface NdeRuleSet {
+  id: string; name: string; revision: string; table_label: string; source: string; notes: string;
+  codes: NdeCodeDef[]; services: NdeServiceDef[]; materials: NdeMaterialDef[]; flange_classes: string[];
+  joints: NdeJointDef[]; locations: NdeLocationDef; rows: NdeCoverageRow[]; tie_in: NdeTieInRule;
+  other_joint_note: string; supplemental: NdeSupplementalRule[]; specs: NdeSpecDef[];
+  progressive: NdeProgressiveRule; facility_defaults: NdeFacilityDefaults;
+}
+export interface NdeRuleSetMeta {
+  id: string; name: string; revision: string; status: "active" | "draft" | "retired"; builtin: boolean;
+  created_by: string | null; created_at: string; updated_by: string | null; updated_at: string;
+  activated_at: string | null; weld_count: number;
+}
+export interface NdeReevaluateOutcome { scanned: number; changed: number; unresolved: number; rule_set: string }
+
 /** One hit from the global (Ctrl+K) search. */
 export interface SearchHit {
   kind: "work_order" | "welder" | "drawing" | "weld";

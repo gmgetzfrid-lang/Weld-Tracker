@@ -20,9 +20,9 @@
 //! * Turnover: after the configured length (default three months) the lot is
 //!   either rolled automatically or the user is prompted, per configuration.
 
+use crate::nde::SpecMode;
 use crate::reports::{
-    canonical_spec_index, spec_predicate_sql, NdeSpecStat, PerformanceReport, PerformanceRow,
-    ReportScope,
+    spec_predicate_sql, NdeSpecStat, PerformanceReport, PerformanceRow, ReportScope,
 };
 use crate::{Error, Result, Store, Weld};
 use chrono::{Local, Months, NaiveDate};
@@ -252,15 +252,6 @@ fn months_to_days(from: NaiveDate, months: i64) -> i64 {
     let m = months.clamp(1, 120) as u32;
     let due = from.checked_add_months(Months::new(m)).unwrap_or(from);
     (due - from).num_days().max(1)
-}
-
-/// Canonical spec index (0=5%, 1=10%, 2=20%, 3=100%, 4=API 570) from a spec
-/// stat's label.
-fn spec_index_of(spec: &str) -> usize {
-    ["5%", "10%", "20%", "100%", "API 570"]
-        .iter()
-        .position(|l| *l == spec)
-        .unwrap_or(0)
 }
 
 fn nonblank(s: Option<&str>) -> Option<&str> {
@@ -1318,6 +1309,7 @@ impl Store {
     /// Un-examined, resolvable welds per (work order, welder, spec) in a lot —
     /// the pool an owed examination can be drawn from.
     fn lot_candidates(&self, lot_id: i64) -> Result<Vec<(String, String, usize, i64)>> {
+        let rules = self.rules();
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&format!(
             "SELECT COALESCE(work_order, ''), stamp_number, nde_percent, COUNT(*)
@@ -1338,7 +1330,7 @@ impl Store {
         let mut out = Vec::new();
         for row in rows {
             let (wo, stamp, pct, n) = row?;
-            if let Some(idx) = canonical_spec_index(pct.as_deref()) {
+            if let Some(idx) = rules.spec_index(pct.as_deref()) {
                 out.push((wo, stamp, idx, n));
             }
         }
@@ -1353,6 +1345,7 @@ impl Store {
         if !cfg.enabled {
             return Ok(WoLotSummary::default());
         }
+        let rules = self.rules();
         let wo = nonblank(Some(work_order)).unwrap_or("");
         let (lots, pinned) = {
             let conn = self.conn.lock().unwrap();
@@ -1388,7 +1381,7 @@ impl Store {
             let cands = self.lot_candidates(l.lot_id)?;
             for row in &rep.rows {
                 for s in row.specs.iter().filter(|s| s.shortfall > 0) {
-                    let idx = spec_index_of(&s.spec);
+                    let idx = rules.spec_index_of_label(&s.spec).unwrap_or(0);
                     if let Some((_, _, _, n)) = cands.iter().find(|(cwo, stamp, cidx, _)| {
                         cwo.eq_ignore_ascii_case(wo)
                             && stamp.eq_ignore_ascii_case(&row.stamp)
@@ -1464,6 +1457,7 @@ impl Store {
         stamp: Option<&str>,
     ) -> Result<Vec<SuggestedExam>> {
         let rep = self.report_performance_scoped(ReportScope::Lot(lot_id))?;
+        let rules = self.rules();
         let mut out = Vec::new();
         let conn = self.conn.lock().unwrap();
         for row in rep.rows.iter().filter(|r| {
@@ -1472,8 +1466,9 @@ impl Store {
                 .unwrap_or(true)
         }) {
             for s in row.specs.iter().filter(|s| s.shortfall > 0) {
-                let idx = spec_index_of(&s.spec);
-                let limit = if idx == 4 { i64::MAX } else { s.shortfall };
+                let idx = rules.spec_index_of_label(&s.spec).unwrap_or(0);
+                let two_form = rules.specs.get(idx).map(|d| d.mode == SpecMode::TwoForm).unwrap_or(false);
+                let limit = if two_form { i64::MAX } else { s.shortfall };
                 let sql = format!(
                     "SELECT id, weld_number, work_order, drawing_no, joint_type, size, date_welded, required_nde_method
                      FROM welds
@@ -1482,7 +1477,7 @@ impl Store {
                        AND COALESCE(expected_nde_resolved, 1) = 1
                        AND {}
                      ORDER BY RANDOM() LIMIT ?3",
-                    spec_predicate_sql(idx)
+                    spec_predicate_sql(&rules, idx)
                 );
                 let mut stmt = conn.prepare(&sql)?;
                 let reason = if s.progressive_extra > 0 {
@@ -1490,10 +1485,10 @@ impl Store {
                         "{} spec — {} owed ({} of that is progressive sampling: {})",
                         s.spec, s.shortfall, s.progressive_extra, s.sampling_level
                     )
-                } else if idx == 4 {
+                } else if two_form {
                     format!(
-                        "API 570 — every weld needs its two NDE forms ({} short)",
-                        s.shortfall
+                        "{} — every weld needs its two NDE forms ({} short)",
+                        s.spec, s.shortfall
                     )
                 } else {
                     format!(
@@ -1579,6 +1574,7 @@ impl Store {
     }
 
     fn lot_items(&self, cfg: &LotConfig) -> Result<Vec<AttentionItem>> {
+        let rules = self.rules();
         let lots = self.list_lots()?;
         let mut items: Vec<AttentionItem> = Vec::new();
         let snoozed = cfg
@@ -1619,7 +1615,7 @@ impl Store {
                             "unresolved",
                             "error",
                             format!("{} weld{} in {} can't be scored", lot.unresolved, if lot.unresolved == 1 { "" } else { "s" }, lot.lot_no),
-                            "Their Table 4 drivers are missing, so the required NDE % is unknown. Fix them before the lot closes.".into(),
+                            format!("Their {} drivers are missing, so the required NDE % is unknown. Fix them before the lot closes.", rules.table_label),
                             lot.unresolved,
                         ));
                     }
@@ -1687,7 +1683,7 @@ impl Store {
             let cands = self.lot_candidates(lot.id)?;
             for row in &rep.rows {
                 for s in row.specs.iter().filter(|s| s.shortfall > 0) {
-                    let idx = spec_index_of(&s.spec);
+                    let idx = rules.spec_index_of_label(&s.spec).unwrap_or(0);
                     let mut left = s.shortfall;
                     for (wo, stamp, cidx, n) in &cands {
                         if left == 0 {

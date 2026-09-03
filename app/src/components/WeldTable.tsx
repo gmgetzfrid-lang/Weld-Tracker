@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { ConfirmDialog, StatusBadge, useToast } from "./ui";
 import { InlineMulti, InlineSelect, InlineText, Segmented } from "./inline";
 import { Icon } from "./Icon";
+import { useNdeRules } from "../ndeRules";
 
 /** Hideable grid columns, in display order. */
 const COLS_DEF: { key: string; label: string }[] = [
@@ -58,6 +59,7 @@ export function WeldTable({
   onOpenWorkOrder?: (wo: string) => void;
   initialEdit?: boolean;
 }) {
+  const { tableLabel } = useNdeRules();
   const toast = useToast();
   const { user } = useAuth();
   // Non-admins may delete only the welds they created themselves.
@@ -245,7 +247,7 @@ export function WeldTable({
               <th className="sortable" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>Weld # <Icon name={sortDir === "asc" ? "chevronUp" : "chevronDown"} size={12} stroke={2.4} /></th>
               {showWorkOrder && <th>Work Order</th>}
               {showCol("drawing") && <th>Drawing</th>}
-              {showCol("nde_percent") && <th title="Assigned NDE coverage — the calculated Table 4 requirement is in the row detail">NDE %</th>}
+              {showCol("nde_percent") && <th title="Assigned NDE coverage — the calculated requirement is in the row detail">NDE %</th>}
               {showCol("joint") && <th>Joint Type</th>}
               {showCol("size") && <th className="num" title="Nominal pipe size">Size</th>}
               {showCol("schedule") && <th>Schedule</th>}
@@ -267,7 +269,7 @@ export function WeldTable({
             {sorted.map((w) => {
               const rt = w.nde_result === "Rejected" ? "Rejected" : w.nde_result === "Accepted" ? "Accepted" : "";
               const isOpen = open.has(w.id);
-              const warn = specWarning(w);
+              const warn = specWarning(w, tableLabel);
               return (
                 <Fragment key={w.id}>
                   <tr className={`${isOpen ? "wt-open" : ""}${w.voided_at ? " wt-voided" : ""}`}>
@@ -379,13 +381,13 @@ export function WeldTable({
 }
 
 /**
- * When a weld's logged NDE % falls *below* the EP 5-5-1 Table 4 requirement for
+ * When a weld's logged NDE % falls *below* the active rule set's requirement for
  * its service / material / class / joint, returns an explanatory message;
  * otherwise null. Over-inspection (a higher %) is allowed and never warns. The
  * backend supplies `expected_nde_percent`, `_method` and `_note` from the
  * single-source-of-truth engine.
  */
-function specWarning(w: Weld): string | null {
+function specWarning(w: Weld, label: string): string | null {
   // Don't assert a requirement before the drivers that determine it are known —
   // Shop/Field distinguishes 5% from 10%, so a blank one can't be judged.
   if (!w.shop_or_field || !w.joint_type) return null;
@@ -400,8 +402,8 @@ function specWarning(w: Weld): string | null {
   const method = w.expected_nde_method ? ` (${w.expected_nde_method})` : "";
   const note = w.expected_nde_note ? ` — ${w.expected_nde_note}` : "";
   return actualRaw
-    ? `Table 4 requires ${exp}${method}${note}. This weld is logged at ${actualRaw}, below spec.`
-    : `Table 4 requires ${exp}${method}${note}. This weld has no NDE % set.`;
+    ? `${label} requires ${exp}${method}${note}. This weld is logged at ${actualRaw}, below spec.`
+    : `${label} requires ${exp}${method}${note}. This weld has no NDE % set.`;
 }
 
 function DetailPanel({

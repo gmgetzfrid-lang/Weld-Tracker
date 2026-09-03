@@ -606,14 +606,98 @@ pub fn weld_exceptions(
     e(state.store()?.weld_exceptions(work_order.as_deref()))
 }
 
-/// Compute the EP 5-5-1 Table 4 required NDE coverage for a (partial) weld —
-/// the live readout the entry form shows while the drivers are being filled in.
-/// Uses the same engine the backend applies on save, so the form can never show
-/// a different requirement than the record is judged against.
+/// Compute the required NDE coverage for a (partial) weld under the active rule
+/// set — the live readout the entry form shows while the drivers are being
+/// filled in. Uses the same engine the backend applies on save, so the form can
+/// never show a different requirement than the record is judged against.
 #[tauri::command]
 pub fn compute_nde(state: State<AppState>, weld: Weld) -> R<weldcore::nde::NdeRequirement> {
     state.require_login()?;
-    Ok(weldcore::welds::requirement_for_weld(&weld))
+    let store = state.store()?;
+    Ok(weldcore::welds::requirement_for_weld(&store.rules(), &weld))
+}
+
+// --------------------------- NDE rule sets ---------------------------------
+//
+// The examination rules are data (weldcore::nde::RuleSet). Everyone signed in
+// may read them — the entry form, reports and the Settings page all show the
+// active set — while saving, activating, deleting and re-evaluating are admin
+// actions under document control (the active set is never edited in place).
+
+/// The rule set every new judgement uses right now.
+#[tauri::command]
+pub fn nde_rules_active(state: State<AppState>) -> R<weldcore::nde::RuleSet> {
+    state.require_login()?;
+    Ok((*state.store()?.rules()).clone())
+}
+
+#[tauri::command]
+pub fn nde_rules_list(state: State<AppState>) -> R<Vec<weldcore::rules::RuleSetMeta>> {
+    state.require_login()?;
+    e(state.store()?.list_rule_sets())
+}
+
+#[tauri::command]
+pub fn nde_rules_get(state: State<AppState>, id: String) -> R<weldcore::nde::RuleSet> {
+    state.require_login()?;
+    e(state.store()?.get_rule_set(&id))
+}
+
+/// A shipped rule set ("ep-5-5-1" or "asme-b31.3") as a starting point.
+#[tauri::command]
+pub fn nde_rules_preset(state: State<AppState>, key: String) -> R<weldcore::nde::RuleSet> {
+    state.require_login()?;
+    weldcore::nde::RuleSet::preset(&key).ok_or_else(|| format!("unknown preset \"{key}\""))
+}
+
+/// Problems with a (draft) rule set, in plain words — empty when it is usable.
+#[tauri::command]
+pub fn nde_rules_validate(state: State<AppState>, rule_set: weldcore::nde::RuleSet) -> R<Vec<String>> {
+    state.require_login()?;
+    Ok(rule_set.validate())
+}
+
+/// Try a weld against a draft rule set (or the active one when none is given)
+/// — the editor's "test a weld" panel.
+#[tauri::command]
+pub fn nde_rules_evaluate(
+    state: State<AppState>,
+    rule_set: Option<weldcore::nde::RuleSet>,
+    weld: Weld,
+) -> R<weldcore::nde::NdeRequirement> {
+    state.require_login()?;
+    let store = state.store()?;
+    let rs = match rule_set {
+        Some(r) => std::sync::Arc::new(r),
+        None => store.rules(),
+    };
+    Ok(weldcore::welds::requirement_for_weld(&rs, &weld))
+}
+
+#[tauri::command]
+pub fn nde_rules_save(state: State<AppState>, rule_set: weldcore::nde::RuleSet) -> R<weldcore::rules::RuleSetMeta> {
+    let u = state.require_admin()?;
+    e(state.store()?.save_rule_set(&rule_set, &u.username))
+}
+
+#[tauri::command]
+pub fn nde_rules_activate(state: State<AppState>, id: String) -> R<weldcore::rules::RuleSetMeta> {
+    let u = state.require_admin()?;
+    e(state.store()?.activate_rule_set(&id, &u.username))
+}
+
+#[tauri::command]
+pub fn nde_rules_delete(state: State<AppState>, id: String) -> R<()> {
+    let u = state.require_admin()?;
+    e(state.store()?.delete_rule_set(&id, &u.username))
+}
+
+/// Recompute the requirement of every live, not-yet-examined weld against the
+/// active rule set. Examined welds keep the judgement they were made under.
+#[tauri::command]
+pub fn nde_rules_reevaluate(state: State<AppState>) -> R<weldcore::rules::ReevaluateOutcome> {
+    let u = state.require_admin()?;
+    e(state.store()?.reevaluate_unexamined_welds(&u.username))
 }
 
 // --------------------------- drawings & bubbles ----------------------------

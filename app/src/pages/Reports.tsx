@@ -22,7 +22,7 @@ export type ReportTab =
 
 const TABS: { key: ReportTab; label: string; desc: string }[] = [
   { key: "performance", label: "Performance", desc: "Each welder's performance and proof they stayed at or above their assigned NDE spec — the distribution report." },
-  { key: "statistics", label: "NDE Compliance", desc: "Per-welder NDE compliance (5/10/20/100% + API 570) and reject-rate analysis." },
+  { key: "statistics", label: "NDE Compliance", desc: "Per-welder NDE compliance against every coverage spec, and reject-rate analysis." },
   { key: "welderstats", label: "Welder Statistics", desc: "Per-welder counts and reject rates by NDE examination level." },
   { key: "welderreport", label: "Welder", desc: "A single welder's full breakdown by joint type." },
   { key: "monthly", label: "Monthly", desc: "Weld counts, RT and rejects across the twelve months of a year." },

@@ -9,6 +9,7 @@
 //!   * "Brinnel" counts a non-empty `brinnel_complete`;
 //!   * RT %   = RT'd / welds   and   Reject rate = rejected / RT'd.
 
+use crate::nde::{progressive_required, ProgressiveRule, RuleSet, SpecMode};
 use crate::{Result, Store};
 use rusqlite::{types::Value, Row};
 use serde::Serialize;
@@ -220,27 +221,23 @@ impl NdeSpecStat {
     /// welds from the same lot; a reject among those calls for two more again;
     /// a third reject means every remaining weld of theirs in the lot (100%).
     /// Specs that already demand every weld (100%, API 570) have nothing to add.
-    fn apply_progressive(mut self, is_full_coverage: bool) -> Self {
+    fn apply_progressive(mut self, rule: &ProgressiveRule, is_full_coverage: bool) -> Self {
         if is_full_coverage || self.rejected == 0 || self.population == 0 {
             return self;
         }
         let base = self.required;
-        let (required, level) = match self.rejected {
-            1 => ((base + 2).min(self.population), "+2 after 1 reject"),
-            2 => ((base + 4).min(self.population), "+4 after 2 rejects"),
-            _ => (self.population, "100% after 3 rejects"),
-        };
+        let (required, level) = progressive_required(rule, base, self.population, self.rejected);
         self.required = required;
         self.progressive_extra = required - base;
-        self.sampling_level = level.to_string();
+        self.sampling_level = level;
         self.shortfall = (self.required - self.examined).max(0);
         self.compliant = self.examined >= self.required;
         self
     }
     /// Finalise a per-welder spec: required = ceil(population * pct / 100), or
-    /// the whole population for API 570 (every weld needs its two NDE forms).
-    fn finish_welder(mut self, is_api570: bool) -> Self {
-        self.required = if is_api570 {
+    /// the whole population for a two-form spec (every weld needs its two NDE forms).
+    fn finish_welder(mut self, is_two_form: bool) -> Self {
+        self.required = if is_two_form {
             self.population
         } else {
             // integer ceil of population * pct / 100
@@ -832,14 +829,13 @@ impl Store {
     /// fillet / branch / slip-on flange / socket welds. This is the meticulous
     /// per-welder tracking that keeps everyone at or above spec.
     pub fn report_nde_compliance(&self) -> Result<NdeComplianceReport> {
-        // Canonical spec order for stable output.
-        const SPECS: &[(&str, f64)] = &[
-            ("5%", 5.0),
-            ("10%", 10.0),
-            ("20%", 20.0),
-            ("100%", 100.0),
-            ("API 570", 100.0),
-        ];
+        // The coverage specs of the active rule set, in its order.
+        let rules = self.rules();
+        let rule_specs = &rules.specs;
+        let two_form = |i: usize| rule_specs.get(i).map(|s| s.mode == SpecMode::TwoForm).unwrap_or(false);
+        let empty_specs = || -> Vec<NdeSpecStat> {
+            rule_specs.iter().map(|s| NdeSpecStat::empty(&s.label, s.percent as f64)).collect()
+        };
 
         // Pull every countable, stamped weld's NDE-relevant fields.
         let raw: Vec<(String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = {
@@ -866,26 +862,18 @@ impl Store {
         // Accumulate per (stamp, spec-index). `inspected_by_stamp` counts welds
         // that were actually examined (a recorded result), the honest
         // denominator for reject rate.
-        let mut acc: std::collections::BTreeMap<String, [NdeSpecStat; 5]> =
+        let mut acc: std::collections::BTreeMap<String, Vec<NdeSpecStat>> =
             std::collections::BTreeMap::new();
         let mut inspected_by_stamp: std::collections::BTreeMap<String, i64> =
             std::collections::BTreeMap::new();
         for (stamp, nde_percent, nde_types, nde_result, joint_type, _nde_date, rt_date) in &raw {
-            let Some(spec_idx) = canonical_spec_index(nde_percent.as_deref()) else {
+            let Some(spec_idx) = rules.spec_index(nde_percent.as_deref()) else {
                 continue; // no recognised spec on this weld
             };
-            let entry = acc.entry(stamp.clone()).or_insert_with(|| {
-                [
-                    NdeSpecStat::empty(SPECS[0].0, SPECS[0].1),
-                    NdeSpecStat::empty(SPECS[1].0, SPECS[1].1),
-                    NdeSpecStat::empty(SPECS[2].0, SPECS[2].1),
-                    NdeSpecStat::empty(SPECS[3].0, SPECS[3].1),
-                    NdeSpecStat::empty(SPECS[4].0, SPECS[4].1),
-                ]
-            });
+            let entry = acc.entry(stamp.clone()).or_insert_with(empty_specs);
             let s = &mut entry[spec_idx];
             s.population += 1;
-            let is_api570 = spec_idx == 4;
+            let is_api570 = two_form(spec_idx);
             // "Inspected" means an NDE was actually performed and dispositioned —
             // a recorded result (or a legacy RT date). Planned NDE types or a
             // stray date alone do NOT count, so we never overstate coverage and
@@ -919,10 +907,7 @@ impl Store {
                 .unwrap_or_else(|| (String::new(), false))
         };
 
-        let mut fleet: Vec<NdeSpecStat> = SPECS
-            .iter()
-            .map(|(s, p)| NdeSpecStat::empty(s, *p))
-            .collect();
+        let mut fleet: Vec<NdeSpecStat> = empty_specs();
         let mut out: Vec<WelderNdeCompliance> = Vec::new();
         for (stamp, arr) in acc {
             let mut specs: Vec<NdeSpecStat> = Vec::new();
@@ -932,7 +917,7 @@ impl Store {
                 if s.population == 0 {
                     continue;
                 }
-                let s = s.finish_welder(i == 4);
+                let s = s.finish_welder(two_form(i));
                 tw += s.population;
                 te += s.examined;
                 tr += s.rejected;
@@ -1006,7 +991,7 @@ impl Store {
             for row in rows {
                 let (otn, sf, actual) = row?;
                 if let Some(expected) =
-                    crate::welds::default_spec_for(otn.as_deref(), sf.as_deref())
+                    crate::welds::default_spec_for(&rules, otn.as_deref(), sf.as_deref())
                 {
                     if !actual.unwrap_or_default().eq_ignore_ascii_case(expected) {
                         n += 1;
@@ -1042,17 +1027,12 @@ impl Store {
     /// NDE lot. In lot scope the requirement per welder per spec includes
     /// B31.3 progressive sampling on top of the base random percentage.
     pub fn report_performance_scoped(&self, scope: ReportScope) -> Result<PerformanceReport> {
-        const SPECS: &[(&str, f64)] = &[
-            ("5%", 5.0), ("10%", 10.0), ("20%", 20.0), ("100%", 100.0), ("API 570", 100.0),
-        ];
-        let empty_specs = || {
-            [
-                NdeSpecStat::empty(SPECS[0].0, SPECS[0].1),
-                NdeSpecStat::empty(SPECS[1].0, SPECS[1].1),
-                NdeSpecStat::empty(SPECS[2].0, SPECS[2].1),
-                NdeSpecStat::empty(SPECS[3].0, SPECS[3].1),
-                NdeSpecStat::empty(SPECS[4].0, SPECS[4].1),
-            ]
+        // The coverage specs of the active rule set, in its order.
+        let rules = self.rules();
+        let rule_specs = &rules.specs;
+        let two_form = |i: usize| rule_specs.get(i).map(|s| s.mode == SpecMode::TwoForm).unwrap_or(false);
+        let empty_specs = || -> Vec<NdeSpecStat> {
+            rule_specs.iter().map(|s| NdeSpecStat::empty(&s.label, s.percent as f64)).collect()
         };
 
         // Scope predicate: a date window, or one lot.
@@ -1126,7 +1106,7 @@ impl Store {
         };
 
         struct Acc {
-            specs: [NdeSpecStat; 5],
+            specs: Vec<NdeSpecStat>,
             weld_count: i64,
             weld_inches: f64,
             inspected: i64,
@@ -1178,10 +1158,10 @@ impl Store {
                     a.last_rt = Some(d);
                 }
             }
-            if let Some(idx) = canonical_spec_index(w.nde_percent.as_deref()) {
+            if let Some(idx) = rules.spec_index(w.nde_percent.as_deref()) {
                 let s = &mut a.specs[idx];
                 s.population += 1;
-                let met = if idx == 4 {
+                let met = if two_form(idx) {
                     api570_satisfied(w.joint_type.as_deref(), w.nde_types.as_deref())
                 } else {
                     inspected
@@ -1212,8 +1192,7 @@ impl Store {
         }
 
         let welders = self.list_welders(true, "name")?;
-        let mut fleet: Vec<NdeSpecStat> =
-            SPECS.iter().map(|(s, p)| NdeSpecStat::empty(s, *p)).collect();
+        let mut fleet: Vec<NdeSpecStat> = empty_specs();
         let mut rows: Vec<PerformanceRow> = Vec::new();
         let (mut tot_w, mut tot_in, mut tot_insp, mut tot_rej) = (0i64, 0.0f64, 0i64, 0i64);
 
@@ -1226,10 +1205,11 @@ impl Store {
                 if s.population == 0 {
                     continue;
                 }
-                let mut s = s.finish_welder(i == 4);
+                let full = two_form(i) || rule_specs.get(i).map(|d| d.percent >= 100).unwrap_or(false);
+                let mut s = s.finish_welder(two_form(i));
                 if progressive {
-                    // 100% and API 570 already require every weld.
-                    s = s.apply_progressive(i == 3 || i == 4);
+                    // Specs that already demand every weld have nothing to add.
+                    s = s.apply_progressive(&rules.progressive, full);
                 }
                 in_spec &= s.compliant;
                 worst = worst.max(s.shortfall);
@@ -1343,28 +1323,6 @@ impl Store {
     }
 }
 
-/// Map a weld's `nde_percent` value to a canonical spec index into `SPECS`
-/// (0=5%, 1=10%, 2=20%, 3=100%, 4=API 570). Returns None for unrecognised /
-/// unset specs so those welds sit outside compliance tracking.
-pub(crate) fn canonical_spec_index(nde_percent: Option<&str>) -> Option<usize> {
-    let p = nde_percent?.trim();
-    if p.is_empty() {
-        return None;
-    }
-    let up = p.to_uppercase();
-    if up.contains("API") || up.contains("570") {
-        return Some(4);
-    }
-    let digits: String = p.chars().filter(|c| c.is_ascii_digit()).collect();
-    match digits.as_str() {
-        "5" => Some(0),
-        "10" => Some(1),
-        "20" => Some(2),
-        "100" => Some(3),
-        _ => None,
-    }
-}
-
 /// Whether a weld's NDE was actually performed and dispositioned — a recorded
 /// result, or a legacy RT date. A planned NDE type or a bare date does NOT
 /// count, so coverage is never overstated and a welder below spec is never
@@ -1374,16 +1332,44 @@ pub(crate) fn was_examined(nde_result: Option<&str>, rt_date: Option<&str>) -> b
     has(nde_result) || has(rt_date)
 }
 
-/// SQL predicate selecting welds whose `nde_percent` maps to canonical spec
-/// index `idx` (mirrors `canonical_spec_index` closely enough for candidate
-/// picking: the digits of the text, or an API 570 mention).
-pub(crate) fn spec_predicate_sql(idx: usize) -> &'static str {
-    match idx {
-        0 => "CAST(nde_percent AS INTEGER) = 5 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
-        1 => "CAST(nde_percent AS INTEGER) = 10 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
-        2 => "CAST(nde_percent AS INTEGER) = 20 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
-        3 => "CAST(nde_percent AS INTEGER) = 100 AND UPPER(nde_percent) NOT LIKE '%API%' AND UPPER(nde_percent) NOT LIKE '%570%'",
-        _ => "(UPPER(nde_percent) LIKE '%API%' OR UPPER(nde_percent) LIKE '%570%')",
+/// SQL predicate selecting welds whose `nde_percent` names the rule set's spec
+/// `idx` (mirrors `RuleSet::spec_index` closely enough for candidate picking:
+/// the digits of the text, or a two-form spec's label / match terms).
+pub(crate) fn spec_predicate_sql(rules: &RuleSet, idx: usize) -> String {
+    let esc = |s: &str| s.trim().trim_start_matches('=').replace('\'', "''").to_uppercase();
+    let terms_of = |s: &crate::nde::SpecDef| -> Vec<String> {
+        std::iter::once(s.label.clone())
+            .chain(s.aliases.iter().cloned())
+            .map(|t| esc(&t))
+            .filter(|t| !t.is_empty())
+            .collect()
+    };
+    let two_form_terms: Vec<String> = rules
+        .specs
+        .iter()
+        .filter(|s| s.mode == SpecMode::TwoForm)
+        .flat_map(terms_of)
+        .collect();
+    match rules.specs.get(idx) {
+        Some(s) if s.mode == SpecMode::TwoForm => {
+            let ors: Vec<String> = terms_of(s)
+                .into_iter()
+                .map(|t| format!("UPPER(nde_percent) LIKE '%{t}%'"))
+                .collect();
+            if ors.is_empty() {
+                "0".to_string()
+            } else {
+                format!("({})", ors.join(" OR "))
+            }
+        }
+        Some(s) => {
+            let mut p = format!("CAST(nde_percent AS INTEGER) = {}", s.percent);
+            for t in &two_form_terms {
+                p.push_str(&format!(" AND UPPER(nde_percent) NOT LIKE '%{t}%'"));
+            }
+            p
+        }
+        None => "0".to_string(),
     }
 }
 

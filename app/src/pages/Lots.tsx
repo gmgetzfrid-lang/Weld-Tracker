@@ -8,6 +8,7 @@ import { ConfirmDialog, ErrorBox, Modal, Spinner, StatCard, downloadCsv, num, pc
 import { AttentionList, LotProgress, LotStatusChip, fmtD, weldSpan } from "../components/lots";
 import { downloadLotPdf, openLotPdf } from "../lotPdf";
 import { Icon } from "../components/Icon";
+import { useNdeRules } from "../ndeRules";
 
 const MONTH_CHOICES = [1, 2, 3, 4, 6, 12];
 
@@ -245,6 +246,7 @@ function LotDetail({
   onOpenWorkOrder: (wo: string) => void;
   onChanged: () => void;
 }) {
+  const nde = useNdeRules();
   const { can } = useAuth();
   const toast = useToast();
   const [card, setCard] = useState<LotCard | null>(null);
@@ -388,7 +390,7 @@ function LotDetail({
         ) : (
           <div className={`lot-banner ${card.unresolved ? "danger" : "warn"}`}>
             <b>Awaiting closeout.</b> Stopped taking welds {fmtD(lot.closing_on)} · {num(card.owed)} examination{card.owed === 1 ? "" : "s"} owed
-            {card.unresolved > 0 && <> · {num(card.unresolved)} weld{card.unresolved === 1 ? "" : "s"} can't be scored (fix their Table 4 drivers)</>}.
+            {card.unresolved > 0 && <> · {num(card.unresolved)} weld{card.unresolved === 1 ? "" : "s"} can't be scored (fix their {nde.tableLabel} drivers)</>}.
             Record the NDE below and it closes on its own.
           </div>
         )

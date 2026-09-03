@@ -6,7 +6,8 @@
 //! closeout gate. Keeping it here, not scattered across queries and components,
 //! means every surface agrees on what "out of spec" means.
 
-use crate::{nde, welds::requirement_for_weld, Weld};
+use crate::nde::{Joint, RuleSet};
+use crate::{welds::requirement_for_weld, Weld};
 use serde::Serialize;
 
 /// How much a finding matters. Errors block closeout; warnings need attention;
@@ -47,7 +48,7 @@ fn digits(s: &str) -> Option<i64> {
 /// The attributes a weld must carry before it counts as filled in — what a QC
 /// tech walks each bubble to enter. Returns the ones still missing, in the
 /// order the guided fill asks for them.
-pub fn missing_attributes(w: &Weld) -> Vec<&'static str> {
+pub fn missing_attributes(rules: &RuleSet, w: &Weld) -> Vec<&'static str> {
     let mut m = Vec::new();
     if blank(&w.stamp_number) {
         m.push("welder");
@@ -58,13 +59,13 @@ pub fn missing_attributes(w: &Weld) -> Vec<&'static str> {
     if w.size.is_none() {
         m.push("size");
     }
-    if nde::classify_joint(w.joint_type.as_deref()) == nde::Joint::Other {
+    if rules.classify_joint(w.joint_type.as_deref()) == Joint::Other {
         m.push("joint type");
     }
     if blank(&w.nde_percent) {
         m.push("NDE %");
     }
-    if !requirement_for_weld(w).resolved {
+    if !requirement_for_weld(rules, w).resolved {
         m.push("NDE drivers");
     }
     m
@@ -73,11 +74,11 @@ pub fn missing_attributes(w: &Weld) -> Vec<&'static str> {
 /// Validate a single weld against the QC rules that can be judged from the weld
 /// alone. Cross-weld rules (a rejected weld's repair child, cert continuity)
 /// are layered on at the store level — see `Store::weld_exceptions`.
-pub fn validate_weld(w: &Weld) -> Vec<Finding> {
+pub fn validate_weld(rules: &RuleSet, w: &Weld) -> Vec<Finding> {
     let mut f = Vec::new();
 
     // --- The NDE requirement itself -----------------------------------------
-    let req = requirement_for_weld(w);
+    let req = requirement_for_weld(rules, w);
     if !req.resolved {
         f.push(Finding::new(
             Severity::Error,
@@ -99,7 +100,7 @@ pub fn validate_weld(w: &Weld) -> Vec<Finding> {
     if w.size.is_none() {
         f.push(Finding::new(Severity::Warning, "field.size", "No pipe size (NPS) recorded"));
     }
-    if nde::classify_joint(w.joint_type.as_deref()) == nde::Joint::Other {
+    if rules.classify_joint(w.joint_type.as_deref()) == Joint::Other {
         f.push(Finding::new(Severity::Warning, "field.joint", "Joint type not set"));
     }
 
@@ -222,6 +223,10 @@ pub fn worst(findings: &[Finding]) -> Option<Severity> {
 mod tests {
     use super::*;
 
+    fn rules() -> RuleSet {
+        RuleSet::ep_5_5_1()
+    }
+
     fn complete_weld() -> Weld {
         Weld {
             stamp_number: Some("K1".into()),
@@ -239,7 +244,7 @@ mod tests {
 
     #[test]
     fn a_complete_in_spec_weld_has_no_errors() {
-        let f = validate_weld(&complete_weld());
+        let f = validate_weld(&rules(), &complete_weld());
         assert!(worst(&f) != Some(Severity::Error), "should have no errors: {f:?}");
     }
 
@@ -249,7 +254,7 @@ mod tests {
         w.material_group = None;
         w.material = None;
         w.service_category = None;
-        let f = validate_weld(&w);
+        let f = validate_weld(&rules(), &w);
         assert!(f.iter().any(|x| x.code == "nde.unresolved" && x.severity == Severity::Error));
     }
 
@@ -258,7 +263,7 @@ mod tests {
         let mut w = complete_weld();
         w.aes_service = true; // bumps CS Class-300 to 10% required
         w.nde_percent = Some("5%".into());
-        let f = validate_weld(&w);
+        let f = validate_weld(&rules(), &w);
         assert!(f.iter().any(|x| x.code == "nde.below_spec" && x.severity == Severity::Warning));
     }
 
@@ -268,13 +273,13 @@ mod tests {
         w.aes_service = true;
         w.nde_percent = Some("5%".into());
         w.nde_override_reason = Some("Engineering disposition ED-114: joint inaccessible".into());
-        let f = validate_weld(&w);
+        let f = validate_weld(&rules(), &w);
         let hit = f.iter().find(|x| x.code == "nde.below_spec").expect("finding present");
         assert_eq!(hit.severity, Severity::Advisory);
         assert!(hit.message.contains("ED-114"));
         // Whitespace-only reasons don't count as documentation.
         w.nde_override_reason = Some("   ".into());
-        let f = validate_weld(&w);
+        let f = validate_weld(&rules(), &w);
         assert!(f.iter().any(|x| x.code == "nde.below_spec" && x.severity == Severity::Warning));
     }
 
@@ -283,7 +288,7 @@ mod tests {
         let mut w = complete_weld();
         w.rt_accepted = Some("Y".into());
         w.rt_rejected = Some("Y".into());
-        let f = validate_weld(&w);
+        let f = validate_weld(&rules(), &w);
         assert!(f.iter().any(|x| x.code == "result.contradiction" && x.severity == Severity::Error));
     }
 
@@ -291,7 +296,7 @@ mod tests {
     fn pwht_required_without_date_warns() {
         let mut w = complete_weld();
         w.pwht_required = true;
-        let f = validate_weld(&w);
+        let f = validate_weld(&rules(), &w);
         assert!(f.iter().any(|x| x.code == "pwht.missing"));
     }
 }

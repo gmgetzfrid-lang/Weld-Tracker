@@ -29,6 +29,11 @@ fn weld(wo: &str, joint: &str, stamp: &str, date: &str) -> Weld {
         size: Some(3.0),
         schedule: Some("STD/40s".into()),
         spec_5: true,
+        // A fully specified carbon-steel Class-300 weld under Normal service,
+        // so the requirement resolves (shop 5% / field 10% under EP 5-5-1).
+        service_category: Some("Normal".into()),
+        material_group: Some("Carbon Steel".into()),
+        flange_class: Some("300".into()),
         ..Default::default()
     }
 }

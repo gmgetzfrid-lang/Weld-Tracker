@@ -11,14 +11,17 @@ import {
   pct,
 } from "../components/ui";
 import { Icon } from "../components/Icon";
+import { useNdeRules } from "../ndeRules";
 
 /**
  * The "full statistics blow-out": per-welder NDE compliance against every spec
- * (5/10/20/100% coverage and API 570 in lieu of hydro), plus welder-performance
+ * (the coverage specs of the active rule set), plus welder-performance
  * and reject-rate analysis. This is where we make sure no welder quietly falls
  * below the NDE they're required to hold.
  */
 export function Statistics() {
+  const { rules: ndeRules, specLabels } = useNdeRules();
+  const fd = ndeRules?.facility_defaults;
   const [rep, setRep] = useState<NdeComplianceReport | null>(null);
   const [threshold, setThreshold] = useState(0.05);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +54,7 @@ export function Statistics() {
         <h3>NDE Statistics</h3>
         <p className="muted">
           No welds with an NDE spec have been logged yet. As soon as welds carry
-          a 5 / 10 / 20 / 100% coverage spec or API 570, every welder's
+          a coverage spec ({specLabels.length ? specLabels.join(", ") : "5%, 10%, …"}), every welder's
           compliance is tracked and charted here.
         </p>
       </div>
@@ -160,8 +163,8 @@ export function Statistics() {
         <div className="card card-pad" style={{ borderColor: "#fcd34d", background: "var(--warn-bg)" }}>
           <h3 style={{ color: "var(--warn)", margin: 0 }}><Icon name="alert" size={16} /> {num(rep.spec_mismatch_count)} weld{rep.spec_mismatch_count === 1 ? "" : "s"} off the facility NDE rule</h3>
           <p className="muted" style={{ margin: "6px 0 0" }}>
-            Their logged NDE % doesn't match the rule for a shop weld (5%), field weld (10%) or
-            new-to-old tie-in (100%). Open the Weld Log — the mismatched welds are flagged with a warning marker
+            Their logged NDE % doesn't match the facility rule for a shop weld ({fd?.shop_spec || "—"}), field weld ({fd?.field_spec || "—"}) or
+            new-to-old tie-in ({fd?.tie_in_spec || "—"}). Open the Weld Log — the mismatched welds are flagged with a warning marker
             on their NDE % — and confirm or correct each.
           </p>
         </div>

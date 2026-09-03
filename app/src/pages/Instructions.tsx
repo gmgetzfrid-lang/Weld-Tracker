@@ -60,7 +60,24 @@ export function Instructions() {
           <li><b>Drawing vs Properties mode.</b> Drawing mode places an exact copy (shape, size, text). Properties mode keeps only the look — color, width, dash — and you draw the shape each time. Symbols and groups are always Drawing mode.</li>
           <li><b>Select</b> (V) to move, resize, rotate; shift-click for several; <kbd>Ctrl+G</kbd> groups them into one symbol. Right-click for duplicate, lock, front/back, resolve, delete. <kbd>Ctrl+Z</kbd> undoes.</li>
           <li><b>Markups list</b> (☰) shows every redline on the sheet with who, when, subject and comment; mark them resolved as the work is done.</li>
-          <li><b>⭳ Weld map</b> exports the flattened sheet — drawing, weld bubbles, legend and markups — as a PDF, or files it straight into the work order's quality package.</li>
+          <li><b>Print</b> flattens the sheet — drawing, weld bubbles, legend and markups on every page — and opens the print dialog for the NDE hand-off. The arrow beside it opens or saves the same sheet as a PDF, or files it straight into the work order's quality package.</li>
+        </ul>
+      </div>
+
+      <div className="card card-pad">
+        <h3>Examination rules (the NDE table)</h3>
+        <p>
+          Every weld's required NDE % comes from a <b>rule set</b>: a coverage table of service / material / flange-class /
+          code rows with shop and field percentages for radiography and for PT/MT, plus the vocabularies those rows use,
+          the tie-in override, supplemental rules (large-bore spot RT, thick-wall UT), the coverage specs welders are judged
+          against, progressive sampling and the facility default spec. The shipped default is EP 5-5-1 Rev 0.4 Table 4,
+          value for value; an ASME B31.3 code-minimum template is included as a starting point for other organisations.
+        </p>
+        <ul>
+          <li><b>Where.</b> Settings → Examination rules (administrators). Everyone can read the active rules; only an administrator saves or activates.</li>
+          <li><b>Document control.</b> The active rule set is locked. Edit it, save under a new revision id, then activate. Every weld records the revision it was judged under, and history is never re-scored — only welds not yet examined can be re-evaluated, on request.</li>
+          <li><b>Fail closed.</b> When a weld's drivers can't single out one row (say the class is blank where rows differ by class), the requirement is <i>unresolved</i> and names what is missing. It is never quietly the least-demanding row.</li>
+          <li><b>Test a weld.</b> The editor has a panel to try any combination of drivers against the draft before it goes live.</li>
         </ul>
       </div>
 

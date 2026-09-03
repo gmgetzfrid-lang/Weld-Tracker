@@ -41,7 +41,7 @@ export function Login({ settings }: { settings: Settings }) {
           <ul className="auth-points">
             <li><span className="auth-point-ico"><Icon name="folder" size={15} /></span> Work orders, isometrics and the living weld log</li>
             <li><span className="auth-point-ico"><Icon name="target" size={15} /></span> Weld maps with guided attribute fill</li>
-            <li><span className="auth-point-ico"><Icon name="checkCircle" size={15} /></span> NDE requirements computed per weld — EP 5-5-1</li>
+            <li><span className="auth-point-ico"><Icon name="checkCircle" size={15} /></span> NDE requirements computed per weld from your examination rules</li>
             <li><span className="auth-point-ico"><Icon name="trendingUp" size={15} /></span> Welder performance and compliance reporting</li>
           </ul>
           <div className="auth-footline">{APP_NAME} v{APP_VERSION}{settings.company_name ? ` · ${settings.company_name}` : ""}</div>

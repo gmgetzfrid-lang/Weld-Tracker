@@ -5,6 +5,7 @@ import { App } from "./App";
 import { Boot } from "./Boot";
 import { AuthProvider } from "./auth";
 import { ToastProvider } from "./components/ui";
+import { NdeRulesProvider } from "./ndeRules";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <Boot>
       <AuthProvider>
         <ToastProvider>
-          <App />
+          <NdeRulesProvider>
+            <App />
+          </NdeRulesProvider>
         </ToastProvider>
       </AuthProvider>
     </Boot>

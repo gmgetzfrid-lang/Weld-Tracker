@@ -66,6 +66,15 @@ impl Store {
         for l in self.list_lookups()? {
             map.entry(l.kind).or_default().push(l.value);
         }
+        // The coverage specs of the active rule set are always offered in the
+        // NDE % list, so an organisation's own specs need no lookup entry.
+        let rules = self.rules();
+        let pct = map.entry("nde_percent".to_string()).or_default();
+        for s in &rules.specs {
+            if !pct.iter().any(|v| v.eq_ignore_ascii_case(s.label.trim())) {
+                pct.push(s.label.clone());
+            }
+        }
         Ok(map)
     }
 

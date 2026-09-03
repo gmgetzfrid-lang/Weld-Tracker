@@ -14,6 +14,7 @@ import { bboxPx, normBox, type PM, type Style } from "../../markups/model";
 import type { MarkupTool } from "../../types";
 import { isIncomplete, missingAttributes } from "../../incomplete";
 import { Icon, type IconName } from "../../components/Icon";
+import { useNdeRules } from "../../ndeRules";
 
 interface Pt { x: number; y: number }
 type Tool = "bubble" | "select" | "pan" | "legend" | "markup";
@@ -35,24 +36,8 @@ function draftPM(dr: Draft, style: Style, drawingId: number, page: number): PM {
   }
 }
 
-// EP 5-5-1 Table 4 driver vocabularies (kept in step with weldcore/src/nde.rs).
-export const MATERIAL_GROUPS = [
-  "Carbon Steel",
-  "Low Alloy P4-P5A",
-  "Low Alloy P5B-P5C",
-  "Titanium",
-  "Stainless/Nickel",
-];
-export const FLANGE_CLASSES = ["150", "300", "600", "900", "1500"];
-export const SERVICE_CATEGORIES = [
-  "Normal",
-  "Category D",
-  "Category M",
-  "Severe Cyclic",
-  "Fired Heater Coil",
-];
-export const B31_CODES = ["B31.3", "B31.1", "B31.4"];
-export const SHOP_FIELD = ["SHOP", "FW"];
+// Driver vocabularies (codes, services, material groups, flange classes,
+// shop/field) come from the active NDE rule set — see ndeRules.tsx.
 export const HYDRO_STATES = ["Pending", "Complete", "NA-API570", "NA-Service"];
 export const NDE_RESULTS = ["", "Accepted", "Rejected"];
 // NDE examination methods/passes. Butt welds under API 570 in-lieu-of-hydro
@@ -1267,6 +1252,7 @@ function GuidedPopup({
   const missing = REQUIRED.filter((r) => !String(f[r.k] ?? "").trim());
 
   // The requirement is only asserted once we know which column (joint) and
+  const nde = useNdeRules();
   // which pair (shop vs field) apply — otherwise a default would be misleading.
   const driversReady = !!f.shop_or_field && !!f.joint_type;
   // The NDE result fields stay locked until the drivers that determine the
@@ -1291,7 +1277,7 @@ function GuidedPopup({
   // Once the drivers are in, the requirement must resolve before the weld can be
   // saved — a weld whose required NDE % can't be determined can't be signed off.
   const reqBlocked = driversReady && !reqResolved;
-  // Coverage below the Table 4 requirement is a documented deviation, not a
+  // Coverage below the requirement is a documented deviation, not a
   // silent one: the walk won't advance until the reason is on record.
   const overrideMissing = !!mismatch && !f.nde_override_reason.trim();
   const canSave = missing.length === 0 && !reqBlocked && !overrideMissing;
@@ -1405,24 +1391,24 @@ function GuidedPopup({
           <input type="date" value={f.date_welded} onChange={(e) => setF({ ...f, date_welded: e.target.value })} /></div>
         <div className={`field ${cls(f.size)}`}><label>Size (NPS){rq}</label><Combobox value={f.size} options={sizes.map(String)} allowCustom onChange={(v) => setF({ ...f, size: v })} /></div>
 
-        <div className="guided-sec">Table 4 drivers → NDE %</div>
+        <div className="guided-sec">{nde.tableLabel} drivers → NDE %</div>
         <div className={`field ${cls(f.joint_type)}`}><label>Joint Type{rq}</label><Combobox value={f.joint_type} options={opt("joint_type")} onChange={(v) => setF({ ...f, joint_type: v })} /></div>
         <div className={`field ${cls(f.shop_or_field)}`}><label>Shop / Field{rq}</label>
           <select value={f.shop_or_field} onChange={(e) => setF({ ...f, shop_or_field: e.target.value })}>
-            <option value="">—</option>{SHOP_FIELD.map((o) => <option key={o} value={o}>{o === "FW" ? "Field" : "Shop"}</option>)}
+            <option value="">—</option>{nde.shopField.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select></div>
         <div className={`field ${cls(f.material)}`}><label>Material{rq}</label><Combobox value={f.material} options={opt("material")} allowCustom onChange={(v) => setF({ ...f, material: v, material_group: "" })} /></div>
         <div className="field"><label>Mat. group</label>
           <select value={f.material_group} onChange={(e) => setF({ ...f, material_group: e.target.value })}>
-            <option value="">auto</option>{MATERIAL_GROUPS.map((o) => <option key={o} value={o}>{o}</option>)}
+            <option value="">auto</option>{nde.materialGroups.map((o) => <option key={o} value={o}>{o}</option>)}
           </select></div>
         <div className={`field ${cls(f.service_category)}`}><label>Service{rq}</label>
           <select value={f.service_category} onChange={(e) => setF({ ...f, service_category: e.target.value })}>
-            <option value="">—</option>{SERVICE_CATEGORIES.map((o) => <option key={o} value={o}>{o}</option>)}
+            <option value="">—</option>{nde.serviceCategories.map((o) => <option key={o} value={o}>{o}</option>)}
           </select></div>
         <div className={`field ${cls(f.flange_class)}`}><label>Flange class{rq}</label>
           <select value={f.flange_class} onChange={(e) => setF({ ...f, flange_class: e.target.value })}>
-            <option value="">—</option>{FLANGE_CLASSES.map((o) => <option key={o} value={o}>#{o}</option>)}
+            <option value="">—</option>{nde.flangeClasses.map((o) => <option key={o} value={o}>#{o}</option>)}
           </select></div>
         <label className="guided-check"><input type="checkbox" checked={f.aes_service} onChange={(e) => setF({ ...f, aes_service: e.target.checked })} /> AES service</label>
         <label className="guided-check"><input type="checkbox" checked={f.new_to_existing} onChange={(e) => setF({ ...f, new_to_existing: e.target.checked })} /> New-to-existing tie-in (100%)</label>
@@ -1441,7 +1427,7 @@ function GuidedPopup({
         </>}
 
         <div className="guided-sec">NDE result <span className="faint">(record after examination)</span></div>
-        {!driversComplete && <div className="guided-lock-note">Set the Table 4 drivers above (Shop/Field, Joint, Service, Flange, Material) to unlock NDE entry.</div>}
+        {!driversComplete && <div className="guided-lock-note">Set the {nde.tableLabel} drivers above (Shop/Field, Joint, Service, Flange, Material) to unlock NDE entry.</div>}
         <div className={`field nde-field ${cls(f.nde_percent)}`}><label>NDE %{rq}
           {reqResolved && f.nde_percent.replace(/[^0-9]/g, "") !== String(req!.required_percent) &&
             <button type="button" className="use-req" onClick={() => setF({ ...f, nde_percent: `${req!.required_percent}%` })}>use {req!.required_percent}%</button>}
@@ -1457,7 +1443,7 @@ function GuidedPopup({
               value={f.nde_override_reason}
               onChange={(e) => setF({ ...f, nde_override_reason: e.target.value })}
               placeholder="Engineering disposition, inaccessible joint…"
-              title="Why this weld's NDE coverage deviates from the Table 4 requirement — kept on the record and shown in Exceptions"
+              title={`Why this weld's NDE coverage deviates from the ${nde.tableLabel} requirement — kept on the record and shown in Exceptions`}
             />
           </div>
         )}
@@ -1472,7 +1458,7 @@ function GuidedPopup({
         {showMore && <>
           <div className="field"><label>Code</label>
             <select value={f.b31_code} onChange={(e) => setF({ ...f, b31_code: e.target.value })}>
-              <option value="">B31.3</option>{B31_CODES.map((o) => <option key={o} value={o}>{o}</option>)}
+              <option value="">{nde.defaultCode || "default"}</option>{nde.codes.filter((c) => !c.isDefault).map((c) => <option key={c.key} value={c.key} title={c.label}>{c.key}</option>)}
             </select></div>
           <div className="field"><label>Schedule</label><Combobox value={f.schedule} options={opt("schedule")} allowCustom onChange={(v) => setF({ ...f, schedule: v })} /></div>
           {hasBreak && (
@@ -1506,7 +1492,7 @@ function GuidedPopup({
           </span>
         )}
         {missing.length === 0 && !reqBlocked && overrideMissing && (
-          <span className="guided-req-missing" title="NDE % is below the Table 4 requirement — enter the below-spec reason to save">
+          <span className="guided-req-missing" title={`NDE % is below the ${nde.tableLabel} requirement — enter the below-spec reason to save`}>
             Document below-spec reason
           </span>
         )}

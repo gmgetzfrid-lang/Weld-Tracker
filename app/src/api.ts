@@ -31,6 +31,9 @@ import type {
   QualityFile,
   SearchHit,
   Settings,
+  NdeRuleSet,
+  NdeRuleSetMeta,
+  NdeReevaluateOutcome,
   SummaryReport,
   User,
   Weld,
@@ -287,6 +290,18 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   setSetting: (key: string, value: string) =>
     invoke<void>("set_setting", { key, value }),
+  // NDE examination rule sets — the configurable table behind every requirement
+  ndeRulesActive: () => invoke<NdeRuleSet>("nde_rules_active"),
+  ndeRulesList: () => invoke<NdeRuleSetMeta[]>("nde_rules_list"),
+  ndeRulesGet: (id: string) => invoke<NdeRuleSet>("nde_rules_get", { id }),
+  ndeRulesPreset: (key: "ep-5-5-1" | "asme-b31.3") => invoke<NdeRuleSet>("nde_rules_preset", { key }),
+  ndeRulesValidate: (ruleSet: NdeRuleSet) => invoke<string[]>("nde_rules_validate", { ruleSet }),
+  ndeRulesEvaluate: (ruleSet: NdeRuleSet | null, weld: Partial<Weld>) =>
+    invoke<NdeRequirement>("nde_rules_evaluate", { ruleSet, weld }),
+  ndeRulesSave: (ruleSet: NdeRuleSet) => invoke<NdeRuleSetMeta>("nde_rules_save", { ruleSet }),
+  ndeRulesActivate: (id: string) => invoke<NdeRuleSetMeta>("nde_rules_activate", { id }),
+  ndeRulesDelete: (id: string) => invoke<void>("nde_rules_delete", { id }),
+  ndeRulesReevaluate: () => invoke<NdeReevaluateOutcome>("nde_rules_reevaluate"),
   listCriteria: () => invoke<CriteriaRow[]>("list_criteria"),
 
   // reports

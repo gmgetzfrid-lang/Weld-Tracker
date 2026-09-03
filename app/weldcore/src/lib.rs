@@ -21,6 +21,7 @@ pub mod models;
 pub mod nde;
 pub mod pipe;
 pub mod reports;
+pub mod rules;
 pub mod search;
 pub mod seed;
 pub mod validate;
@@ -62,6 +63,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// so it can be shared as Tauri managed state.
 pub struct Store {
     pub conn: Mutex<Connection>,
+    /// The active NDE rule set, cached (see rules.rs).
+    pub(crate) rules: std::sync::RwLock<rules::RulesCache>,
 }
 
 impl Store {
@@ -101,11 +104,11 @@ impl Store {
                  corrupt or was not fully copied. Restore from a backup."
             )));
         }
-        let store = Store {
-            conn: Mutex::new(conn),
-        };
+        let store = Store { conn: Mutex::new(conn), rules: rules::RulesCache::new() };
         store.migrate()?;
         seed::seed(&store)?;
+        store.seed_rule_sets()?;
+        store.refresh_rules()?;
         Ok(store)
     }
 
@@ -113,11 +116,11 @@ impl Store {
     pub fn open_memory() -> Result<Store> {
         let conn = Connection::open_in_memory()?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        let store = Store {
-            conn: Mutex::new(conn),
-        };
+        let store = Store { conn: Mutex::new(conn), rules: rules::RulesCache::new() };
         store.migrate()?;
         seed::seed(&store)?;
+        store.seed_rule_sets()?;
+        store.refresh_rules()?;
         Ok(store)
     }
 
@@ -154,6 +157,7 @@ impl Store {
             (14, include_str!("migrations/0014_perf_indexes.sql")),
             (15, include_str!("migrations/0015_nde_lots.sql")),
             (16, include_str!("migrations/0016_markups.sql")),
+            (17, include_str!("migrations/0017_nde_rule_sets.sql")),
         ];
 
         let pending: Vec<&(i64, &str)> =
