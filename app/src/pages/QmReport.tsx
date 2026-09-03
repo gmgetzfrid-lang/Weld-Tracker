@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errMsg, rejectThreshold } from "../api";
 import type { WelderStatRow } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
+import { Icon } from "../components/Icon";
 
 export function QmReport() {
   const [rows, setRows] = useState<WelderStatRow[] | null>(null);
@@ -31,7 +32,7 @@ export function QmReport() {
           <h3>Quality Manager Summary</h3>
         </div>
         <div className="spacer" />
-        <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
       <ErrorBox message={error} />
       {!rows ? (

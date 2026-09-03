@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, logErr } from "./api";
 import { useAuth } from "./auth";
 import { SentrixMark } from "./components/Brand";
+import { Icon, type IconName } from "./components/Icon";
 import type { Settings } from "./types";
 import { Login } from "./pages/Login";
 import { ChangePassword } from "./pages/ChangePassword";
@@ -47,25 +48,25 @@ type PageKey =
 interface NavDef {
   key: PageKey;
   label: string;
-  icon: string;
+  icon: IconName;
   group: string;
   desc: string;
   admin?: boolean;
 }
 
 const NAV: NavDef[] = [
-  { key: "dashboard", label: "Dashboard", icon: "▚", group: "Overview", desc: "What needs attention now, plus your at-a-glance totals." },
-  { key: "exceptions", label: "Exceptions", icon: "⚠", group: "Overview", desc: "Every weld the validation engine flags — unresolved NDE, below-spec coverage, rejects awaiting repair, missing heat-treat." },
-  { key: "lots", label: "NDE Lots", icon: "▦", group: "Overview", desc: "ASME B31.3 examination lots — the bounded populations each welder's NDE percentage and progressive sampling are judged in. Turnover, closeout and what's owed." },
-  { key: "workorders", label: "Work Orders", icon: "🗂️", group: "Records", desc: "Every work order and its isometrics + welds — the records directory. Start here." },
-  { key: "weldlog", label: "Weld Log", icon: "▤", group: "Records", desc: "The searchable ledger of every weld across all work orders." },
-  { key: "roster", label: "Welder Roster", icon: "☺", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
-  { key: "reports", label: "Reports", icon: "📊", group: "Reports", desc: "Performance, NDE compliance, welder statistics, monthly/daily counts, job, client/TSA and QM summaries." },
-  { key: "pipe", label: "Pipe Table", icon: "◎", group: "Reference", desc: "Wall thickness by nominal size and schedule — drives auto-fill." },
-  { key: "legend", label: "Criteria Legend", icon: "✎", group: "Reference", desc: "What each line-spec criteria category means." },
-  { key: "instructions", label: "Instructions", icon: "ℹ", group: "Reference", desc: "How the app works: repair procedure, statuses and key terms." },
-  { key: "users", label: "Users", icon: "⚷", group: "Administration", admin: true, desc: "Create login profiles and set who can view or edit." },
-  { key: "settings", label: "Settings", icon: "⚑", group: "Administration", admin: true, desc: "Branding, dropdown lists, backups and support." },
+  { key: "dashboard", label: "Dashboard", icon: "dashboard", group: "Overview", desc: "What needs attention now, plus your at-a-glance totals." },
+  { key: "exceptions", label: "Exceptions", icon: "alert", group: "Overview", desc: "Every weld the validation engine flags — unresolved NDE, below-spec coverage, rejects awaiting repair, missing heat-treat." },
+  { key: "lots", label: "NDE Lots", icon: "layers", group: "Overview", desc: "ASME B31.3 examination lots — the bounded populations each welder's NDE percentage and progressive sampling are judged in. Turnover, closeout and what's owed." },
+  { key: "workorders", label: "Work Orders", icon: "folder", group: "Records", desc: "Every work order and its isometrics + welds — the records directory. Start here." },
+  { key: "weldlog", label: "Weld Log", icon: "table", group: "Records", desc: "The searchable ledger of every weld across all work orders." },
+  { key: "roster", label: "Welder Roster", icon: "users", group: "Records", desc: "Your welders and their stamps, qualifications and status." },
+  { key: "reports", label: "Reports", icon: "chart", group: "Reports", desc: "Performance, NDE compliance, welder statistics, monthly/daily counts, job, client/TSA and QM summaries." },
+  { key: "pipe", label: "Pipe Table", icon: "target", group: "Reference", desc: "Wall thickness by nominal size and schedule — drives auto-fill." },
+  { key: "legend", label: "Criteria Legend", icon: "book", group: "Reference", desc: "What each line-spec criteria category means." },
+  { key: "instructions", label: "Instructions", icon: "info", group: "Reference", desc: "How the app works: repair procedure, statuses and key terms." },
+  { key: "users", label: "Users", icon: "key", group: "Administration", admin: true, desc: "Create login profiles and set who can view or edit." },
+  { key: "settings", label: "Settings", icon: "sliders", group: "Administration", admin: true, desc: "Branding, dropdown lists, backups and support." },
 ];
 
 /** Where the Work Orders page should open when navigated to from elsewhere. */
@@ -175,7 +176,7 @@ export function App() {
                       onClick={() => navigate(n.key)}
                       title={n.desc}
                     >
-                      <span className="rail-ico">{n.icon}</span>
+                      <span className="rail-ico"><Icon name={n.icon} size={18} /></span>
                       <span className="rail-label">{n.label}</span>
                     </button>
                   ))}
@@ -186,7 +187,7 @@ export function App() {
           <div className="rail-foot">
             <button className="rail-item rail-pin" onClick={togglePin}
               title={railPinned ? "Unpin the menu (expand on hover)" : "Keep the menu open"}>
-              <span className="rail-ico">{railPinned ? "⇤" : "⇥"}</span>
+              <span className="rail-ico"><Icon name={railPinned ? "pinOff" : "pin"} size={17} /></span>
               <span className="rail-label">{railPinned ? "Unpin menu" : "Pin menu open"}</span>
             </button>
             <button className="rail-user" onClick={() => setProfileOpen((v) => !v)} title={user.display_name || user.username}>
@@ -224,7 +225,7 @@ export function App() {
           )}
           {!can("editor") && <span className="env-chip viewer" title="Read-only account — you can view everything but not change records">Viewer</span>}
           <button className="topbar-search" onClick={() => setCmdkOpen(true)} title="Search everything (Ctrl+K)">
-            ⌕ Search <kbd>Ctrl K</kbd>
+            <Icon name="search" size={14} /> Search <kbd>Ctrl K</kbd>
           </button>
         </header>
         <div className="content">

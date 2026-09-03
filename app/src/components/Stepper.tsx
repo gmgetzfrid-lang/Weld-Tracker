@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 export function Stepper({
   steps,
   current,
@@ -12,7 +13,7 @@ export function Stepper({
           key={label}
           className={`step ${i === current ? "active" : ""} ${i < current ? "done" : ""}`}
         >
-          <div className="step-dot">{i < current ? "✓" : i + 1}</div>
+          <div className="step-dot">{i < current ? <Icon name="check" size={14} stroke={2.5} /> : i + 1}</div>
           <div className="step-label">{label}</div>
           {i < steps.length - 1 && <div className="step-bar" />}
         </div>
@@ -30,7 +31,7 @@ export function Coach({
 }) {
   return (
     <div className="coach">
-      <span className="coach-ico">💡</span>
+      <span className="coach-ico"><Icon name="lightbulb" size={18} /></span>
       <div>
         <b>{title}</b>
         <div style={{ marginTop: 3 }}>{children}</div>

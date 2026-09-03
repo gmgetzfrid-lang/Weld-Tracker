@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Icon } from "./Icon";
 
 /**
  * Click-to-edit primitives. Every cell shows its value as plain text; click (or
@@ -44,7 +45,7 @@ export function InlineText({
         }}
       >
         {shown ?? <span className="inline-empty">{placeholder}</span>}
-        <span className="inline-pen">✎</span>
+        <span className="inline-pen"><Icon name="pencil" size={11} /></span>
       </span>
     );
   }
@@ -115,7 +116,7 @@ export function InlineSelect({
         }}
       >
         {value ? (render ? render(value) : value) : <span className="inline-empty">{placeholder}</span>}
-        <span className="inline-caret">▾</span>
+        <span className="inline-caret"><Icon name="chevronDown" size={12} /></span>
       </span>
     );
   }
@@ -217,7 +218,7 @@ export function Combobox({
         onKeyDown={onKey}
         onBlur={() => setTimeout(() => setOpen(false), 140)}
       />
-      <span className="combo-caret">▾</span>
+      <span className="combo-caret"><Icon name="chevronDown" size={14} /></span>
       {open && (
         <div className="combo-menu">
           {value && (

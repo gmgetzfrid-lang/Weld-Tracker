@@ -5,6 +5,7 @@ import type { Lookups, Settings } from "../types";
 import { ErrorBox, localTime, useToast } from "../components/ui";
 import { APP_NAME, APP_VERSION } from "../version";
 import { ChangePassword } from "./ChangePassword";
+import { Icon } from "../components/Icon";
 
 const BRAND_FIELDS: [string, string][] = [
   ["company_name", "Company Name"],
@@ -207,7 +208,7 @@ export function SettingsPage() {
           </button>
           {lastBackup && (
             <p className="hint" style={{ marginTop: 10, wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
-              ✓ {lastBackup}
+              <Icon name="check" size={13} /> {lastBackup}
             </p>
           )}
         </div>

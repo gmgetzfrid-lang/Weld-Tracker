@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WelderCert, WelderContinuity } from "../types";
-import { ConfirmDialog, ErrorBox, Modal, Spinner, certLabel, downloadCsv, useToast } from "../components/ui";
+import { ConfirmDialog, ErrorBox, Modal, Spinner, certLabel, downloadCsv, useToast, SkeletonRows } from "../components/ui";
 import { fileToBase64 } from "../pdf";
 import { continuityPdf, printContinuity } from "../continuity";
+import { Icon } from "../components/Icon";
 
 const EMPTY: Welder = { id: 0, stamp: "", name: "", active: true };
 
@@ -76,16 +77,16 @@ export function Roster() {
         </label>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>{rows.length} welders</span>
-        <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
         {can("editor") && (
-          <button className="btn btn-primary" onClick={() => setEditing(null)}>+ New Welder</button>
+          <button className="btn btn-primary" onClick={() => setEditing(null)}><Icon name="plus" size={14} stroke={2.25} /> New Welder</button>
         )}
       </div>
 
       <ErrorBox message={error} />
 
       {loading ? (
-        <Spinner />
+        <SkeletonRows />
       ) : (
         <div className="table-wrap">
           <table className="data">
@@ -122,7 +123,7 @@ export function Roster() {
                             >
                               <span className={`dot ${c.status === "Active" ? "green" : "gray"}`} />
                               {c.alias}
-                              {c.has_file && <span className="clip">📎</span>}
+                              {c.has_file && <span className="clip"><Icon name="paperclip" size={11} /></span>}
                             </span>
                           ))}
                         </div>
@@ -379,7 +380,7 @@ function CertManager({
                   <td>
                     {c.has_file ? (
                       <button className="btn btn-sm" disabled={busy === `open-${c.id}`} onClick={() => open(c)}>
-                        {busy === `open-${c.id}` ? "Opening…" : <>📎 {c.file_name || "open"}</>}
+                        {busy === `open-${c.id}` ? "Opening…" : <><Icon name="paperclip" size={13} /> {c.file_name || "open"}</>}
                       </button>
                     ) : <span className="faint">none</span>}
                     {editable && (
@@ -389,7 +390,7 @@ function CertManager({
                       </label>
                     )}
                   </td>
-                  <td>{editable && <button className="btn btn-sm btn-ghost-danger" title="Remove this cert" onClick={() => setConfirmDel(c)}>✕</button>}</td>
+                  <td>{editable && <button className="btn btn-sm btn-ghost-danger" title="Remove this cert" aria-label="Remove this cert" onClick={() => setConfirmDel(c)}><Icon name="x" size={13} /></button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -406,8 +407,8 @@ function CertManager({
           <input type="date" title="Date qualified" value={adding.qualified_date} disabled={busy === "add"} onChange={(e) => setAdding((a) => ({ ...a, qualified_date: e.target.value }))} />
           {adding.file ? (
             <span className="cert-filechip" title={`${adding.file.name} (${fmtMb(adding.file.size)} MB) — attached when you add the cert`}>
-              📎 {adding.file.name.length > 22 ? adding.file.name.slice(0, 20) + "…" : adding.file.name}
-              <button type="button" className="cert-filechip-x" title="Remove the chosen file" onClick={() => setAdding((a) => ({ ...a, file: null }))}>✕</button>
+              <Icon name="paperclip" size={12} /> {adding.file.name.length > 22 ? adding.file.name.slice(0, 20) + "…" : adding.file.name}
+              <button type="button" className="cert-filechip-x" title="Remove the chosen file" onClick={() => setAdding((a) => ({ ...a, file: null }))}><Icon name="x" size={11} /></button>
             </span>
           ) : (
             <label className="btn btn-sm" style={{ cursor: "pointer" }}>
@@ -416,7 +417,7 @@ function CertManager({
             </label>
           )}
           <button className="btn btn-primary btn-sm" disabled={busy === "add" || !adding.alias.trim()} onClick={addCert}>
-            {busy === "add" ? "Adding…" : "+ Add cert"}
+            {busy === "add" ? "Adding…" : <><Icon name="plus" size={13} stroke={2.25} /> Add cert</>}
           </button>
         </div>
       )}
@@ -453,8 +454,8 @@ function ContinuityModal({ welder, onClose }: { welder: Welder; onClose: () => v
         <>
           <button className="btn" onClick={onClose}>Close</button>
           <div style={{ flex: 1 }} />
-          {c && <button className="btn" onClick={() => printContinuity(c)}>🖨 Print</button>}
-          {c && <button className="btn btn-primary" onClick={() => continuityPdf(c)}>⭳ Export PDF</button>}
+          {c && <button className="btn" onClick={() => printContinuity(c)}><Icon name="printer" size={14} /> Print</button>}
+          {c && <button className="btn btn-primary" onClick={() => continuityPdf(c)}><Icon name="download" size={14} /> Export PDF</button>}
         </>
       }
     >

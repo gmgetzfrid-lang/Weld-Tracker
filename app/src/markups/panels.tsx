@@ -14,6 +14,7 @@ import {
 import {
   DEFAULT_STYLE, PALETTE, kindLabel, templateFrom, type PM, type Style, type ToolTemplate,
 } from "./model";
+import { Icon } from "../components/Icon";
 
 // ---------------------------------------------------------------------------
 // Icons for the redline tools
@@ -151,7 +152,7 @@ function IsoDirections({ iso, need, onChange, size = 92, disabled, hint = true }
               <button key={a.deg} className={axisOf(iso.run) === a.deg ? "active" : ""} title={`${a.label} — click again to reverse`} disabled={disabled} onClick={() => onAxis(a.deg)}>{a.glyph}</button>
             ))}
           </div>
-          <button className={`btn btn-sm ${iso.flip ? "btn-primary" : ""}`} title="Flip: stem / branch / flat side to the other side of the run" disabled={disabled} onClick={() => onChange({ flip: !iso.flip })}>⇋ Flip</button>
+          <button className={`btn btn-sm ${iso.flip ? "btn-primary" : ""}`} title="Flip: stem / branch / flat side to the other side of the run" disabled={disabled} onClick={() => onChange({ flip: !iso.flip })}><Icon name="flip" size={13} /> Flip</button>
         </div>
       )}
       <div className="iso-row" style={{ alignItems: "flex-start" }}>
@@ -315,9 +316,9 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
   const Sec = ({ k, title, count, dflt = false, children, onMenu }: { k: string; title: string; count?: number; dflt?: boolean; children: React.ReactNode; onMenu?: (e: React.MouseEvent) => void }) => (
     <section className="chest-sec">
       <button className="chest-sec-head" onClick={() => toggle(k, dflt)} onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(e); } : undefined}>
-        <span>{isOpen(k, dflt) ? "▾" : "▸"}</span> {title}
+        <span className="chest-chev"><Icon name={isOpen(k, dflt) ? "chevronDown" : "chevronRight"} size={13} /></span> {title}
         {count != null && <span className="muted" style={{ marginLeft: "auto", fontSize: 11 }}>{count}</span>}
-        {onMenu && <span className="chest-more" title="Rename or delete this set" onClick={(e) => { e.stopPropagation(); onMenu(e); }}>⋯</span>}
+        {onMenu && <span className="chest-more" title="Rename or delete this set" onClick={(e) => { e.stopPropagation(); onMenu(e); }}><Icon name="more" size={14} stroke={2.6} /></span>}
       </button>
       {isOpen(k, dflt) && children}
     </section>
@@ -426,7 +427,7 @@ export function ToolChest({ editor, tools, onReloadTools, editable, onClose }: {
         {editable && (
           <div className="chest-newset">
             <input placeholder="New tool set…" value={newSet} onChange={(e) => setNewSet(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") createSet(); }} />
-            <button className="btn btn-sm" onClick={createSet} disabled={!newSet.trim()}>＋</button>
+            <button className="btn btn-sm" onClick={createSet} disabled={!newSet.trim()} aria-label="Create set"><Icon name="plus" size={14} stroke={2.25} /></button>
           </div>
         )}
         <div className="muted" style={{ fontSize: 11, padding: "8px 4px 2px", lineHeight: 1.5 }}>
@@ -494,7 +495,7 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
           onMouseEnter={() => setSubOpen(it.sub ? i : null)}
           onClick={() => { if (it.disabled) return; if (it.sub) { setSubOpen(i); return; } it.onClick?.(); onClose(); }}>
           <span>{it.label}</span>
-          {it.sub && <span className="ctx-arrow">▸</span>}
+          {it.sub && <span className="ctx-arrow"><Icon name="chevronRight" size={13} /></span>}
           {it.sub && subOpen === i && (
             <div className="ctx-menu sub">
               {it.sub.map((s, j) => s.sep ? <div key={j} className="ctx-sep" /> : (
@@ -642,23 +643,23 @@ export function MarkupBar({ editor, onAddToChest, onEditText, onClose }: {
         </div>
       )}
       <div className="mk-bar-row">
-        {textual && one && <button className="btn btn-sm" onClick={() => onEditText(one.id)} disabled={locked}>✎ Edit text</button>}
-        <button className="btn btn-sm" title="Rotate −30° ( [ ) · Alt for 5°" onClick={() => editor.rotate(-30)} disabled={locked}>↺</button>
-        <button className="btn btn-sm" title="Rotate +30° ( ] ) · Alt for 5°" onClick={() => editor.rotate(30)} disabled={locked}>↻</button>
+        {textual && one && <button className="btn btn-sm" onClick={() => onEditText(one.id)} disabled={locked}><Icon name="pencil" size={13} /> Edit text</button>}
+        <button className="btn btn-sm" title="Rotate −30° ( [ ) · Alt for 5°" onClick={() => editor.rotate(-30)} disabled={locked}><Icon name="rotateCcw" size={14} /></button>
+        <button className="btn btn-sm" title="Rotate +30° ( ] ) · Alt for 5°" onClick={() => editor.rotate(30)} disabled={locked}><Icon name="rotateCw" size={14} /></button>
         <button className="btn btn-sm" title="Rotate 90°" onClick={() => editor.rotate(90)} disabled={locked}>90°</button>
-        <button className="btn btn-sm" title="Flip horizontally" onClick={editor.flip} disabled={locked}>⇋</button>
+        <button className="btn btn-sm" title="Flip horizontally" onClick={editor.flip} disabled={locked}><Icon name="flip" size={14} /></button>
         {sel.length > 1 && <button className="btn btn-sm" title="Group (Ctrl+G)" onClick={editor.group}>⧉ Group</button>}
         {one?.kind === "group" && (one.d.items?.length ?? 0) > 1 && <button className="btn btn-sm" title="Ungroup (Ctrl+Shift+G)" onClick={editor.ungroup}>Ungroup</button>}
-        <button className="btn btn-sm" title="Bring to front" onClick={() => editor.reorder(true)}>⬆</button>
-        <button className="btn btn-sm" title="Send to back" onClick={() => editor.reorder(false)}>⬇</button>
-        <button className="btn btn-sm" title="Duplicate (Ctrl+D)" onClick={() => editor.duplicate()}>⎘</button>
-        <button className="btn btn-sm" title={locked ? "Unlock" : "Lock (no accidental moves)"} onClick={editor.toggleLock}>{locked ? "🔓" : "🔒"}</button>
+        <button className="btn btn-sm" title="Bring to front" onClick={() => editor.reorder(true)}><Icon name="arrowUp" size={14} /></button>
+        <button className="btn btn-sm" title="Send to back" onClick={() => editor.reorder(false)}><Icon name="arrowDown" size={14} /></button>
+        <button className="btn btn-sm" title="Duplicate (Ctrl+D)" onClick={() => editor.duplicate()}><Icon name="copy" size={14} /></button>
+        <button className="btn btn-sm" title={locked ? "Unlock" : "Lock (no accidental moves)"} onClick={editor.toggleLock}><Icon name={locked ? "unlock" : "lock"} size={14} /></button>
         <button className="btn btn-sm" title={sel.every((m) => m.status === "Resolved") ? "Reopen" : "Mark resolved"} onClick={() => editor.setStatus(sel.every((m) => m.status === "Resolved") ? "Open" : "Resolved")}>
-          {sel.every((m) => m.status === "Resolved") ? "↩ Reopen" : "✓ Resolve"}
+          {sel.every((m) => m.status === "Resolved") ? <><Icon name="undo" size={13} /> Reopen</> : <><Icon name="check" size={13} /> Resolve</>}
         </button>
-        <button className="btn btn-sm btn-primary" title="Save to a tool set for reuse" onClick={onAddToChest}>＋ Tool Chest</button>
+        <button className="btn btn-sm btn-primary" title="Save to a tool set for reuse" onClick={onAddToChest}><Icon name="plus" size={13} stroke={2.25} /> Tool Chest</button>
         <div className="spacer" />
-        <button className="btn btn-sm btn-danger" title="Delete (Del)" onClick={() => editor.remove()} disabled={locked}>🗑</button>
+        <button className="btn btn-sm btn-danger" title="Delete (Del)" onClick={() => editor.remove()} disabled={locked}><Icon name="trash" size={14} /></button>
       </div>
       {one && (
         <div className="mk-bar-row">

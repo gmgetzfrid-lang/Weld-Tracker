@@ -5,6 +5,7 @@ import { LotStatusChip } from "../components/lots";
 import { ErrorBox, Spinner, StatCard, downloadCsv, num, pct, useToast } from "../components/ui";
 import { MultiLine, OTHER_COLOR, RankedBars, SERIES_COLORS, type BarRow, type LineSeries } from "../components/charts";
 import { downloadPerformancePdf, openPerformancePdf } from "../reportPdf";
+import { Icon } from "../components/Icon";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -407,9 +408,9 @@ export function Performance() {
           </>
         )}
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-          <button className="btn" onClick={exportCsv} disabled={!rep}>⭳ CSV</button>
-          <button className="btn" onClick={() => genPdf(true)} disabled={!rep}>🖨 Open / Print</button>
-          <button className="btn btn-accent" onClick={() => genPdf(false)} disabled={!rep}>⭳ Generate PDF</button>
+          <button className="btn" onClick={exportCsv} disabled={!rep}><Icon name="download" size={14} /> CSV</button>
+          <button className="btn" onClick={() => genPdf(true)} disabled={!rep}><Icon name="printer" size={14} /> Open / Print</button>
+          <button className="btn btn-accent" onClick={() => genPdf(false)} disabled={!rep}><Icon name="download" size={14} /> Generate PDF</button>
         </div>
       </div>
 
@@ -426,7 +427,7 @@ export function Performance() {
               borderLeft: `5px solid ${allIn ? "var(--ok)" : rep.welders_below_spec ? "var(--danger)" : "var(--line, #ccc)"}`,
             }}
           >
-            <div style={{ fontSize: 24 }}>{allIn ? "✅" : rep.welders_below_spec ? "⚠️" : "•"}</div>
+            <div style={{ display: "flex", color: allIn ? "var(--ok)" : rep.welders_below_spec ? "var(--warn-text)" : "var(--blue)" }}><Icon name={allIn ? "checkCircle" : rep.welders_below_spec ? "alert" : "info"} size={26} /></div>
             <div>
               <strong style={{ fontSize: 15 }}>
                 {rep.rows.length === 0

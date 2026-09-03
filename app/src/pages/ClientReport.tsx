@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errMsg, rejectThreshold } from "../api";
 import type { ClientReportRow } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
+import { Icon } from "../components/Icon";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -53,7 +54,7 @@ export function ClientReport() {
         <button className="btn btn-sm" onClick={() => setYear((y) => y + 1)}>›</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>TSA Welder Summary Report</span>
-        <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
       <ErrorBox message={error} />
       {!rows ? (

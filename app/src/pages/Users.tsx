@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, errMsg } from "../api";
 import type { Role, User } from "../types";
-import { ErrorBox, Modal, Spinner, useToast } from "../components/ui";
+import { ErrorBox, Modal, useToast, SkeletonRows } from "../components/ui";
+import { Icon } from "../components/Icon";
 
 const ROLES: Role[] = ["admin", "editor", "viewer"];
 
@@ -40,11 +41,11 @@ export function Users() {
       <div className="toolbar">
         <div className="section-title" style={{ margin: 0 }}><h3>Login Profiles</h3></div>
         <div className="spacer" />
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>+ New Profile</button>
+        <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" size={14} stroke={2.25} /> New Profile</button>
       </div>
       <ErrorBox message={error} />
       {!users ? (
-        <Spinner />
+        <SkeletonRows />
       ) : (
         <div className="table-wrap">
           <table className="data">

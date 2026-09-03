@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import type { QualityFile } from "../types";
 import { ConfirmDialog, useToast } from "../components/ui";
 import { fileToBase64 } from "../pdf";
+import { Icon } from "../components/Icon";
 
 // The categories a quality-package file can be filed under (mirrors
 // weldcore/src/wo_files.rs CATEGORIES).
@@ -119,7 +120,7 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
               </select>
             </label>
             <button className="btn btn-accent btn-sm" disabled={busy} onClick={() => inputRef.current?.click()}>
-              {busy ? "Uploading…" : "＋ Add files"}
+              {busy ? "Uploading…" : <><Icon name="plus" size={13} stroke={2.25} /> Add files</>}
             </button>
             <span className="muted qp-hint">or drag &amp; drop here</span>
           </div>
@@ -147,7 +148,7 @@ export function QualityPackage({ workOrder }: { workOrder: string }) {
                   <div className="spacer" />
                   {f.has_file && <button className="btn btn-sm" onClick={() => view(f)}>View</button>}
                   {editable && canDelete(f) && (
-                    <button className="btn btn-sm btn-ghost-danger" title="Remove (uploader or admin)" onClick={() => setConfirmDel(f)}>✕</button>
+                    <button className="btn btn-sm btn-ghost-danger" title="Remove (uploader or admin)" onClick={() => setConfirmDel(f)}><Icon name="x" size={13} /></button>
                   )}
                 </div>
               ))}

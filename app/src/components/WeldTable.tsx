@@ -4,6 +4,7 @@ import type { Lookups, Weld, Welder } from "../types";
 import { useAuth } from "../auth";
 import { ConfirmDialog, StatusBadge, useToast } from "./ui";
 import { InlineMulti, InlineSelect, InlineText, Segmented } from "./inline";
+import { Icon } from "./Icon";
 
 /** Hideable grid columns, in display order. */
 const COLS_DEF: { key: string; label: string }[] = [
@@ -208,13 +209,13 @@ export function WeldTable({
             {pendingSaves > 0
               ? `Saving ${pendingSaves} change${pendingSaves > 1 ? "s" : ""}…`
               : saveFailed
-              ? "⚠ Last change didn't save — the row was reloaded"
-              : "All changes saved ✓"}
+              ? "Last change didn't save — the row was reloaded"
+              : "All changes saved"}
           </span>
         )}
         <div className="spacer" />
         <div className="wt-cols">
-          <button className="btn btn-sm" onClick={() => setColsOpen((v) => !v)} title="Choose which columns to show">▦ Columns</button>
+          <button className="btn btn-sm" onClick={() => setColsOpen((v) => !v)} title="Choose which columns to show"><Icon name="columns" size={14} /> Columns</button>
           {colsOpen && (
             <div className="wt-cols-menu" onMouseLeave={() => setColsOpen(false)}>
               {COLS_DEF.map((c) => (
@@ -225,21 +226,21 @@ export function WeldTable({
             </div>
           )}
         </div>
-        {onAddWeld && editable && <button className="btn btn-sm" onClick={onAddWeld}>＋ Add Weld</button>}
+        {onAddWeld && editable && <button className="btn btn-sm" onClick={onAddWeld}><Icon name="plus" size={13} stroke={2.25} /> Add Weld</button>}
         {editable && (
           <button className={`btn btn-sm ${edit ? "btn-primary" : ""}`} onClick={() => setEdit((e) => !e)}>
-            {edit ? "✓ Done editing" : "✎ Edit table"}
+            {edit ? <><Icon name="check" size={14} /> Done editing</> : <><Icon name="pencil" size={13} /> Edit table</>}
           </button>
         )}
       </div>
-      {edit && <div className="wt-editing">Edit mode — click any cell to change it (saves automatically). The 🗑 on a row deletes that weld (your own, or any if you're an admin); the ▸ chevron opens more fields, cert &amp; repair.</div>}
+      {edit && <div className="wt-editing">Edit mode — click any cell to change it (saves automatically). The trash button on a row deletes that weld (your own, or any if you're an admin); the ▸ chevron opens more fields, cert &amp; repair.</div>}
 
       <div className="table-wrap wt-scroll">
         <table className={`data wt ${edit ? "editing" : ""}`}>
           <thead>
             <tr>
               <th style={{ width: 26 }}></th>
-              <th className="sortable" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>Weld # {sortDir === "asc" ? "▲" : "▼"}</th>
+              <th className="sortable" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>Weld # <Icon name={sortDir === "asc" ? "chevronUp" : "chevronDown"} size={12} stroke={2.4} /></th>
               {showWorkOrder && <th>Work Order</th>}
               {showCol("drawing") && <th>Drawing</th>}
               {showCol("nde_percent") && <th title="Assigned NDE coverage — the calculated Table 4 requirement is in the row detail">NDE %</th>}
@@ -270,9 +271,9 @@ export function WeldTable({
                   <tr className={`${isOpen ? "wt-open" : ""}${w.voided_at ? " wt-voided" : ""}`}>
                     <td>
                       <span className="wt-rowact">
-                        <button className="chev" onClick={() => toggleOpen(w.id)}>{isOpen ? "▾" : "▸"}</button>
+                        <button className="chev" aria-label={isOpen ? "Collapse" : "Expand"} onClick={() => toggleOpen(w.id)}><Icon name={isOpen ? "chevronDown" : "chevronRight"} size={14} /></button>
                         {edit && canDelete(w) && !w.voided_at && (
-                          <button className="wt-del" title="Void this weld (kept on record)" onClick={() => voidWeld(w)}>🗑</button>
+                          <button className="wt-del" title="Void this weld (kept on record)" onClick={() => voidWeld(w)}><Icon name="trash" size={14} /></button>
                         )}
                       </span>
                     </td>
@@ -288,7 +289,7 @@ export function WeldTable({
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                           {edit ? <InlineSelect value={w.nde_percent} options={opt("nde_percent")} allowCustom onCommit={(v) => save(w, { nde_percent: v })} />
                             : warn ? <span className="spec-bad">{w.nde_percent ?? "—"}</span> : txt(w.nde_percent)}
-                          {warn && <span className="spec-warn" title={warn}>⚠</span>}
+                          {warn && <span className="spec-warn" title={warn}><Icon name="alert" size={13} /></span>}
                         </span>
                       </td>
                     )}
@@ -466,7 +467,7 @@ function DetailPanel({
       {editable && (
         <div className="dp-actions">
           {(w.nde_result === "Rejected" || w.rt_rejected === "Y") && (
-            <button className="btn btn-sm" onClick={onRepair}>＋ Repair &amp; Tracers</button>
+            <button className="btn btn-sm" onClick={onRepair}><Icon name="plus" size={13} stroke={2.25} /> Repair &amp; Tracers</button>
           )}
           <div className="spacer" style={{ flex: 1 }} />
           {w.voided_at ? (

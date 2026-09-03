@@ -9,6 +9,7 @@ import { isIncomplete } from "../incomplete";
 import { WeldTable } from "../components/WeldTable";
 import { fileToBase64, loadPdf, base64ToBytes } from "../pdf";
 import { docName } from "../docControl";
+import { Icon } from "../components/Icon";
 
 const STEPS = ["Work Order & Iso", "Weld Map & Fill", "Review & Edit"];
 
@@ -122,7 +123,7 @@ export function DrawingWizard({
   return (
     <div>
       <div className="toolbar" style={{ marginBottom: 8 }}>
-        <button className="btn btn-ghost btn-sm" onClick={guardedClose}>← Back</button>
+        <button className="btn btn-ghost btn-sm" onClick={guardedClose}><Icon name="arrowLeft" size={14} /> Back</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>
           {drawing.work_order ? `WO ${drawing.work_order}` : "New entry"}
@@ -164,7 +165,7 @@ export function DrawingWizard({
           <div style={{ display: "flex", gap: 10 }}>
             {step === 0 && (
               <button className="btn btn-primary" onClick={saveHeaderAndNext} disabled={busy}>
-                {busy ? "Saving…" : "Save & map welds →"}
+                {busy ? "Saving…" : <>{"Save & map welds"} <Icon name="arrowRight" size={14} /></>}
               </button>
             )}
             {step === 1 && (
@@ -173,9 +174,9 @@ export function DrawingWizard({
             {step === 2 && (
               <>
                 <button className="btn" onClick={addAnother} title="Save this and start another drawing or sheet on the same work order">
-                  ＋ Add another drawing / sheet
+                  <Icon name="plus" size={13} stroke={2.25} /> Add another drawing / sheet
                 </button>
-                <button className="btn btn-accent" onClick={guardedClose}>Finish ✓</button>
+                <button className="btn btn-accent" onClick={guardedClose}>Finish <Icon name="check" size={14} /></button>
               </>
             )}
           </div>
@@ -234,7 +235,7 @@ function HeaderStep({
       <ErrorBox message={error} />
 
       <div className="wsection">
-        <div className="wsection-head"><span className="wsection-ico">🗂️</span><h4>Work Order</h4></div>
+        <div className="wsection-head"><span className="wsection-ico"><Icon name="folder" size={16} /></span><h4>Work Order</h4></div>
         <div className="wrow">
           <div className="field" style={{ flex: "0 0 220px" }}>
             <label>Work Order # *</label>
@@ -246,7 +247,7 @@ function HeaderStep({
       </div>
 
       <div className="wsection">
-        <div className="wsection-head"><span className="wsection-ico">📐</span><h4>Drawing (controlled document)</h4>
+        <div className="wsection-head"><span className="wsection-ico"><Icon name="ruler" size={16} /></span><h4>Drawing (controlled document)</h4>
           {composed && <span className="badge badge-blue" style={{ marginLeft: "auto" }}>{composed}</span>}</div>
         <div className="field span-full" style={{ maxWidth: 560 }}>
           <label>Drawing identity <span className="faint">— number, sheet and revision form one document name</span></label>
@@ -280,7 +281,7 @@ function HeaderStep({
             <label>Line Spec <span className="faint">(autocompletes)</span></label>
             <Combobox value={drawing.line_spec ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec", v || null)} placeholder="start typing…" />
             {!showBreak && (
-              <button type="button" className="filldown" style={{ marginTop: 4 }} onClick={() => setShowBreak(true)}>＋ add spec break</button>
+              <button type="button" className="filldown" style={{ marginTop: 4 }} onClick={() => setShowBreak(true)}>+ add spec break</button>
             )}
           </div>
           {showBreak && (
@@ -290,7 +291,7 @@ function HeaderStep({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <Combobox value={drawing.line_spec_2 ?? ""} options={lineSpecs} allowCustom onChange={(v) => set("line_spec_2", v || null)} placeholder="spec past the break…" />
                 </div>
-                <button type="button" className="btn btn-sm btn-ghost" title="Remove spec break" onClick={() => { setShowBreak(false); set("line_spec_2", null); }}>✕</button>
+                <button type="button" className="btn btn-sm btn-ghost" title="Remove spec break" onClick={() => { setShowBreak(false); set("line_spec_2", null); }}><Icon name="x" size={13} /></button>
               </div>
             </div>
           )}
@@ -312,7 +313,7 @@ function HeaderStep({
       </div>
 
       <div className="wsection">
-        <div className="wsection-head"><span className="wsection-ico">📎</span><h4>Controlled copy (this sheet's PDF)</h4>{drawing.has_pdf && <span className="badge badge-green">attached</span>}</div>
+        <div className="wsection-head"><span className="wsection-ico"><Icon name="paperclip" size={16} /></span><h4>Controlled copy (this sheet's PDF)</h4>{drawing.has_pdf && <span className="badge badge-green">attached</span>}</div>
         <DropZone file={pdfFile} onFile={setPdfFile} hasExisting={drawing.has_pdf} />
         <p className="hint" style={{ marginTop: 8 }}>
           This is one sheet. If your drawings came as a <b>compiled work-package book</b>, skip this and
@@ -341,13 +342,13 @@ function DropZone({ file, onFile, hasExisting }: { file: File | null; onFile: (f
       <input ref={(r) => (ref = r)} type="file" accept="application/pdf" hidden onChange={(e) => pick(e.target.files?.[0])} />
       {file ? (
         <div className="dz-file">
-          <span style={{ fontSize: 22 }}>📄</span>
+          <span className="dz-ico"><Icon name="file" size={22} /></span>
           <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 12 }}>ready to attach</div></div>
           <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); onFile(null); }}>Remove</button>
         </div>
       ) : (
         <>
-          <div className="dz-ico">⬆</div>
+          <div className="dz-ico"><Icon name="upload" size={26} /></div>
           <div className="dz-main">Drag the isometric PDF here</div>
           <div className="muted">or click to browse{hasExisting ? " · replaces the current PDF" : ""}</div>
         </>
@@ -378,7 +379,7 @@ function ReviewEdit({
       <Coach title="Review &amp; edit — every cell is editable">
         These are the welds you mapped, now in the log. The table is in <b>edit mode</b>: click any
         cell to change it — size, joint type, schedule, material, NDE %, NDE type, the X-ray result,
-        pressure test, status. Use the <b>▸</b> chevron on a row for the cert, line spec and the rest.
+        pressure test, status. Use the chevron on a row for the cert, line spec and the rest.
       </Coach>
       {loading ? <Spinner /> : (
         <WeldTable

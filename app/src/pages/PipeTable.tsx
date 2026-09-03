@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
 import type { PipeRow } from "../types";
-import { ErrorBox, Spinner } from "../components/ui";
+import { ErrorBox, SkeletonRows } from "../components/ui";
 
 const SCHED_ORDER = ["5s", "5", "10s", "10", "20", "30", "40", "STD/40s", "60", "80", "XH", "100", "120", "140", "160", "XXH"];
 
@@ -51,7 +51,7 @@ export function PipeTable() {
       </div>
       <ErrorBox message={error} />
       {!rows ? (
-        <Spinner />
+        <SkeletonRows />
       ) : (
         <div className="table-wrap">
           <table className="data">

@@ -7,6 +7,7 @@ import type {
 import { ConfirmDialog, ErrorBox, Modal, Spinner, StatCard, downloadCsv, num, pct, useToast } from "../components/ui";
 import { AttentionList, LotProgress, LotStatusChip, fmtD, weldSpan } from "../components/lots";
 import { downloadLotPdf, openLotPdf } from "../lotPdf";
+import { Icon } from "../components/Icon";
 
 const MONTH_CHOICES = [1, 2, 3, 4, 6, 12];
 
@@ -102,8 +103,8 @@ export function Lots({
         {can("editor") && receiving && (
           <button className="btn" onClick={() => setConfirmTurn(true)} title="Stop this lot taking welds and open the next one">⟳ Turn over now</button>
         )}
-        {can("editor") && <button className="btn" onClick={() => setNewLotOpen(true)}>＋ New lot</button>}
-        {can("admin") && <button className="btn" onClick={() => setSettingsOpen(true)}>⚙ Lot settings</button>}
+        {can("editor") && <button className="btn" onClick={() => setNewLotOpen(true)}><Icon name="plus" size={14} stroke={2.25} /> New lot</button>}
+        {can("admin") && <button className="btn" onClick={() => setSettingsOpen(true)}><Icon name="sliders" size={14} /> Lot settings</button>}
       </div>
 
       {attention.length > 0 && (
@@ -222,7 +223,7 @@ function LotDetail({
     finally { setBusy(null); }
   };
 
-  if (error) return <div><button className="btn btn-ghost btn-sm" onClick={onBack}>← All lots</button><ErrorBox message={error} /></div>;
+  if (error) return <div><button className="btn btn-ghost btn-sm" onClick={onBack}><Icon name="arrowLeft" size={14} /> All lots</button><ErrorBox message={error} /></div>;
   if (!card) return <Spinner />;
   const lot = card.lot;
   const rep = card.report;
@@ -270,7 +271,7 @@ function LotDetail({
   return (
     <div>
       <div className="wo-header">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>← All lots</button>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}><Icon name="arrowLeft" size={14} /> All lots</button>
         <div className="wo-header-title">
           <div className="wo-eyebrow">NDE Lot</div>
           <h2>{lot.lot_no}{lot.label && <span className="lot-h-label"> · {lot.label}</span>}</h2>
@@ -278,26 +279,26 @@ function LotDetail({
         <LotStatusChip lot={lot} />
         <div className="spacer" />
         {editor && lot.status === "Open" && lot.is_default && (
-          <button className="btn" onClick={() => setDialog("turn")}>⟳ Turn over</button>
+          <button className="btn" onClick={() => setDialog("turn")}><Icon name="refresh" size={14} /> Turn over</button>
         )}
         {editor && lot.status === "Open" && !lot.is_default && (
-          <button className="btn" onClick={() => setDialog("stop")}>■ Stop taking welds</button>
+          <button className="btn" onClick={() => setDialog("stop")}><Icon name="square" size={12} /> Stop taking welds</button>
         )}
         {editor && lot.status !== "Closed" && (
           <button className={`btn ${card.clean ? "btn-primary" : ""}`} onClick={() => setDialog(card.clean ? "close" : "closeShort")}>
-            ✓ Close lot
+            <Icon name="check" size={14} /> Close lot
           </button>
         )}
         {can("admin") && lot.status === "Closed" && (
-          <button className="btn" onClick={() => setDialog("reopen")}>↺ Reopen</button>
+          <button className="btn" onClick={() => setDialog("reopen")}><Icon name="rotateCcw" size={14} /> Reopen</button>
         )}
         {editor && lot.status !== "Closed" && (
-          <button className="btn" onClick={() => setDialog("pin")}>{lot.status === "Open" ? "📌 Pin work orders…" : "⇥ Move work orders in…"}</button>
+          <button className="btn" onClick={() => setDialog("pin")}>{lot.status === "Open" ? <><Icon name="pin" size={14} /> Pin work orders…</> : <><Icon name="arrowRight" size={14} /> Move work orders in…</>}</button>
         )}
-        {editor && <button className="btn btn-sm" title="Label and notes" onClick={() => setDialog("notes")}>✎</button>}
-        <button className="btn" onClick={exportCsv}>⭳ CSV</button>
-        <button className="btn" onClick={() => pdf(true)} disabled={busy === "pdf"}>🖨 Open / Print</button>
-        <button className="btn btn-accent" onClick={() => pdf(false)} disabled={busy === "pdf"}>⭳ Closeout PDF</button>
+        {editor && <button className="btn btn-icon" title="Label and notes" aria-label="Label and notes" onClick={() => setDialog("notes")}><Icon name="pencil" size={14} /></button>}
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> CSV</button>
+        <button className="btn" onClick={() => pdf(true)} disabled={busy === "pdf"}><Icon name="printer" size={14} /> Open / Print</button>
+        <button className="btn btn-accent" onClick={() => pdf(false)} disabled={busy === "pdf"}><Icon name="download" size={14} /> Closeout PDF</button>
       </div>
 
       {/* Status banner */}
@@ -405,9 +406,9 @@ function LotDetail({
               </select>
             </div>
             <button className="btn btn-primary" onClick={doSuggest} disabled={busy === "suggest" || card.owed === 0}>
-              {busy === "suggest" ? "Picking…" : suggest ? "🎲 Re-roll" : "🎲 Suggest welds"}
+              {busy === "suggest" ? "Picking…" : suggest ? <><Icon name="shuffle" size={14} /> Re-roll</> : <><Icon name="shuffle" size={14} /> Suggest welds</>}
             </button>
-            {suggest && suggest.length > 0 && <button className="btn" onClick={suggestCsv}>⭳ RT request list</button>}
+            {suggest && suggest.length > 0 && <button className="btn" onClick={suggestCsv}><Icon name="download" size={14} /> RT request list</button>}
           </div>
           {card.owed === 0 ? (
             <p className="muted" style={{ margin: 0 }}>Nothing owed — no picks needed.</p>
@@ -664,7 +665,7 @@ function PinDialog({ lot, mode, onClose, onDone }: { lot: NdeLot; mode: "pin" | 
                     <td className="num">{num(r.weld_count)}</td>
                     <td className="faint">{r.lots.length ? r.lots.join(", ") : "no lot"}</td>
                     <td>
-                      {here ? <span className="badge badge-blue">this lot <button className="link" onClick={(e) => { e.stopPropagation(); unpin(r.work_order); }}>✕</button></span>
+                      {here ? <span className="badge badge-blue">this lot <button className="link" onClick={(e) => { e.stopPropagation(); unpin(r.work_order); }} aria-label="Unpin"><Icon name="x" size={11} /></button></span>
                         : r.pinned_lot_id ? <span className="badge badge-gray">another lot</span> : <span className="faint">—</span>}
                     </td>
                     <td className="faint">{fmtD(r.last_activity)}</td>
@@ -818,7 +819,7 @@ function LotsSetup({
         {!canAdmin ? (
           <p className="muted" style={{ marginBottom: 0 }}>An administrator needs to {cfg.setup_done ? "turn lots back on in Lot settings" : "set up lots"}.</p>
         ) : cfg.setup_done ? (
-          <button className="btn btn-primary" onClick={onOpenSettings}>⚙ Lot settings</button>
+          <button className="btn btn-primary" onClick={onOpenSettings}><Icon name="sliders" size={14} /> Lot settings</button>
         ) : (
           <>
             <div className="grid cols-2" style={{ gap: 14 }}>

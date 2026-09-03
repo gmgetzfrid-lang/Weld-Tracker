@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
 import type { ExceptionsSummary, Severity, WeldException } from "../types";
 import { ErrorBox, Spinner } from "../components/ui";
+import { Icon } from "../components/Icon";
 
 const SEV_ORDER: Severity[] = ["error", "warning", "advisory"];
 const SEV_LABEL: Record<Severity, string> = {
@@ -50,7 +51,7 @@ export function Exceptions({ onOpenWorkOrder }: { onOpenWorkOrder: (wo: string) 
           Every weld the validation engine flags — worst first. Fix the errors before closeout.
         </div>
         <div className="spacer" />
-        <button className="btn" onClick={load}>↻ Refresh</button>
+        <button className="btn" onClick={load}><Icon name="refresh" size={14} /> Refresh</button>
       </div>
 
       <ErrorBox message={error} />
@@ -86,10 +87,10 @@ export function Exceptions({ onOpenWorkOrder }: { onOpenWorkOrder: (wo: string) 
           )}
 
           {data.flagged === 0 ? (
-            <div className="card card-pad" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 34 }}>✓</div>
-              <div style={{ fontWeight: 700, marginTop: 6 }}>No exceptions</div>
-              <div className="muted">Every live weld passes validation.</div>
+            <div className="card empty-state">
+              <div className="empty-ico ok"><Icon name="checkCircle" size={26} /></div>
+              <h4>No exceptions</h4>
+              <p>Every live weld passes validation.</p>
             </div>
           ) : (
             <div className="exc-list">

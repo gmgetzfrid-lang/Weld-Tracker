@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Weld, WeldFilter, Welder } from "../types";
-import { ErrorBox, Spinner, downloadCsv, num, useToast } from "../components/ui";
+import { ErrorBox, downloadCsv, num, useToast, SkeletonRows } from "../components/ui";
 import { WeldTable } from "../components/WeldTable";
 import { SingleWeldDialog } from "../components/WeldDialogs";
+import { Icon } from "../components/Icon";
 
 /** The Weld Log is the searchable ledger of every weld. New entries and a work
  * order's records live in the Work Orders hub — this page routes there. */
@@ -88,7 +89,7 @@ export function WeldLog({
               click a work order to open its records.
             </div>
           </div>
-          <button className="btn btn-accent" onClick={onNewEntry}>＋ Add Welds</button>
+          <button className="btn btn-accent" onClick={onNewEntry}><Icon name="plus" size={14} stroke={2.25} /> Add Welds</button>
           <button className="btn" onClick={() => setSingleOpen(true)}>Single weld</button>
         </div>
       )}
@@ -111,13 +112,13 @@ export function WeldLog({
         </label>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>{num(total)} welds</span>
-        <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
 
       <ErrorBox message={error} />
 
       {loading ? (
-        <Spinner />
+        <SkeletonRows />
       ) : (
         <WeldTable
           welds={welds}

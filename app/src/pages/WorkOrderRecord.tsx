@@ -8,6 +8,7 @@ import { RecordNdeDialog, SingleWeldDialog } from "../components/WeldDialogs";
 import { docName, RevisePanel, RevisionHistory, PackageIngest } from "../docControl";
 import { QualityPackage } from "./QualityPackage";
 import { isIncomplete } from "../incomplete";
+import { Icon } from "../components/Icon";
 
 type WoTab = "overview" | "drawings" | "welds" | "quality";
 
@@ -129,20 +130,20 @@ export function WorkOrderRecord({
         <span className="muted">click a drawing to open its weld map</span>
         <div className="spacer" />
         {editable && (
-          <button className="btn btn-sm" title="Upload one compiled work-package book and split it into controlled sheets by page range" onClick={() => setIngest(true)}>📚 Ingest work package</button>
+          <button className="btn btn-sm" title="Upload one compiled work-package book and split it into controlled sheets by page range" onClick={() => setIngest(true)}><Icon name="bookStack" size={14} /> Ingest work package</button>
         )}
       </div>
       {drawings.length === 0 ? (
         <div className="empty-hint">
           No isometrics yet.{" "}
-          {editable && <a onClick={() => onOpenDrawing(null)} className="link">Add the first one →</a>}
+          {editable && <a onClick={() => onOpenDrawing(null)} className="link">Add the first one <Icon name="arrowRight" size={13} /></a>}
         </div>
       ) : (
         <div className="grid cols-3" style={{ marginBottom: 26 }}>
           {drawings.map((d) => (
             <div key={d.id} className="drawing-card" onClick={() => onOpenDrawing(d.id)}>
               <div className="drawing-card-top">
-                <span className="drawing-ico">📐</span>
+                <span className="drawing-ico"><Icon name="ruler" size={20} /></span>
                 <strong>{d.doc_name || docName(d.drawing_no, d.sheet_no, d.revision)}</strong>
                 {d.has_pdf ? <span className="badge badge-green">PDF</span> : <span className="badge badge-gray">no PDF</span>}
               </div>
@@ -159,7 +160,7 @@ export function WorkOrderRecord({
                   {editable && <button className="btn btn-sm" title="Issue a new revision (supersede current)" onClick={() => setRevise(d)}>Revise</button>}
                   {(d.rev_count ?? 0) > 1 && <button className="btn btn-sm btn-ghost" title="Revision history" onClick={() => setHistory(d)}>History</button>}
                   {editable && canDeleteDrawing(d) && (
-                    <button className="btn btn-sm btn-ghost-danger" title="Delete drawing" onClick={() => setConfirmDel({ kind: "drawing", d })}>✕</button>
+                    <button className="btn btn-sm btn-ghost-danger" title="Delete drawing" onClick={() => setConfirmDel({ kind: "drawing", d })}><Icon name="x" size={13} /></button>
                   )}
                 </div>
               </div>
@@ -177,7 +178,7 @@ export function WorkOrderRecord({
         <div className="spacer" />
         {editable && welds.length > 0 && (
           <button className="btn btn-sm" title="Record one NDE report's results across several welds at once" onClick={() => setNdeDialog(true)}>
-            📋 Record NDE results
+            <Icon name="clipboard" size={14} /> Record NDE results
           </button>
         )}
       </div>
@@ -196,7 +197,7 @@ export function WorkOrderRecord({
   return (
     <div>
       <div className="wo-header">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button>
+        <button className="btn btn-ghost btn-sm" onClick={onBack}><Icon name="arrowLeft" size={14} /> Back</button>
         <div className="wo-header-title">
           <div className="wo-eyebrow">Work Order</div>
           <h2>{workOrder}</h2>
@@ -212,25 +213,25 @@ export function WorkOrderRecord({
         )}
         <div className="spacer" />
         {editable && (
-          <button className="btn btn-accent" onClick={() => onOpenDrawing(null)}>＋ Add Drawing &amp; Welds</button>
+          <button className="btn btn-accent" onClick={() => onOpenDrawing(null)}><Icon name="plus" size={14} stroke={2.25} /> Add Drawing &amp; Welds</button>
         )}
         {(editable || canDeleteWo) && (
           <div className="wo-more">
-            <button className="btn btn-sm" onClick={() => setMoreOpen((v) => !v)} title="More actions">⋯</button>
+            <button className="btn btn-sm" onClick={() => setMoreOpen((v) => !v)} title="More actions" aria-label="More actions"><Icon name="more" size={16} stroke={2.6} /></button>
             {moreOpen && (
               <div className="wo-more-menu" onMouseLeave={() => setMoreOpen(false)}>
                 {editable && (
-                  <button onClick={() => { setMoreOpen(false); setIngest(true); }}>📚 Ingest work package</button>
+                  <button onClick={() => { setMoreOpen(false); setIngest(true); }}><Icon name="bookStack" size={14} /> Ingest work package</button>
                 )}
                 {editable && (
-                  <button onClick={() => { setMoreOpen(false); setNdeDialog(true); }}>📋 Record NDE results</button>
+                  <button onClick={() => { setMoreOpen(false); setNdeDialog(true); }}><Icon name="clipboard" size={14} /> Record NDE results</button>
                 )}
                 {editable && lotSum?.enabled && (
-                  <button onClick={() => { setMoreOpen(false); setMoveLot(true); }}>▦ Move to NDE lot…</button>
+                  <button onClick={() => { setMoreOpen(false); setMoveLot(true); }}><Icon name="layers" size={14} /> Move to NDE lot…</button>
                 )}
                 {canDeleteWo && (
                   <button className="danger" onClick={() => { setMoreOpen(false); setConfirmDel({ kind: "wo" }); }}>
-                    🗑 Delete work order
+                    <Icon name="trash" size={14} /> Delete work order
                   </button>
                 )}
               </div>
@@ -257,7 +258,7 @@ export function WorkOrderRecord({
                 <span className="muted"> — {lotSum.owed.map((o) => `${o.name || o.stamp} ${o.spec}: ${num(o.owed)} owed, ${num(o.candidates_here)} candidate${o.candidates_here === 1 ? "" : "s"} here (${o.lot_no})`).join(" · ")}</span>
               </span>
               <div className="spacer" />
-              {editable && <button className="btn btn-sm btn-accent" onClick={() => setNdeDialog(true)}>📋 Record NDE results</button>}
+              {editable && <button className="btn btn-sm btn-accent" onClick={() => setNdeDialog(true)}><Icon name="clipboard" size={14} /> Record NDE results</button>}
             </>
           ) : (
             <span className="muted">No NDE owed on this work order right now</span>
@@ -312,7 +313,7 @@ export function WorkOrderRecord({
                 </span>
                 <div className="spacer" />
                 {editable && incompleteDrawing != null && (
-                  <button className="btn btn-sm btn-accent" onClick={() => onOpenDrawing(incompleteDrawing)}>▶ Fill attributes</button>
+                  <button className="btn btn-sm btn-accent" onClick={() => onOpenDrawing(incompleteDrawing)}><Icon name="play" size={12} /> Fill attributes</button>
                 )}
               </div>
             </div>
@@ -342,10 +343,10 @@ export function WorkOrderRecord({
               </div>
             </div>
           ) : (
-            <div className="card card-pad" style={{ marginTop: 14, textAlign: "center" }}>
-              <div style={{ fontSize: 30 }}>✓</div>
-              <div style={{ fontWeight: 700, marginTop: 4 }}>No open quality items</div>
-              <div className="muted">Every weld on this work order passes validation.</div>
+            <div className="card empty-state" style={{ marginTop: 14 }}>
+              <div className="empty-ico ok"><Icon name="checkCircle" size={26} /></div>
+              <h4>No open quality items</h4>
+              <p>Every weld on this work order passes validation.</p>
             </div>
           )}
         </>

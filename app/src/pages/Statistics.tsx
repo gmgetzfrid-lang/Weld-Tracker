@@ -10,6 +10,7 @@ import {
   num,
   pct,
 } from "../components/ui";
+import { Icon } from "../components/Icon";
 
 /**
  * The "full statistics blow-out": per-welder NDE compliance against every spec
@@ -99,7 +100,7 @@ export function Statistics() {
           Per-welder NDE compliance & performance
         </span>
         <div className="spacer" style={{ flex: 1 }} />
-        <button className="btn btn-sm" onClick={exportCsv}>⬇ Export CSV</button>
+        <button className="btn btn-sm" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
 
       {/* headline numbers */}
@@ -128,7 +129,7 @@ export function Statistics() {
       {belowSpec.length > 0 && (
         <div className="card">
           <div className="card-pad" style={{ paddingBottom: 6 }}>
-            <h3 style={{ color: "var(--danger)" }}>⚠ Welders below spec — NDE owed</h3>
+            <h3 style={{ color: "var(--danger)" }}><Icon name="alert" size={16} /> Welders below spec — NDE owed</h3>
             <p className="muted" style={{ margin: 0 }}>
               These welders need more examinations to stay at or above their required NDE coverage.
             </p>
@@ -157,10 +158,10 @@ export function Statistics() {
       {/* welds logged against the wrong facility NDE % for their status */}
       {rep.spec_mismatch_count > 0 && (
         <div className="card card-pad" style={{ borderColor: "#fcd34d", background: "var(--warn-bg)" }}>
-          <h3 style={{ color: "var(--warn)", margin: 0 }}>⚠ {num(rep.spec_mismatch_count)} weld{rep.spec_mismatch_count === 1 ? "" : "s"} off the facility NDE rule</h3>
+          <h3 style={{ color: "var(--warn)", margin: 0 }}><Icon name="alert" size={16} /> {num(rep.spec_mismatch_count)} weld{rep.spec_mismatch_count === 1 ? "" : "s"} off the facility NDE rule</h3>
           <p className="muted" style={{ margin: "6px 0 0" }}>
             Their logged NDE % doesn't match the rule for a shop weld (5%), field weld (10%) or
-            new-to-old tie-in (100%). Open the Weld Log — the mismatched welds are flagged with a ⚠
+            new-to-old tie-in (100%). Open the Weld Log — the mismatched welds are flagged with a warning marker
             on their NDE % — and confirm or correct each.
           </p>
         </div>

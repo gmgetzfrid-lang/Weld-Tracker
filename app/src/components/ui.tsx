@@ -1,9 +1,19 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api, bytesToB64, errMsg } from "../api";
 import { APP_NAME, APP_VERSION, NDE_RULE_SET } from "../version";
+import { Icon } from "./Icon";
 
 export function Spinner() {
-  return <div className="spinner" />;
+  return <div className="spinner" role="status" aria-label="Loading" />;
+}
+
+/** Placeholder rows while a list loads — keeps the layout in place instead of a lone wheel. */
+export function SkeletonRows({ rows = 6 }: { rows?: number }) {
+  return (
+    <div className="card skeleton-rows" role="status" aria-busy="true" aria-label="Loading">
+      {Array.from({ length: rows }, (_, i) => <div key={i} className="skeleton" style={{ width: `${96 - ((i * 17) % 38)}%` }} />)}
+    </div>
+  );
 }
 
 export function ErrorBox({ message }: { message?: string | null }) {
@@ -270,10 +280,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastCtx.Provider value={{ push }}>
       {children}
-      <div className="toast-wrap">
+      <div className="toast-wrap" role="status" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>
-            {t.msg}
+            <span className="toast-ico"><Icon name={t.kind === "ok" ? "checkCircle" : "alertCircle"} size={16} stroke={2} /></span>
+            <span className="toast-msg">{t.msg}</span>
+            <button className="toast-x" aria-label="Dismiss" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))}><Icon name="x" size={13} /></button>
           </div>
         ))}
       </div>

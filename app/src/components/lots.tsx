@@ -3,6 +3,7 @@ import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { AttentionItem, LotStatus, MaintainOutcome, NdeLot } from "../types";
 import { Modal, num, useToast } from "./ui";
+import { Icon } from "./Icon";
 
 /** Status chip: Receiving / Open / Awaiting closeout / Closed / Closed short. */
 export function LotStatusChip({
@@ -85,7 +86,7 @@ export function AttentionList({
             <b>{it.title}</b>
             <span className="attn-detail">{it.detail}</span>
           </span>
-          <span className="attn-go">→</span>
+          <span className="attn-go"><Icon name="arrowRight" size={14} /></span>
         </button>
       ))}
       {items.length > shown.length && (
@@ -117,7 +118,7 @@ export function AttentionBadge({ tick, onClick }: { tick: unknown; onClick: () =
       onClick={onClick}
       title={acting.slice(0, 6).map((i) => `• ${i.title}`).join("\n")}
     >
-      ⚠ {acting.length} need{acting.length === 1 ? "s" : ""} attention
+      <Icon name="alert" size={13} /> {acting.length} need{acting.length === 1 ? "s" : ""} attention
     </button>
   );
 }

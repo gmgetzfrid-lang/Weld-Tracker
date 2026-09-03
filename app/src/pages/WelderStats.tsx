@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, errMsg, rejectThreshold } from "../api";
 import type { WelderStatsReport } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
+import { Icon } from "../components/Icon";
 
 const LEVELS = [
   ["all", "All"],
@@ -60,7 +61,7 @@ export function WelderStats() {
         <span className="muted" style={{ fontSize: 12 }}>
           NDE examination level {level === "all" ? "— all welds" : `${level}%`}
         </span>
-        <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
 
       <ErrorBox message={error} />

@@ -4,6 +4,7 @@ import type { Drawing, DrawingRevision } from "./types";
 import { ErrorBox, Modal, Spinner, useToast } from "./components/ui";
 import { fileToBase64, loadPdf, base64ToBytes } from "./pdf";
 import { openBase64File } from "./continuity";
+import { Icon } from "./components/Icon";
 
 /** The composed controlled-document name, e.g. "ISO-1042 SHT 2 Rev A". */
 export function docName(
@@ -92,13 +93,13 @@ export function RevisePanel({
         <label>Revised drawing file <span className="faint">(the new controlled copy)</span></label>
         {file ? (
           <div className="dz-file">
-            <span style={{ fontSize: 20 }}>📄</span>
+            <span className="dz-ico"><Icon name="file" size={22} /></span>
             <div style={{ flex: 1 }}><b>{file.name}</b></div>
             <button className="btn btn-sm btn-danger" onClick={() => setFile(null)}>Remove</button>
           </div>
         ) : (
           <label className="btn" style={{ cursor: "pointer" }}>
-            ⬆ Choose revised PDF
+            <Icon name="upload" size={14} /> Choose revised PDF
             <input type="file" hidden accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
         )}
@@ -258,13 +259,13 @@ export function PackageIngest({
       <div className="field">
         {file ? (
           <div className="dz-file">
-            <span style={{ fontSize: 20 }}>📚</span>
+            <span className="dz-ico"><Icon name="bookStack" size={22} /></span>
             <div style={{ flex: 1 }}><b>{file.name}</b><div className="muted" style={{ fontSize: 12 }}>{pages} page(s)</div></div>
             <button className="btn btn-sm btn-danger" onClick={() => onFile(null)}>Remove</button>
           </div>
         ) : (
           <label className="btn" style={{ cursor: "pointer" }}>
-            ⬆ Choose the work-package PDF
+            <Icon name="upload" size={14} /> Choose the work-package PDF
             <input type="file" hidden accept="application/pdf" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
           </label>
         )}
@@ -282,12 +283,12 @@ export function PackageIngest({
                   <td><input value={r.revision} onChange={(e) => setRow(i, { revision: e.target.value })} style={{ width: 50 }} /></td>
                   <td><input type="number" min={1} max={pages} value={r.page_from} onChange={(e) => setRow(i, { page_from: Number(e.target.value) })} style={{ width: 70 }} /></td>
                   <td><input type="number" min={1} max={pages} value={r.page_to} onChange={(e) => setRow(i, { page_to: Number(e.target.value) })} style={{ width: 70 }} /></td>
-                  <td><button className="btn btn-sm btn-ghost-danger" title="Remove row" onClick={() => delRow(i)}>✕</button></td>
+                  <td><button className="btn btn-sm btn-ghost-danger" title="Remove row" onClick={() => delRow(i)}><Icon name="x" size={13} /></button></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={addRow}>+ Add sheet</button>
+          <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={addRow}><Icon name="plus" size={13} stroke={2.25} /> Add sheet</button>
         </div>
       )}
     </Modal>

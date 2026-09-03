@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, logErr } from "../api";
 import type { SearchHit } from "../types";
+import { Icon, type IconName } from "./Icon";
 
-const KIND_META: Record<SearchHit["kind"], { icon: string; label: string }> = {
-  work_order: { icon: "🗂️", label: "Work Order" },
-  welder: { icon: "☺", label: "Welder" },
-  drawing: { icon: "▤", label: "Drawing" },
-  weld: { icon: "◎", label: "Weld" },
+const KIND_META: Record<SearchHit["kind"], { icon: IconName; label: string }> = {
+  work_order: { icon: "folder", label: "Work Order" },
+  welder: { icon: "user", label: "Welder" },
+  drawing: { icon: "ruler", label: "Drawing" },
+  weld: { icon: "target", label: "Weld" },
 };
 
 /**
@@ -87,7 +88,7 @@ export function CommandPalette({
     <div className="cmdk-backdrop" onMouseDown={onClose}>
       <div className="cmdk" onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         <div className="cmdk-input">
-          <span className="cmdk-search-ico">⌕</span>
+          <span className="cmdk-search-ico"><Icon name="search" size={18} /></span>
           <input
             ref={inputRef}
             placeholder="Jump to a work order, welder, drawing or weld…"
@@ -114,7 +115,7 @@ export function CommandPalette({
                     onMouseEnter={() => setActive(index)}
                     onClick={() => choose(hit)}
                   >
-                    <span className="cmdk-ico">{KIND_META[hit.kind].icon}</span>
+                    <span className="cmdk-ico"><Icon name={KIND_META[hit.kind].icon} size={16} /></span>
                     <span className="cmdk-label">{hit.label}</span>
                     {hit.sublabel && <span className="cmdk-sub">{hit.sublabel}</span>}
                   </button>

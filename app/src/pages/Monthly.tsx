@@ -3,6 +3,7 @@ import { api, errMsg } from "../api";
 import type { MonthlyReport } from "../types";
 import { ErrorBox, Spinner, downloadCsv, num, pct } from "../components/ui";
 import { Columns } from "../components/charts";
+import { Icon } from "../components/Icon";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -39,7 +40,7 @@ export function Monthly() {
         <strong style={{ fontSize: 16 }}>{year}</strong>
         <button className="btn btn-sm" onClick={() => setYear((y) => y + 1)}>›</button>
         <div className="spacer" />
-        <button className="btn" onClick={exportCsv}>⭳ Export CSV</button>
+        <button className="btn" onClick={exportCsv}><Icon name="download" size={14} /> Export CSV</button>
       </div>
       <ErrorBox message={error} />
       {!rep ? (

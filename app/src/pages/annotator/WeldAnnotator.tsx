@@ -12,6 +12,7 @@ import { attachWeldMap, exportWeldMap } from "../../markups/exportMap";
 import { bboxPx, normBox, type PM, type Style } from "../../markups/model";
 import type { MarkupTool } from "../../types";
 import { isIncomplete, missingAttributes } from "../../incomplete";
+import { Icon, type IconName } from "../../components/Icon";
 
 interface Pt { x: number; y: number }
 type Tool = "bubble" | "select" | "pan" | "legend" | "markup";
@@ -902,12 +903,12 @@ export function WeldAnnotator({
           <div className="anno-hud tl" onMouseDown={(e) => e.stopPropagation()}>
             <div className="toolchest">
               {([
-                ["bubble", "◎", "Place weld bubbles (click a joint, then the bubble)"],
-                ["select", "🖑", "Select / pan (bubbles & legend are always drag-to-move)"],
-                ["markup", "✎", "Markups & Tool Chest — redline the iso: flanges, valves, clouds, notes"],
-              ] as [Tool, string, string][]).map(([t, ico, label]) => (
-                <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label}
-                  onClick={() => { setTool(t); if (t === "markup") setChestOpen(true); }} disabled={!editable && t !== "markup"}>{ico}</button>
+                ["bubble", "target", "Place weld bubbles (click a joint, then the bubble)"],
+                ["select", "hand", "Select / pan (bubbles & legend are always drag-to-move)"],
+                ["markup", "pencil", "Markups & Tool Chest — redline the iso: flanges, valves, clouds, notes"],
+              ] as [Tool, IconName, string][]).map(([t, ico, label]) => (
+                <button key={t} className={`tool ${tool === t ? "on" : ""}`} title={label} aria-label={label}
+                  onClick={() => { setTool(t); if (t === "markup") setChestOpen(true); }} disabled={!editable && t !== "markup"}><Icon name={ico} size={16} /></button>
               ))}
             </div>
             <div className="welder-switch">
@@ -926,15 +927,15 @@ export function WeldAnnotator({
           {editable && guided === null && fillable.length > 0 && (
             incomplete.length > 0 ? (
               <button className="btn btn-accent btn-sm" title={`${incomplete.length} weld${incomplete.length === 1 ? "" : "s"} still missing data — the walk starts at the first one and skips the rest`} onClick={startWalk}>
-                ▶ Fill attributes ({incomplete.length} to do)
+                <Icon name="play" size={12} /> Fill attributes ({incomplete.length} to do)
               </button>
             ) : (
-              <button className="btn btn-sm" title="Every weld has its attributes. Walk them anyway, starting from the newest." onClick={startWalk}>✓ All filled · review</button>
+              <button className="btn btn-sm" title="Every weld has its attributes. Walk them anyway, starting from the newest." onClick={startWalk}><Icon name="check" size={13} /> All filled · review</button>
             )
           )}
-          <button className="btn btn-sm" title="Markups list — every redline on this sheet" onClick={() => setListOpen((v) => !v)}>☰{editor.pageMarkups.length ? ` ${editor.pageMarkups.length}` : ""}</button>
+          <button className="btn btn-sm" title="Markups list — every redline on this sheet" onClick={() => setListOpen((v) => !v)}><Icon name="menu" size={14} />{editor.pageMarkups.length ? ` ${editor.pageMarkups.length}` : ""}</button>
           <div className="wo-more">
-            <button className="btn btn-sm" title="Export the flattened weld map (drawing + bubbles + legend + markups) as a PDF" onClick={() => setExportMenu((v) => !v)} disabled={exporting}>{exporting ? "Exporting…" : "⭳ Weld map"}</button>
+            <button className="btn btn-sm" title="Export the flattened weld map (drawing + bubbles + legend + markups) as a PDF" onClick={() => setExportMenu((v) => !v)} disabled={exporting}>{exporting ? "Exporting…" : <><Icon name="download" size={13} /> Weld map</>}</button>
             {exportMenu && (
               <div className="wo-more-menu" onMouseLeave={() => setExportMenu(false)}>
                 <button onClick={() => doExport("reveal")}>Save PDF…</button>
@@ -943,9 +944,9 @@ export function WeldAnnotator({
               </div>
             )}
           </div>
-          {!legendOn && <button className="btn btn-sm" onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}>🏷</button>}
+          {!legendOn && <button className="btn btn-sm" title="Show the legend stamp" aria-label="Show legend" onClick={() => { setLegendOn(true); persistLegend(legendPos, true); }}><Icon name="tag" size={14} /></button>}
           <button className="btn btn-sm" title="How to use the weld map" onClick={() => setShowCoach(true)}>?</button>
-          <button className="btn btn-sm" title={fullscreen ? "Exit full screen (Esc)" : "Full screen"} onClick={() => setFullscreen((v) => !v)}>{fullscreen ? "⤢" : "⛶"}</button>
+          <button className="btn btn-sm" title={fullscreen ? "Exit full screen (Esc)" : "Full screen"} onClick={() => setFullscreen((v) => !v)}><Icon name={fullscreen ? "minimize" : "maximize"} size={14} /></button>
         </div>
 
         {/* zoom + page (bottom-right) */}
@@ -959,8 +960,8 @@ export function WeldAnnotator({
             </>
           )}
           <button className="btn btn-sm" title="Zoom out" onClick={() => setZoom((s) => Math.max(0.2, (Math.ceil(s * 10 - 0.01) - 1) / 10))}>−</button>
-          <button className="btn btn-sm" title="Reset to 100% (click) — Fit to width via ⤢" onClick={resetZoom} onDoubleClick={fitToWidth}>{Math.round(zoom * 100)}%</button>
-          <button className="btn btn-sm" title="Fit to width" onClick={fitToWidth}>⤢</button>
+          <button className="btn btn-sm" title="Reset to 100% (click) — double-click fits to width" onClick={resetZoom} onDoubleClick={fitToWidth}>{Math.round(zoom * 100)}%</button>
+          <button className="btn btn-sm" title="Fit to width" aria-label="Fit to width" onClick={fitToWidth}><Icon name="fit" size={14} /></button>
           <button className="btn btn-sm" title="Zoom in" onClick={() => setZoom((s) => Math.min(6, (Math.floor(s * 10 + 0.01) + 1) / 10))}>+</button>
         </div>
 
@@ -1135,7 +1136,7 @@ const COACH = [
   { eyebrow: "We know you're new here", title: "Place a weld bubble", body: "Pick a welder, then click the weld joint on the map — a red leader line follows your cursor." },
   { eyebrow: "Step 2", title: "Drop it", body: "Click again where the bubble should sit. The W-number auto-increments and your welder stays selected — keep clicking down the line, no stopping." },
   { eyebrow: "Two welders on one spool?", title: "Swap seamlessly", body: "Switch the active welder anytime — or press number keys 1–9. The weld numbering keeps right on going." },
-  { eyebrow: "The efficient way", title: "Place all, then fill", body: "Get every bubble down first, then hit “Fill attributes ▶”. The map jumps to each weld and pulses it while a small card pops up right beside it, so you never lose track of which one is W4." },
+  { eyebrow: "The efficient way", title: "Place all, then fill", body: "Get every bubble down first, then hit “Fill attributes”. The map jumps to each weld and pulses it while a small card pops up right beside it, so you never lose track of which one is W4." },
 ];
 
 function CoachMarks({ onDone }: { onDone: () => void }) {
@@ -1204,7 +1205,7 @@ function Legend({
     >
       <div className="wm-legend-head">
         <span className="wm-grip">⠿</span> WELD MAP LEGEND
-        {editable && <button className="wm-x" title="Hide legend" onClick={onClose} onMouseDown={(e) => e.stopPropagation()}>✕</button>}
+        {editable && <button className="wm-x" title="Hide legend" onClick={onClose} onMouseDown={(e) => e.stopPropagation()} aria-label="Hide legend"><Icon name="x" size={12} /></button>}
       </div>
       <div className="wm-legend-key">
         <svg width="42" height="42" viewBox="0 0 42 42">
@@ -1216,7 +1217,7 @@ function Legend({
         <div className="wm-legend-keytext"><div><b>top</b> = welder ID</div><div><b>bottom</b> = weld #</div></div>
       </div>
       <div className="wm-legend-status" title="Disposition marks on the bubbles">
-        <span className="ok">✓ accepted</span>
+        <span className="ok"><Icon name="check" size={10} stroke={3} /> accepted</span>
         <span className="bad">! rejected</span>
         <span className="rep">R repair</span>
         <span className="todo">? needs data</span>
@@ -1391,14 +1392,14 @@ function GuidedPopup({
         <span className="muted">welder {f.stamp_number || "—"}</span>
         <div className="spacer" />
         <span className="guided-prog">{index + 1}/{total}</span>
-        <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill">✕</button>
+        <button className="btn btn-sm btn-ghost" onClick={onExit} title="Exit guided fill" aria-label="Exit guided fill"><Icon name="x" size={14} /></button>
       </div>
       <div className="guided-progbar" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={index + 1}>
         <span style={{ width: `${Math.round(((index + 1) / Math.max(total, 1)) * 100)}%` }} />
       </div>
       {carried.length > 0 && (
         <div className="guided-carried" title="Inherited from the previous weld in this walk — change whatever differs before saving.">
-          ↩ carried forward: {carried.join(", ")}
+          <Icon name="undo" size={11} /> carried forward: {carried.join(", ")}
         </div>
       )}
 
@@ -1422,7 +1423,7 @@ function GuidedPopup({
             <span className="guided-req-method">{req.method}</span>
           </div>
           <div className="guided-req-note">{req.note}</div>
-          {req.supplemental.map((s, i) => <div key={i} className="guided-req-sup">＋ {s}</div>)}
+          {req.supplemental.map((s, i) => <div key={i} className="guided-req-sup">+ {s}</div>)}
           {mismatch && <div className="guided-req-mismatch">Entered {f.nde_percent} is below the required {req.required_percent}% — document the reason below</div>}
         </div>
       ) : (
@@ -1504,7 +1505,7 @@ function GuidedPopup({
           <input type="date" value={f.nde_date} onChange={(e) => setF({ ...f, nde_date: e.target.value })} /></div>
 
         <button type="button" className="guided-more-btn" onClick={() => setShowMore((v) => !v)}>
-          {showMore ? "▾" : "▸"} More — code, schedule, heat-treat, hydro
+          <Icon name={showMore ? "chevronDown" : "chevronRight"} size={13} /> More — code, schedule, heat-treat, hydro
         </button>
         {showMore && <>
           <div className="field"><label>Code</label>
@@ -1557,7 +1558,7 @@ function GuidedPopup({
               ? "NDE % is below the requirement — document the deviation reason first"
               : ""
           }>
-          {busy ? "Saving…" : index + 1 >= total ? "Save & review ✓" : "Save & next ▶"}
+          {busy ? "Saving…" : index + 1 >= total ? <>{"Save & review"} <Icon name="check" size={14} /></> : <>{"Save & next"} <Icon name="arrowRight" size={14} /></>}
         </button>
       </div>
     </div>

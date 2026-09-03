@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { api, errMsg, logErr } from "../api";
 import { useAuth } from "../auth";
 import type { Lookups, Welder, WorkOrderSummary } from "../types";
-import { ConfirmDialog, ErrorBox, Spinner, num, useToast } from "../components/ui";
+import { ConfirmDialog, ErrorBox, num, useToast, SkeletonRows } from "../components/ui";
 import { DrawingWizard } from "./DrawingWizard";
 import { WorkOrderRecord } from "./WorkOrderRecord";
 import type { WoIntent } from "../App";
+import { Icon } from "../components/Icon";
 
 type View =
   | { kind: "list" }
@@ -110,12 +111,12 @@ export function WorkOrders({
 
       <ErrorBox message={error} />
       {!rows ? (
-        <Spinner />
+        <SkeletonRows />
       ) : rows.length === 0 ? (
-        <div className="card card-pad" style={{ textAlign: "center", padding: 48 }}>
-          <div style={{ fontSize: 40, marginBottom: 8 }}>🗂️</div>
-          <h3 style={{ marginBottom: 6 }}>No work orders yet</h3>
-          <p className="muted" style={{ maxWidth: 480, margin: "0 auto 16px" }}>
+        <div className="card empty-state">
+          <div className="empty-ico"><Icon name="folder" size={26} /></div>
+          <h4>No work orders yet</h4>
+          <p>
             A work order holds its isometrics and every weld on them. Start a new
             weld entry — you'll enter the work order number, attach the iso, and
             drop weld bubbles to build the log.
@@ -154,7 +155,7 @@ export function WorkOrders({
                   {can("editor") && (
                     <td onClick={(e) => e.stopPropagation()}>
                       {canDeleteWo(r) && (
-                        <button className="btn btn-sm btn-ghost-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }}>🗑</button>
+                        <button className="btn btn-sm btn-ghost-danger" title="Delete this work order and everything in it (owner/admin)" onClick={(e) => { e.stopPropagation(); setConfirmDel(r); }}><Icon name="trash" size={14} /></button>
                       )}
                     </td>
                   )}

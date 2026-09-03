@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import type { AttentionItem, AuditEntry, ExceptionsSummary, NdeComplianceReport, NdeLot, SummaryReport } from "../types";
 import { BarChart, ErrorBox, Spinner, StatCard, localTime, num, pct } from "../components/ui";
 import { AttentionList } from "../components/lots";
+import { Icon } from "../components/Icon";
 
 export function Dashboard({
   onNavigate, onNewEntry, onOpenWorkOrder, onOpenLot,
@@ -77,7 +78,7 @@ export function Dashboard({
       {fresh && (
         <div className="card card-pad guide">
           <h3 style={{ fontSize: 16, textTransform: "none", color: "var(--navy)", letterSpacing: 0 }}>
-            👋 Welcome{user ? `, ${user.display_name || user.username}` : ""} — here's how to get going
+            Welcome{user ? `, ${user.display_name || user.username}` : ""} — here's how to get going
           </h3>
           <p className="muted" style={{ marginTop: 0 }}>
             Three steps. Do them in order and the whole log fills itself.
@@ -85,14 +86,14 @@ export function Dashboard({
           <div className="grid cols-3" style={{ marginTop: 6 }}>
             {steps.map((s, i) => (
               <div key={i} className={`guide-step ${s.done ? "done" : ""}`}>
-                <div className="guide-num">{s.done ? "✓" : i + 1}</div>
+                <div className="guide-num">{s.done ? <Icon name="check" size={14} stroke={2.5} /> : i + 1}</div>
                 <div className="guide-title">{s.title}</div>
                 <div className="guide-body">{s.body}</div>
                 <button
                   className={`btn btn-sm ${i === 1 ? "btn-accent" : ""}`}
                   onClick={() => ("entry" in s && s.entry ? onNewEntry() : onNavigate(s.go))}
                 >
-                  {s.cta} →
+                  {s.cta} <Icon name="arrowRight" size={13} />
                 </button>
               </div>
             ))}
@@ -103,9 +104,9 @@ export function Dashboard({
       {!fresh && (
         <div className="quick-row">
           <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Quick actions:</span>
-          {can("editor") && <button className="btn btn-accent btn-sm" onClick={onNewEntry}>+ Add Welds</button>}
-          <button className="btn btn-sm" onClick={() => onNavigate("workorders")}>🗂️ Work Orders</button>
-          <button className="btn btn-sm" onClick={() => onNavigate("roster")}>☺ Welder Roster</button>
+          {can("editor") && <button className="btn btn-accent btn-sm" onClick={onNewEntry}><Icon name="plus" size={13} stroke={2.25} /> Add Welds</button>}
+          <button className="btn btn-sm" onClick={() => onNavigate("workorders")}><Icon name="folder" size={14} /> Work Orders</button>
+          <button className="btn btn-sm" onClick={() => onNavigate("roster")}><Icon name="users" size={14} /> Welder Roster</button>
         </div>
       )}
 
@@ -114,7 +115,7 @@ export function Dashboard({
           <div className="toolbar" style={{ marginBottom: 8 }}>
             <h3 style={{ margin: 0 }}>Needs attention</h3>
             <div className="spacer" />
-            <button className="btn btn-sm" onClick={() => onOpenLot(null)}>NDE Lots →</button>
+            <button className="btn btn-sm" onClick={() => onOpenLot(null)}>NDE Lots <Icon name="arrowRight" size={13} /></button>
           </div>
           <AttentionList items={attention} max={6} onOpenLot={onOpenLot} onOpenWorkOrder={onOpenWorkOrder} />
         </div>
@@ -290,11 +291,11 @@ function NdeQuickRef({
     <div className="card card-pad" style={below ? { borderColor: "#fca5a5" } : undefined}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <h3 style={{ margin: 0, color: below ? "var(--danger)" : "var(--navy)" }}>
-          NDE Compliance {below ? "⚠" : "✓"}
+          NDE Compliance {below ? <Icon name="alert" size={16} /> : <Icon name="checkCircle" size={16} />}
         </h3>
         <div className="spacer" style={{ flex: 1 }} />
         <button className="btn btn-sm" onClick={() => onNavigate("statistics")}>
-          Open NDE Statistics →
+          Open NDE Statistics <Icon name="arrowRight" size={13} />
         </button>
       </div>
       <div className="nde-quick" style={{ marginTop: 12 }}>
